@@ -11,7 +11,14 @@ import {useContentOrdering} from './useContentOrdering.js';
  */
 function callHook(opts: {messages: Message[]; events: HookEventDisplay[]}) {
 	const {result} = renderHook(() => useContentOrdering(opts));
-	return result.current;
+	const {staticItems, activeItems, tasks} = result.current;
+	// Combine for tests that only care about total ordering
+	return {
+		stableItems: [...staticItems, ...activeItems],
+		staticItems,
+		activeItems,
+		tasks,
+	};
 }
 
 // ── Factories ────────────────────────────────────────────────────────
@@ -387,12 +394,8 @@ describe('useContentOrdering', () => {
 		});
 	});
 
-	describe('parallel tool calls — Static-compatible timestamp ordering', () => {
-		it('sorts parallel tool calls and results strictly by timestamp (append-only for Static)', () => {
-			// Ink's <Static> tracks by array length, not keys. Items MUST only
-			// be appended — never inserted in the middle — or Static re-renders
-			// already-displayed items. Pure timestamp sort guarantees this because
-			// new events always have later timestamps.
+	describe('groupToolResults — parallel tool call pairing', () => {
+		it('groups PostToolUse directly after its matching PreToolUse by toolUseId', () => {
 			const events = [
 				makeEvent({
 					id: 'pre-A',
@@ -431,12 +434,11 @@ describe('useContentOrdering', () => {
 			const {stableItems} = callHook({messages: [], events});
 			const ids = stableItems.map(i => i.data.id);
 
-			// Timestamp order: both PreToolUse first, then both PostToolUse.
-			// This is correct for Static — results always append at end.
-			expect(ids).toEqual(['pre-A', 'pre-B', 'post-A', 'post-B']);
+			// post-A should follow pre-A, not pre-B
+			expect(ids).toEqual(['pre-A', 'post-A', 'pre-B', 'post-B']);
 		});
 
-		it('preserves sequential tool call ordering', () => {
+		it('preserves order when tool calls are already sequential', () => {
 			const events = [
 				makeEvent({
 					id: 'pre-A',
@@ -474,8 +476,259 @@ describe('useContentOrdering', () => {
 
 			const {stableItems} = callHook({messages: [], events});
 			const ids = stableItems.map(i => i.data.id);
-			// Sequential calls naturally group correctly by timestamp
 			expect(ids).toEqual(['pre-A', 'post-A', 'pre-B', 'post-B']);
+		});
+
+		it('appends orphan PostToolUse (no matching PreToolUse) at end', () => {
+			const events = [
+				makeEvent({
+					id: 'pre-A',
+					hookName: 'PreToolUse',
+					toolName: 'Bash',
+					toolUseId: 'A',
+					status: 'passthrough',
+					timestamp: new Date(1000),
+				}),
+				makeEvent({
+					id: 'post-orphan',
+					hookName: 'PostToolUse',
+					toolName: 'Glob',
+					toolUseId: 'Z',
+					status: 'passthrough',
+					timestamp: new Date(1001),
+				}),
+			];
+
+			const {stableItems} = callHook({messages: [], events});
+			const ids = stableItems.map(i => i.data.id);
+			expect(ids).toEqual(['pre-A', 'post-orphan']);
+		});
+
+		it('preserves messages interleaved with tool events', () => {
+			const messages = [makeMessage('msg-1', 'assistant', new Date(1001))];
+			const events = [
+				makeEvent({
+					id: 'pre-A',
+					hookName: 'PreToolUse',
+					toolName: 'Glob',
+					toolUseId: 'A',
+					status: 'passthrough',
+					timestamp: new Date(1000),
+				}),
+				makeEvent({
+					id: 'pre-B',
+					hookName: 'PreToolUse',
+					toolName: 'Glob',
+					toolUseId: 'B',
+					status: 'passthrough',
+					timestamp: new Date(1002),
+				}),
+				makeEvent({
+					id: 'post-A',
+					hookName: 'PostToolUse',
+					toolName: 'Glob',
+					toolUseId: 'A',
+					status: 'passthrough',
+					timestamp: new Date(1003),
+				}),
+				makeEvent({
+					id: 'post-B',
+					hookName: 'PostToolUse',
+					toolName: 'Glob',
+					toolUseId: 'B',
+					status: 'passthrough',
+					timestamp: new Date(1004),
+				}),
+			];
+
+			const {stableItems} = callHook({messages, events});
+			const ids = stableItems.map(i => i.data.id);
+
+			// pre-A, post-A grouped; message stays between; pre-B, post-B grouped
+			expect(ids).toEqual(['pre-A', 'post-A', 'msg-1', 'pre-B', 'post-B']);
+		});
+
+		it('leaves events without toolUseId unaffected', () => {
+			const events = [
+				makeEvent({
+					id: 'notif-1',
+					hookName: 'Notification',
+					status: 'passthrough',
+					timestamp: new Date(1000),
+				}),
+				makeEvent({
+					id: 'pre-A',
+					hookName: 'PreToolUse',
+					toolName: 'Bash',
+					toolUseId: 'A',
+					status: 'passthrough',
+					timestamp: new Date(1001),
+				}),
+				makeEvent({
+					id: 'notif-2',
+					hookName: 'Notification',
+					status: 'passthrough',
+					timestamp: new Date(1002),
+				}),
+				makeEvent({
+					id: 'post-A',
+					hookName: 'PostToolUse',
+					toolName: 'Bash',
+					toolUseId: 'A',
+					status: 'passthrough',
+					timestamp: new Date(1003),
+				}),
+			];
+
+			const {stableItems} = callHook({messages: [], events});
+			const ids = stableItems.map(i => i.data.id);
+			expect(ids).toEqual(['notif-1', 'pre-A', 'post-A', 'notif-2']);
+		});
+
+		it('groups PostToolUseFailure after matching PreToolUse', () => {
+			const events = [
+				makeEvent({
+					id: 'pre-A',
+					hookName: 'PreToolUse',
+					toolName: 'Bash',
+					toolUseId: 'A',
+					status: 'passthrough',
+					timestamp: new Date(1000),
+				}),
+				makeEvent({
+					id: 'pre-B',
+					hookName: 'PreToolUse',
+					toolName: 'Bash',
+					toolUseId: 'B',
+					status: 'passthrough',
+					timestamp: new Date(1001),
+				}),
+				makeEvent({
+					id: 'fail-A',
+					hookName: 'PostToolUseFailure' as HookEventDisplay['hookName'],
+					toolName: 'Bash',
+					toolUseId: 'A',
+					status: 'passthrough',
+					timestamp: new Date(1002),
+				}),
+				makeEvent({
+					id: 'post-B',
+					hookName: 'PostToolUse',
+					toolName: 'Bash',
+					toolUseId: 'B',
+					status: 'passthrough',
+					timestamp: new Date(1003),
+				}),
+			];
+
+			const {stableItems} = callHook({messages: [], events});
+			const ids = stableItems.map(i => i.data.id);
+			expect(ids).toEqual(['pre-A', 'fail-A', 'pre-B', 'post-B']);
+		});
+	});
+
+	describe('static/active split (findStableCutoff)', () => {
+		it('puts all items in staticItems when every PreToolUse has a matching PostToolUse', () => {
+			const events = [
+				makeEvent({
+					id: 'pre-A',
+					hookName: 'PreToolUse',
+					toolName: 'Bash',
+					toolUseId: 'A',
+					status: 'passthrough',
+					timestamp: new Date(1000),
+				}),
+				makeEvent({
+					id: 'post-A',
+					hookName: 'PostToolUse',
+					toolName: 'Bash',
+					toolUseId: 'A',
+					status: 'passthrough',
+					timestamp: new Date(1001),
+				}),
+			];
+
+			const {staticItems, activeItems} = callHook({messages: [], events});
+			expect(staticItems).toHaveLength(2);
+			expect(activeItems).toHaveLength(0);
+		});
+
+		it('moves unmatched PreToolUse and everything after into activeItems', () => {
+			const events = [
+				makeEvent({
+					id: 'pre-A',
+					hookName: 'PreToolUse',
+					toolName: 'Bash',
+					toolUseId: 'A',
+					status: 'passthrough',
+					timestamp: new Date(1000),
+				}),
+				makeEvent({
+					id: 'post-A',
+					hookName: 'PostToolUse',
+					toolName: 'Bash',
+					toolUseId: 'A',
+					status: 'passthrough',
+					timestamp: new Date(1001),
+				}),
+				makeEvent({
+					id: 'pre-B',
+					hookName: 'PreToolUse',
+					toolName: 'Glob',
+					toolUseId: 'B',
+					status: 'passthrough',
+					timestamp: new Date(1002),
+				}),
+				makeEvent({
+					id: 'notif-1',
+					hookName: 'Notification',
+					status: 'passthrough',
+					timestamp: new Date(1003),
+				}),
+			];
+
+			const {staticItems, activeItems} = callHook({messages: [], events});
+			expect(staticItems.map(i => i.data.id)).toEqual(['pre-A', 'post-A']);
+			expect(activeItems.map(i => i.data.id)).toEqual(['pre-B', 'notif-1']);
+		});
+
+		it('all items are active when first PreToolUse is unmatched', () => {
+			const events = [
+				makeEvent({
+					id: 'pre-A',
+					hookName: 'PreToolUse',
+					toolName: 'Glob',
+					toolUseId: 'A',
+					status: 'passthrough',
+					timestamp: new Date(1000),
+				}),
+			];
+
+			const {staticItems, activeItems} = callHook({messages: [], events});
+			expect(staticItems).toHaveLength(0);
+			expect(activeItems).toHaveLength(1);
+		});
+
+		it('events without toolUseId are always stable', () => {
+			const events = [
+				makeEvent({
+					id: 'notif-1',
+					hookName: 'Notification',
+					status: 'passthrough',
+					timestamp: new Date(1000),
+				}),
+				makeEvent({
+					id: 'pre-no-id',
+					hookName: 'PreToolUse',
+					toolName: 'Bash',
+					status: 'passthrough',
+					timestamp: new Date(1001),
+				}),
+			];
+
+			const {staticItems, activeItems} = callHook({messages: [], events});
+			expect(staticItems).toHaveLength(2);
+			expect(activeItems).toHaveLength(0);
 		});
 	});
 

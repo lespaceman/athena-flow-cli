@@ -2,7 +2,6 @@ import React from 'react';
 import {Box, Text} from 'ink';
 
 // Layout: [GUTTER 2 ("⎿ ")][CONTENT...][RIGHT_PAD 2]
-// Left margin is provided by the HookEvent container (EVENT_LEFT_MARGIN=2)
 const GUTTER_WIDTH = 2;
 const RIGHT_PAD = 2;
 const TOTAL_OVERHEAD = GUTTER_WIDTH + RIGHT_PAD;

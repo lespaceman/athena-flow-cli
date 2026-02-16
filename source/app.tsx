@@ -25,7 +25,10 @@ import {
 	type IsolationConfig,
 	generateId,
 } from './types/index.js';
-import {useContentOrdering} from './hooks/useContentOrdering.js';
+import {
+	type ContentItem,
+	useContentOrdering,
+} from './hooks/useContentOrdering.js';
 import {type PermissionDecision} from './types/server.js';
 import {parseInput} from './commands/parser.js';
 import {executeCommand} from './commands/executor.js';
@@ -50,6 +53,23 @@ type Props = {
 type AppPhase =
 	| {type: 'session-select'}
 	| {type: 'main'; initialSessionId?: string};
+
+function renderContentItem(
+	item: ContentItem,
+	verbose?: boolean,
+): React.ReactNode {
+	if (item.type === 'message') {
+		return <Message key={item.data.id} message={item.data} />;
+	}
+	return (
+		<ErrorBoundary
+			key={item.data.id}
+			fallback={<Text color="red">[Error rendering event]</Text>}
+		>
+			<HookEvent event={item.data} verbose={verbose} />
+		</ErrorBoundary>
+	);
+}
 
 /** Fallback for crashed PermissionDialog — lets user press Escape to deny. */
 function PermissionErrorFallback({onDeny}: {onDeny: () => void}) {
@@ -250,7 +270,7 @@ function AppContent({
 		resolveQuestion(currentQuestionRequest.id, {});
 	}, [currentQuestionRequest, resolveQuestion]);
 
-	const {stableItems, tasks} = useContentOrdering({
+	const {staticItems, activeItems, tasks} = useContentOrdering({
 		messages,
 		events,
 	});
@@ -304,21 +324,17 @@ function AppContent({
 				/>
 			)}
 
-			{/* Completed items — rendered once via Static, never re-render */}
-			<Static items={stableItems}>
-				{item =>
-					item.type === 'message' ? (
-						<Message key={item.data.id} message={item.data} />
-					) : (
-						<ErrorBoundary
-							key={item.data.id}
-							fallback={<Text color="red">[Error rendering event]</Text>}
-						>
-							<HookEvent event={item.data} verbose={verbose} />
-						</ErrorBoundary>
-					)
-				}
+			{/* Settled items — committed to scrollback, never re-rendered */}
+			<Static items={staticItems}>
+				{item => renderContentItem(item, verbose)}
 			</Static>
+
+			{/* Active zone — may still be reordered by incoming PostToolUse results */}
+			{activeItems.length > 0 && (
+				<Box flexDirection="column">
+					{activeItems.map(item => renderContentItem(item, verbose))}
+				</Box>
+			)}
 
 			{/* Active task list - always dynamic, shows latest state */}
 			<TaskList
