@@ -58,6 +58,8 @@ import type {SessionEntry} from '../../shared/types/session';
 import type {AthenaHarness} from '../../infra/plugins/config';
 import {listSessions, getSessionMeta} from '../../infra/sessions/registry';
 import {fit} from '../../shared/utils/format';
+import {copyToClipboard} from '../../shared/utils/clipboard';
+import {extractYankContent} from '../../ui/utils/yankContent';
 import type {WorkflowConfig} from '../../core/workflows/types';
 import SetupWizard from '../../setup/SetupWizard';
 import {bootstrapRuntimeConfig} from '../bootstrap/bootstrapConfig';
@@ -530,6 +532,13 @@ function AppContent({
 		},
 	});
 
+	const yankAtCursor = useCallback(() => {
+		const entry = filteredEntriesRef.current[feedNav.feedCursor];
+		if (!entry) return;
+		const content = extractYankContent(entry);
+		copyToClipboard(content);
+	}, [feedNav.feedCursor]);
+
 	useFeedKeyboard({
 		isActive: focusMode === 'feed' && !dialogActive && !pagerActive,
 		pageStep,
@@ -539,6 +548,7 @@ function AppContent({
 			jumpToTail: feedNav.jumpToTail,
 			jumpToTop: feedNav.jumpToTop,
 			expandAtCursor: handleExpandForPager,
+			yankAtCursor,
 			cycleFocus,
 			setFocusMode,
 			setInputMode,

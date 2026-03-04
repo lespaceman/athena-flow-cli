@@ -6,6 +6,7 @@ export type FeedKeyboardCallbacks = {
 	jumpToTail: () => void;
 	jumpToTop: () => void;
 	expandAtCursor: () => void;
+	yankAtCursor: () => void;
 	cycleFocus: () => void;
 	setFocusMode: (mode: 'feed' | 'input' | 'todo') => void;
 	setInputMode: (mode: 'normal' | 'search') => void;
@@ -80,6 +81,11 @@ export function useFeedKeyboard({
 
 				if (key.return || (key.ctrl && key.rightArrow)) {
 					callbacks.expandAtCursor();
+					return;
+				}
+
+				if (input === 'y' || input === 'Y') {
+					callbacks.yankAtCursor();
 					return;
 				}
 
