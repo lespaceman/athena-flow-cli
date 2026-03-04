@@ -4,3 +4,4 @@ dist
 .worktrees
 node_modules
 CHANGELOG.md
+docs/mockup.html
