@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.3](https://github.com/lespaceman/athena-flow/compare/athena-flow-cli-v0.3.2...athena-flow-cli-v0.3.3) (2026-03-04)
+
+
+### Features
+
+* session picker first-prompt titles, loading state, and terminal tab title ([bffb200](https://github.com/lespaceman/athena-flow/commit/bffb2003050ea2bd99a470e9505d70bab9248812))
+
+
+### Bug Fixes
+
+* restore defensive guard in SessionPicker input handler ([daeca97](https://github.com/lespaceman/athena-flow/commit/daeca975de1e2f8a86418d6f784bee46f453bbcf))
+
 ## [0.3.2](https://github.com/lespaceman/athena-flow/compare/athena-flow-cli-v0.3.1...athena-flow-cli-v0.3.2) (2026-03-04)
 
 
