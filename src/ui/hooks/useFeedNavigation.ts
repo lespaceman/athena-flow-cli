@@ -11,18 +11,12 @@ export type UseFeedNavigationOptions = {
 export type UseFeedNavigationResult = {
 	feedCursor: number;
 	tailFollow: boolean;
-	expandedId: string | null;
-	detailScroll: number;
 	feedViewportStart: number;
 	moveFeedCursor: (delta: number) => void;
 	jumpToTail: () => void;
 	jumpToTop: () => void;
-	toggleExpandedAtCursor: () => void;
-	scrollDetail: (delta: number, maxDetailScroll: number) => void;
 	setFeedCursor: React.Dispatch<React.SetStateAction<number>>;
 	setTailFollow: React.Dispatch<React.SetStateAction<boolean>>;
-	setExpandedId: React.Dispatch<React.SetStateAction<string | null>>;
-	setDetailScroll: React.Dispatch<React.SetStateAction<number>>;
 };
 
 export function useFeedNavigation({
@@ -32,8 +26,6 @@ export function useFeedNavigation({
 }: UseFeedNavigationOptions): UseFeedNavigationResult {
 	const [feedCursor, setFeedCursor] = useState(0);
 	const [tailFollow, setTailFollow] = useState(true);
-	const [expandedId, setExpandedId] = useState<string | null>(null);
-	const [detailScroll, setDetailScroll] = useState(0);
 
 	const filteredEntriesRef = useRef(filteredEntries);
 	filteredEntriesRef.current = filteredEntries;
@@ -54,18 +46,6 @@ export function useFeedNavigation({
 		setFeedCursor(Math.max(0, filteredEntries.length - 1));
 	}, [filteredEntries.length, tailFollow]);
 
-	// Reset detail scroll when expanded entry changes
-	useEffect(() => {
-		setDetailScroll(0);
-	}, [expandedId]);
-
-	// Collapse expanded entry if it disappears from filtered list
-	useEffect(() => {
-		if (expandedId && !filteredEntries.some(entry => entry.id === expandedId)) {
-			setExpandedId(null);
-		}
-	}, [expandedId, filteredEntries]);
-
 	const staticFloorRef = useRef(staticFloor);
 	staticFloorRef.current = staticFloor;
 
@@ -85,18 +65,6 @@ export function useFeedNavigation({
 	const jumpToTop = useCallback(() => {
 		setTailFollow(false);
 		setFeedCursor(staticFloorRef.current);
-	}, []);
-
-	const toggleExpandedAtCursor = useCallback(() => {
-		const entry = filteredEntriesRef.current[feedCursor];
-		if (!entry?.expandable) return;
-		setExpandedId(prev => (prev === entry.id ? null : entry.id));
-	}, [feedCursor]);
-
-	const scrollDetail = useCallback((delta: number, maxDetailScroll: number) => {
-		setDetailScroll(prev =>
-			Math.max(0, Math.min(prev + delta, maxDetailScroll)),
-		);
 	}, []);
 
 	const feedViewportStart = useMemo(() => {
@@ -130,17 +98,11 @@ export function useFeedNavigation({
 	return {
 		feedCursor,
 		tailFollow,
-		expandedId,
-		detailScroll,
 		feedViewportStart,
 		moveFeedCursor,
 		jumpToTail,
 		jumpToTop,
-		toggleExpandedAtCursor,
-		scrollDetail,
 		setFeedCursor,
 		setTailFollow,
-		setExpandedId,
-		setDetailScroll,
 	};
 }

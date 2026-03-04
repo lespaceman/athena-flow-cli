@@ -1,6 +1,7 @@
 import {Marked, type Tokens} from 'marked';
 import {markedTerminal} from 'marked-terminal';
 import chalk from 'chalk';
+import Table from 'cli-table3';
 import {urlLink} from './hyperlink';
 
 /**
@@ -32,6 +33,83 @@ function baseTerminalOptions(width: number): Record<string, unknown> {
 	};
 }
 
+const TABLE_CHARS = {
+	top: '\u2500',
+	'top-mid': '\u252C',
+	'top-left': '\u250C',
+	'top-right': '\u2510',
+	bottom: '\u2500',
+	'bottom-mid': '\u2534',
+	'bottom-left': '\u2514',
+	'bottom-right': '\u2518',
+	left: '\u2502',
+	'left-mid': '\u251C',
+	mid: '\u2500',
+	'mid-mid': '\u253C',
+	right: '\u2502',
+	'right-mid': '\u2524',
+	middle: '\u2502',
+};
+
+function computeColWidths(
+	token: Tokens.Table,
+	terminalWidth: number,
+): number[] {
+	const colCount = token.header.length;
+	const overhead = colCount + 1 + 2 * colCount;
+	const available = Math.max(terminalWidth - overhead, colCount * 4);
+
+	const stripMd = (s: string) => s.replace(/\*\*|__|~~|`/g, '');
+	const maxLens = token.header.map(h => stripMd(h.text).length);
+	for (const row of token.rows) {
+		for (let i = 0; i < row.length; i++) {
+			maxLens[i] = Math.max(maxLens[i] ?? 0, stripMd(row[i]!.text).length);
+		}
+	}
+
+	const totalContent = maxLens.reduce((a, b) => a + b, 0) || 1;
+
+	return maxLens.map(len =>
+		Math.max(4, Math.floor((len / totalContent) * available)),
+	);
+}
+
+/**
+ * Table renderer using cli-table3 for proper box-drawing table output.
+ */
+function tableRenderer(m: Marked, width: number) {
+	return {
+		table(token: Tokens.Table): string {
+			const colWidths = computeColWidths(token, width);
+			const renderInline = (text: string): string => {
+				const result = m.parseInline(text);
+				return typeof result === 'string' ? result : text;
+			};
+			const head = token.header.map(cell => renderInline(cell.text));
+
+			const table = new Table({
+				head,
+				colWidths,
+				wordWrap: true,
+				wrapOnWordBoundary: true,
+				style: {
+					head: [],
+					border: [],
+					'padding-left': 1,
+					'padding-right': 1,
+				},
+				chars: TABLE_CHARS,
+			});
+
+			for (const row of token.rows) {
+				table.push(row.map(cell => renderInline(cell.text)));
+			}
+
+			return chalk.reset(table.toString()) + '\n';
+		},
+	};
+}
+
 /**
  * Custom list renderer that uses parseInline for proper inline formatting
  * (bold, italic, code) inside list items.
@@ -42,7 +120,7 @@ function listRenderer(m: Marked) {
 			let body = '';
 			for (let i = 0; i < token.items.length; i++) {
 				const item = token.items[i]!;
-				const bullet = token.ordered ? `${i + 1}. ` : '  • ';
+				const bullet = token.ordered ? `${i + 1}. ` : '  \u2022 ';
 				const inlined = m.parseInline(item.text);
 				const text =
 					typeof inlined === 'string'
@@ -57,7 +135,7 @@ function listRenderer(m: Marked) {
 
 /**
  * Create a Marked instance with terminal rendering, custom list formatting,
- * and optional extra renderer overrides (heading, hr, table, etc.).
+ * cli-table3 table rendering, and optional extra renderer overrides.
  */
 export function createMarkedInstance(
 	width: number,
@@ -70,6 +148,7 @@ export function createMarkedInstance(
 	m.use({
 		renderer: {
 			...listRenderer(m),
+			...tableRenderer(m, width),
 			link({href, text}: Tokens.Link): string {
 				const displayText = typeof text === 'string' ? text : href;
 				return chalk.cyan(urlLink(href, displayText));

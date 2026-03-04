@@ -1,4 +1,4 @@
-import {type TimelineEntry, type RunSummary} from '../../core/feed/timeline';
+import {type RunSummary} from '../../core/feed/timeline';
 import {
 	type TodoPanelItem,
 	type TodoGlyphColors,
@@ -8,15 +8,6 @@ import chalk from 'chalk';
 import stripAnsi from 'strip-ansi';
 import {compactText, fitAnsi, formatRunLabel} from '../../shared/utils/format';
 import {type Theme} from '../theme/types';
-
-export type DetailViewState = {
-	expandedEntry: TimelineEntry;
-	detailScroll: number;
-	maxDetailScroll: number;
-	detailLines: string[];
-	detailContentRows: number;
-	showLineNumbers?: boolean;
-};
 
 export type TodoViewState = {
 	actualTodoRows: number;
@@ -42,7 +33,6 @@ export type RunOverlayState = {
 
 export type BuildBodyLinesOptions = {
 	innerWidth: number;
-	detail: DetailViewState | null;
 	todo: TodoViewState;
 	runOverlay: RunOverlayState;
 	theme: Theme;
@@ -50,183 +40,122 @@ export type BuildBodyLinesOptions = {
 
 export function buildBodyLines({
 	innerWidth,
-	detail,
 	todo,
 	runOverlay,
 	theme,
 }: BuildBodyLinesOptions): string[] {
 	const bodyLines: string[] = [];
 
-	if (detail) {
+	const {actualTodoRows, todoPanel: tp, focusMode: todoFocus} = todo;
+	const {actualRunOverlayRows, runSummaries, runFilter} = runOverlay;
+
+	if (actualTodoRows > 0) {
 		const {
-			expandedEntry,
-			detailScroll,
-			maxDetailScroll,
-			detailLines,
-			detailContentRows,
-		} = detail;
-		const start = Math.min(detailScroll, maxDetailScroll);
-		const hasDetailSpacer = detailContentRows > 1;
-		const visibleDetailRows = hasDetailSpacer
-			? detailContentRows - 1
-			: detailContentRows;
-		const end = Math.min(detailLines.length, start + visibleDetailRows);
-		const lineNumberWidth = String(Math.max(1, detailLines.length)).length;
-		const rangeLabel =
-			detailLines.length === 0
-				? '0/0'
-				: `${start + 1}-${end}/${detailLines.length}`;
-		const sep = chalk.hex(theme.textMuted)('|');
-		const detailNameSource =
-			expandedEntry.toolColumn.trim().length > 0
-				? expandedEntry.toolColumn
-				: expandedEntry.op;
-		const detailLabel = chalk.bold.hex(theme.accent)(
-			compactText(detailNameSource, 18),
-		);
-		const eventId = chalk.hex(theme.textMuted)(
-			`E:${compactText(expandedEntry.id, 14)}`,
-		);
-		const opLabel = chalk.hex(theme.text)(expandedEntry.op);
-		const actorLabel = chalk.hex(theme.textMuted)(expandedEntry.actor);
-		const rangeText = chalk.hex(theme.textMuted)(rangeLabel);
-		const escHint = chalk.hex(theme.textMuted)('Esc back');
+			todoScroll: tScroll,
+			todoCursor: tCursor,
+			visibleTodoItems: items,
+		} = tp;
+		const g = todoGlyphs(todo.ascii, todo.colors);
+
+		const isWorking = todo.appMode === 'working';
+		const idleGlyph = todo.ascii ? '*' : '\u25C7';
+		const rawLeadGlyph = isWorking ? todo.spinnerFrame : idleGlyph;
+		const leadGlyph = chalk.hex(theme.status.info)(rawLeadGlyph);
+		const statusWord = isWorking ? 'WORKING' : 'IDLE';
+		const statusColor = isWorking ? todo.colors?.doing : todo.colors?.default;
+		const coloredStatus = statusColor
+			? chalk.hex(statusColor)(statusWord)
+			: statusWord;
+		const stats =
+			todo.totalCount > 0
+				? `  ${chalk.hex(theme.text)(`${todo.doneCount}/${todo.totalCount}`)} ${chalk.hex(theme.textMuted)('tasks done')}`
+				: '';
 		bodyLines.push(
-			fitAnsi(
-				`${detailLabel} ${sep} ${eventId} ${sep} ${opLabel} ${sep} ${actorLabel} ${sep} ${rangeText} ${sep} ${escHint}`,
-				innerWidth,
-			),
+			fitAnsi(`${leadGlyph} ${coloredStatus}${stats}`, innerWidth),
 		);
-		if (hasDetailSpacer) {
-			bodyLines.push(fitAnsi('', innerWidth));
+
+		const itemSlots = actualTodoRows - 2; // minus header and divider
+		const totalItems = items.length;
+		const hasScrollUp = tScroll > 0;
+
+		// Two-pass affordance calculation: deduct scroll-up first,
+		// then check scroll-down against the reduced slot count.
+		let renderSlots = itemSlots;
+		if (hasScrollUp) renderSlots--;
+		const hasScrollDown = tScroll + renderSlots < totalItems;
+		if (hasScrollDown) renderSlots--;
+
+		if (hasScrollUp) {
+			const aboveCount = tScroll;
+			bodyLines.push(fitAnsi(`${g.scrollUp}  +${aboveCount} more`, innerWidth));
 		}
-		for (let i = 0; i < visibleDetailRows; i++) {
-			const line = detailLines[start + i];
-			if (line === undefined) {
+
+		for (let i = 0; i < renderSlots; i++) {
+			const item = items[tScroll + i];
+			if (!item) {
 				bodyLines.push(fitAnsi('', innerWidth));
 				continue;
 			}
-			if (detail.showLineNumbers !== false) {
-				const lineNo = String(start + i + 1).padStart(lineNumberWidth, ' ');
-				bodyLines.push(fitAnsi(`${lineNo} | ${line}`, innerWidth));
-			} else {
-				bodyLines.push(fitAnsi(line, innerWidth));
-			}
-		}
-	} else {
-		const {actualTodoRows, todoPanel: tp, focusMode: todoFocus} = todo;
-		const {actualRunOverlayRows, runSummaries, runFilter} = runOverlay;
+			const isFocused = todoFocus === 'todo' && tCursor === tScroll + i;
+			const caret = isFocused ? g.caret : ' ';
+			const row = g.styledRow(item);
 
-		if (actualTodoRows > 0) {
-			const {
-				todoScroll: tScroll,
-				todoCursor: tCursor,
-				visibleTodoItems: items,
-			} = tp;
-			const g = todoGlyphs(todo.ascii, todo.colors);
+			const glyphStr = row.glyph;
+			const suffixStr = row.suffix;
+			const elapsedStr = item.elapsed ? row.elapsed(item.elapsed) : '';
 
-			const isWorking = todo.appMode === 'working';
-			const idleGlyph = todo.ascii ? '*' : '\u25C7';
-			const rawLeadGlyph = isWorking ? todo.spinnerFrame : idleGlyph;
-			const leadGlyph = chalk.hex(theme.status.info)(rawLeadGlyph);
-			const statusWord = isWorking ? 'WORKING' : 'IDLE';
-			const statusColor = isWorking ? todo.colors?.doing : todo.colors?.default;
-			const coloredStatus = statusColor
-				? chalk.hex(statusColor)(statusWord)
-				: statusWord;
-			const stats =
-				todo.totalCount > 0
-					? `  ${chalk.hex(theme.text)(`${todo.doneCount}/${todo.totalCount}`)} ${chalk.hex(theme.textMuted)('tasks done')}`
-					: '';
-			bodyLines.push(
-				fitAnsi(`${leadGlyph} ${coloredStatus}${stats}`, innerWidth),
+			// Layout: [caret] [glyph]  [text...] [suffix] [elapsed]
+			const fixedWidth = 4; // caret + space + glyph + 2 spaces
+			const suffixWidth = suffixStr ? stripAnsi(suffixStr).length + 1 : 0;
+			const elapsedWidth = elapsedStr ? stripAnsi(elapsedStr).length + 1 : 0;
+			const maxTitleWidth = Math.max(
+				1,
+				innerWidth - fixedWidth - suffixWidth - elapsedWidth,
 			);
+			const title = row.text(fitAnsi(item.text, maxTitleWidth).trimEnd());
 
-			const itemSlots = actualTodoRows - 2; // minus header and divider
-			const totalItems = items.length;
-			const hasScrollUp = tScroll > 0;
-
-			// Two-pass affordance calculation: deduct scroll-up first,
-			// then check scroll-down against the reduced slot count.
-			let renderSlots = itemSlots;
-			if (hasScrollUp) renderSlots--;
-			const hasScrollDown = tScroll + renderSlots < totalItems;
-			if (hasScrollDown) renderSlots--;
-
-			if (hasScrollUp) {
-				const aboveCount = tScroll;
-				bodyLines.push(
-					fitAnsi(`${g.scrollUp}  +${aboveCount} more`, innerWidth),
-				);
-			}
-
-			for (let i = 0; i < renderSlots; i++) {
-				const item = items[tScroll + i];
-				if (!item) {
-					bodyLines.push(fitAnsi('', innerWidth));
-					continue;
-				}
-				const isFocused = todoFocus === 'todo' && tCursor === tScroll + i;
-				const caret = isFocused ? g.caret : ' ';
-				const row = g.styledRow(item);
-
-				const glyphStr = row.glyph;
-				const suffixStr = row.suffix;
-				const elapsedStr = item.elapsed ? row.elapsed(item.elapsed) : '';
-
-				// Layout: [caret] [glyph]  [text...] [suffix] [elapsed]
-				const fixedWidth = 4; // caret + space + glyph + 2 spaces
-				const suffixWidth = suffixStr ? stripAnsi(suffixStr).length + 1 : 0;
-				const elapsedWidth = elapsedStr ? stripAnsi(elapsedStr).length + 1 : 0;
-				const maxTitleWidth = Math.max(
+			let line = `${caret} ${glyphStr}  ${title}`;
+			if (suffixStr) line += ` ${suffixStr}`;
+			if (elapsedStr) {
+				const currentLen = stripAnsi(line).length;
+				const pad = Math.max(
 					1,
-					innerWidth - fixedWidth - suffixWidth - elapsedWidth,
+					innerWidth - currentLen - stripAnsi(elapsedStr).length,
 				);
-				const title = row.text(fitAnsi(item.text, maxTitleWidth).trimEnd());
-
-				let line = `${caret} ${glyphStr}  ${title}`;
-				if (suffixStr) line += ` ${suffixStr}`;
-				if (elapsedStr) {
-					const currentLen = stripAnsi(line).length;
-					const pad = Math.max(
-						1,
-						innerWidth - currentLen - stripAnsi(elapsedStr).length,
-					);
-					line += ' '.repeat(pad) + elapsedStr;
-				}
-				bodyLines.push(fitAnsi(line, innerWidth));
+				line += ' '.repeat(pad) + elapsedStr;
 			}
-
-			if (hasScrollDown) {
-				const moreCount = totalItems - (tScroll + renderSlots);
-				bodyLines.push(
-					fitAnsi(`${g.scrollDown}  +${moreCount} more`, innerWidth),
-				);
-			}
-
-			// Divider line
-			bodyLines.push(fitAnsi(g.dividerChar.repeat(innerWidth), innerWidth));
+			bodyLines.push(fitAnsi(line, innerWidth));
 		}
 
-		if (actualRunOverlayRows > 0) {
-			bodyLines.push(fitAnsi('[RUNS]', innerWidth));
-			const listRows = actualRunOverlayRows - 1;
-			const start = Math.max(0, runSummaries.length - listRows);
-			for (let i = 0; i < actualRunOverlayRows - 1; i++) {
-				const summary = runSummaries[start + i];
-				if (!summary) {
-					bodyLines.push(fitAnsi('', innerWidth));
-					continue;
-				}
-				const active =
-					runFilter !== 'all' && runFilter === summary.runId ? '*' : ' ';
-				const line = `${active} ${formatRunLabel(summary.runId)} ${summary.status.padEnd(9, ' ')} ${compactText(summary.title, 48)}`;
-				bodyLines.push(fitAnsi(line, innerWidth));
-			}
+		if (hasScrollDown) {
+			const moreCount = totalItems - (tScroll + renderSlots);
+			bodyLines.push(
+				fitAnsi(`${g.scrollDown}  +${moreCount} more`, innerWidth),
+			);
 		}
 
-		// Feed rows are rendered by <FeedGrid> in app.tsx — not included here.
+		// Divider line
+		bodyLines.push(fitAnsi(g.dividerChar.repeat(innerWidth), innerWidth));
 	}
+
+	if (actualRunOverlayRows > 0) {
+		bodyLines.push(fitAnsi('[RUNS]', innerWidth));
+		const listRows = actualRunOverlayRows - 1;
+		const start = Math.max(0, runSummaries.length - listRows);
+		for (let i = 0; i < actualRunOverlayRows - 1; i++) {
+			const summary = runSummaries[start + i];
+			if (!summary) {
+				bodyLines.push(fitAnsi('', innerWidth));
+				continue;
+			}
+			const active =
+				runFilter !== 'all' && runFilter === summary.runId ? '*' : ' ';
+			const line = `${active} ${formatRunLabel(summary.runId)} ${summary.status.padEnd(9, ' ')} ${compactText(summary.title, 48)}`;
+			bodyLines.push(fitAnsi(line, innerWidth));
+		}
+	}
+
+	// Feed rows are rendered by <FeedGrid> in app.tsx — not included here.
 
 	return bodyLines;
 }

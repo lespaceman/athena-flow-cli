@@ -1,44 +1,32 @@
 import {useInput} from 'ink';
-import {type TimelineEntry} from '../../core/feed/timeline';
 import {startInputMeasure} from '../../shared/utils/perf';
 
 export type FeedKeyboardCallbacks = {
 	moveFeedCursor: (delta: number) => void;
 	jumpToTail: () => void;
 	jumpToTop: () => void;
-	toggleExpandedAtCursor: () => void;
-	scrollDetail: (delta: number, maxDetailScroll: number) => void;
+	expandAtCursor: () => void;
 	cycleFocus: () => void;
 	setFocusMode: (mode: 'feed' | 'input' | 'todo') => void;
 	setInputMode: (mode: 'normal' | 'search') => void;
 	setInputValue: (value: string) => void;
-	setExpandedId: (id: string | null) => void;
 	setShowRunOverlay: (show: boolean) => void;
 	setSearchQuery: (query: string) => void;
 	setSearchMatchPos: React.Dispatch<React.SetStateAction<number>>;
 	setFeedCursor: (cursor: number) => void;
 	setTailFollow: (follow: boolean) => void;
-	setDetailScroll: (scroll: number) => void;
 };
 
 export type FeedKeyboardOptions = {
 	isActive: boolean;
-	expandedEntry: TimelineEntry | null;
-	expandedId: string | null;
 	pageStep: number;
-	detailPageStep: number;
-	maxDetailScroll: number;
 	searchMatches: number[];
 	callbacks: FeedKeyboardCallbacks;
 };
 
 export function useFeedKeyboard({
 	isActive,
-	expandedEntry,
-	expandedId,
 	pageStep,
-	detailPageStep,
-	maxDetailScroll,
 	searchMatches,
 	callbacks,
 }: FeedKeyboardOptions): void {
@@ -46,48 +34,9 @@ export function useFeedKeyboard({
 		(input, key) => {
 			const done = startInputMeasure('feed.keyboard', input, key);
 			try {
-				// Ctrl+T: toggle todo panel (handled globally, not here)
-
 				// Escape
 				if (key.escape) {
-					if (expandedId) {
-						callbacks.setExpandedId(null);
-						return;
-					}
 					callbacks.setShowRunOverlay(false);
-					return;
-				}
-
-				// Detail view mode
-				if (expandedEntry) {
-					if (key.return || input === 'q' || input === 'Q') {
-						callbacks.setExpandedId(null);
-						return;
-					}
-					if (key.home) {
-						callbacks.setDetailScroll(0);
-						return;
-					}
-					if (key.end) {
-						callbacks.setDetailScroll(maxDetailScroll);
-						return;
-					}
-					if (key.pageUp) {
-						callbacks.scrollDetail(-detailPageStep, maxDetailScroll);
-						return;
-					}
-					if (key.pageDown) {
-						callbacks.scrollDetail(detailPageStep, maxDetailScroll);
-						return;
-					}
-					if (key.upArrow || input === 'k' || input === 'K') {
-						callbacks.scrollDetail(-1, maxDetailScroll);
-						return;
-					}
-					if (key.downArrow || input === 'j' || input === 'J') {
-						callbacks.scrollDetail(1, maxDetailScroll);
-						return;
-					}
 					return;
 				}
 
@@ -130,7 +79,7 @@ export function useFeedKeyboard({
 				}
 
 				if (key.return || (key.ctrl && key.rightArrow)) {
-					callbacks.toggleExpandedAtCursor();
+					callbacks.expandAtCursor();
 					return;
 				}
 

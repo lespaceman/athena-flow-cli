@@ -13,7 +13,6 @@ type Props = {
 	feedViewportStart: number;
 	filteredEntries: TimelineEntry[];
 	feedCursor: number;
-	expandedId: string | null;
 	focusMode: string;
 	searchMatchSet: Set<number>;
 	ascii: boolean;
@@ -28,7 +27,6 @@ function FeedGridImpl({
 	feedViewportStart,
 	filteredEntries,
 	feedCursor,
-	expandedId,
 	focusMode,
 	searchMatchSet,
 	ascii,
@@ -87,7 +85,6 @@ function FeedGridImpl({
 		const isDuplicateActor = entry.duplicateActor;
 
 		const isFocused = focusMode === 'feed' && idx === feedCursor;
-		const isExpanded = expandedId === entry.id;
 		const isMatched = searchMatchSet.has(idx);
 
 		rows.push(
@@ -97,7 +94,7 @@ function FeedGridImpl({
 						entry,
 						cols,
 						focused: isFocused,
-						expanded: isExpanded,
+						expanded: false,
 						matched: isMatched,
 						isDuplicateActor,
 						ascii,

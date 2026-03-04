@@ -8,7 +8,6 @@ const baseCtx: FrameContext = {
 	searchQuery: '',
 	searchMatches: [],
 	searchMatchPos: 0,
-	expandedEntry: null,
 	isClaudeRunning: false,
 	inputValue: '',
 	cursorOffset: 0,

@@ -750,18 +750,33 @@ function AppContent({
 				done();
 			}
 		},
-		{isActive: !dialogActive},
+		{isActive: !dialogActive && !pagerActive},
 	);
 
 	// ── Pager mode ──────────────────────────────────────────
 	//
-	// The pager uses the terminal's alternate screen buffer (\x1B[?1049h)
-	// so its output is completely independent of Ink's rendering area.
-	// This is the same approach used by less, vim, and man.
+	// The pager uses the terminal's alternate screen buffer (\x1B[?1049h).
+	// IMPORTANT: We must NOT write to stdout during a React render cycle —
+	// Ink's log-update will immediately overwrite the alternate buffer.
+	// Instead, we set pagerActive=true first (so Ink renders <Box />),
+	// then write content in a useEffect AFTER Ink commits the empty output.
 
 	const PAGER_MARGIN = 3;
+	const pendingPagerEntryRef = useRef<TimelineEntry | null>(null);
 
-	const enterPager = useCallback((entry: TimelineEntry) => {
+	const handleExpandForPager = useCallback(() => {
+		const entry = filteredEntriesRef.current[feedNav.feedCursor];
+		if (!entry?.expandable) return;
+		pendingPagerEntryRef.current = entry;
+		setPagerActive(true);
+	}, [feedNav.feedCursor]);
+
+	// Write pager content AFTER Ink has committed the empty <Box /> render.
+	useEffect(() => {
+		if (!pagerActive || !pendingPagerEntryRef.current) return;
+		const entry = pendingPagerEntryRef.current;
+		pendingPagerEntryRef.current = null;
+
 		const contentWidth = Math.max(
 			10,
 			(process.stdout.columns ?? 80) - PAGER_MARGIN * 2,
@@ -781,34 +796,20 @@ function AppContent({
 
 		const marginedLines = lines.map(line => margin + line);
 
-		// Switch to alternate screen buffer, write content, show exit hint
 		process.stdout.write('\x1B[?1049h');
 		process.stdout.write('\x1B[H');
 		process.stdout.write(marginedLines.join('\n') + '\n\n');
 		process.stdout.write(
 			margin + chalk.dim('(press q or Escape to return)') + '\n',
 		);
-
-		setPagerActive(true);
-	}, []);
-
-	const exitPager = useCallback(() => {
-		// Return to the main screen buffer — Ink's output is preserved
-		process.stdout.write('\x1B[?1049l');
-		setPagerActive(false);
-	}, []);
-
-	const handleExpandForPager = useCallback(() => {
-		const entry = filteredEntriesRef.current[feedNav.feedCursor];
-		if (!entry?.expandable) return;
-		enterPager(entry);
-	}, [feedNav.feedCursor, enterPager]);
+	}, [pagerActive]);
 
 	// Pager exit handler
 	useInput(
 		(input, key) => {
 			if (key.escape || input === 'q' || input === 'Q') {
-				exitPager();
+				process.stdout.write('\x1B[?1049l');
+				setPagerActive(false);
 			}
 		},
 		{isActive: pagerActive},
@@ -855,7 +856,7 @@ function AppContent({
 	const hasColor = !process.env['NO_COLOR'];
 	const useAscii = !!ascii;
 	const spinnerFrame = useSpinner(
-		appMode.type === 'working' && todoPanel.todoVisible,
+		appMode.type === 'working' && todoPanel.todoVisible && !pagerActive,
 	);
 
 	const todoColors = useMemo(

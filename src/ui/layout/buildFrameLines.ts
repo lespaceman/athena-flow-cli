@@ -1,5 +1,4 @@
 import chalk from 'chalk';
-import {type TimelineEntry} from '../../core/feed/timeline';
 import {hintGlyphs} from '../glyphs/index';
 import {fit, fitAnsi, renderInputLines} from '../../shared/utils/format';
 
@@ -10,7 +9,6 @@ export type FrameContext = {
 	searchQuery: string;
 	searchMatches: number[];
 	searchMatchPos: number;
-	expandedEntry: TimelineEntry | null;
 	isClaudeRunning: boolean;
 	inputValue: string;
 	cursorOffset: number;
@@ -64,14 +62,6 @@ export function buildFrameLines(ctx: FrameContext): FrameLines {
 				[h.tab, 'Focus'],
 				['⌃P/N', 'History'],
 				[h.toggle, 'Hints'],
-			]);
-		}
-
-		if (ctx.expandedEntry) {
-			return buildHintPairs([
-				[h.arrowsUpDown, 'Scroll'],
-				[h.page, 'Page'],
-				[`${h.enter}/${h.escape}`, 'Back'],
 			]);
 		}
 
