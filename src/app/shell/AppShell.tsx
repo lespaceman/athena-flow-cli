@@ -57,6 +57,7 @@ import SessionPicker from '../../ui/components/SessionPicker';
 import type {SessionEntry} from '../../shared/types/session';
 import type {AthenaHarness} from '../../infra/plugins/config';
 import {listSessions, getSessionMeta} from '../../infra/sessions/registry';
+import chalk from 'chalk';
 import {fit} from '../../shared/utils/format';
 import {copyToClipboard} from '../../shared/utils/clipboard';
 import {extractYankContent} from '../../ui/utils/yankContent';
@@ -166,6 +167,8 @@ function AppContent({
 	const [hintsForced, setHintsForced] = useState<boolean | null>(null);
 	const [showRunOverlay, setShowRunOverlay] = useState(false);
 	const [searchQuery, setSearchQuery] = useState('');
+	const [toastMessage, setToastMessage] = useState<string | null>(null);
+	const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const messagesRef = useRef(messages);
 	messagesRef.current = messages;
 
@@ -532,12 +535,19 @@ function AppContent({
 		},
 	});
 
+	const showToast = useCallback((msg: string) => {
+		if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+		setToastMessage(msg);
+		toastTimerRef.current = setTimeout(() => setToastMessage(null), 1500);
+	}, []);
+
 	const yankAtCursor = useCallback(() => {
 		const entry = filteredEntriesRef.current[feedNav.feedCursor];
 		if (!entry) return;
 		const content = extractYankContent(entry);
 		copyToClipboard(content);
-	}, [feedNav.feedCursor]);
+		showToast('Copied to clipboard!');
+	}, [feedNav.feedCursor, showToast]);
 
 	useFeedKeyboard({
 		isActive: focusMode === 'feed' && !dialogActive && !pagerActive,
@@ -771,7 +781,13 @@ function AppContent({
 			/>
 			<Text>{sectionBorder}</Text>
 			{frame.footerHelp !== null && (
-				<Text>{frameLine(fit(frame.footerHelp, innerWidth))}</Text>
+				<Text>
+					{frameLine(
+						toastMessage
+							? chalk.bold.green(toastMessage)
+							: fit(frame.footerHelp, innerWidth),
+					)}
+				</Text>
 			)}
 			<FrameRow innerWidth={innerWidth} ascii={useAscii} height={inputRows}>
 				<Box width={inputPrefix.length} flexShrink={0}>
