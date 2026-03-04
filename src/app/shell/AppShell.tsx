@@ -810,6 +810,8 @@ function AppContent({
 				<CommandSuggestions
 					commands={commandSuggestions.filteredCommands}
 					selectedIndex={commandSuggestions.selectedIndex}
+					innerWidth={innerWidth}
+					wrapLine={(line: string) => withBorderEdges(frameLine(line))}
 				/>
 			)}
 			<FrameRow
