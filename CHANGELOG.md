@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.1](https://github.com/lespaceman/athena-flow/compare/athena-flow-cli-v0.3.0...athena-flow-cli-v0.3.1) (2026-03-04)
+
+
+### Features
+
+* add keyboard scrolling to pager (j/k, arrows, PgUp/PgDn, g/G) ([fe62446](https://github.com/lespaceman/athena-flow/commit/fe624465cbc457db0af108b46f91730df37f9229))
+* add MCP server configuration wizard to setup flow ([a30849c](https://github.com/lespaceman/athena-flow/commit/a30849c24342c40fb264263b94f2f07556184217))
+* add multi-line input with newline-aware cursor navigation ([84cc567](https://github.com/lespaceman/athena-flow/commit/84cc567c15cdec424e858ac7c3f154f118b6a69a))
+
+
+### Bug Fixes
+
+* defer pager writes to useEffect to prevent Ink render clobbering ([c04fb04](https://github.com/lespaceman/athena-flow/commit/c04fb04cf727251a4ba7c08ff79d0232d2c235eb))
+* use alternate screen buffer for pager to prevent flash bug ([e1f6d0c](https://github.com/lespaceman/athena-flow/commit/e1f6d0ce8d01791347d8be413fd5c5f99c64ee02))
+
 ## [0.3.0](https://github.com/lespaceman/athena-flow/compare/athena-flow-cli-v0.2.3...athena-flow-cli-v0.3.0) (2026-03-02)
 
 ### Features
