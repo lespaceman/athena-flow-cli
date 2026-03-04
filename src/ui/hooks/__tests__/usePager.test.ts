@@ -14,7 +14,10 @@ vi.mock('ink', () => ({
 }));
 
 vi.mock('../../layout/renderDetailLines', () => ({
-	renderDetailLines: () => ({lines: ['line1', 'line2', 'line3'], showLineNumbers: false}),
+	renderDetailLines: () => ({
+		lines: ['line1', 'line2', 'line3'],
+		showLineNumbers: false,
+	}),
 	renderMarkdownToLines: () => ['md-line1', 'md-line2'],
 }));
 
@@ -52,15 +55,17 @@ describe('usePager', () => {
 
 	beforeEach(() => {
 		inputHandlers.length = 0;
-		stdoutWriteSpy = vi
-			.spyOn(process.stdout, 'write')
-			.mockReturnValue(true);
+		stdoutWriteSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 		stdinOnSpy = vi.spyOn(process.stdin, 'on').mockReturnThis();
-		stdinRemoveSpy = vi
-			.spyOn(process.stdin, 'removeListener')
-			.mockReturnThis();
-		Object.defineProperty(process.stdout, 'rows', {value: 24, configurable: true});
-		Object.defineProperty(process.stdout, 'columns', {value: 80, configurable: true});
+		stdinRemoveSpy = vi.spyOn(process.stdin, 'removeListener').mockReturnThis();
+		Object.defineProperty(process.stdout, 'rows', {
+			value: 24,
+			configurable: true,
+		});
+		Object.defineProperty(process.stdout, 'columns', {
+			value: 80,
+			configurable: true,
+		});
 	});
 
 	afterEach(() => {
@@ -104,7 +109,9 @@ describe('usePager', () => {
 	});
 
 	it('expand writes to alternate screen buffer', () => {
-		const entries = [makeEntry({expandable: true, feedEvent: {type: 'tool_use'} as never})];
+		const entries = [
+			makeEntry({expandable: true, feedEvent: {type: 'tool_use'} as never}),
+		];
 		const ref = {current: entries};
 		renderHook(() => usePager({filteredEntriesRef: ref, feedCursor: 0}));
 		// After expand, the effect should write to alternate screen
@@ -119,8 +126,8 @@ describe('usePager', () => {
 		const allWrites = stdoutWriteSpy.mock.calls
 			.map(c => c[0])
 			.filter(w => typeof w === 'string');
-		const hasAltScreen = allWrites.some(
-			(w: string) => w.includes('\x1B[?1049h'),
+		const hasAltScreen = allWrites.some((w: string) =>
+			w.includes('\x1B[?1049h'),
 		);
 		expect(hasAltScreen).toBe(true);
 	});
@@ -160,8 +167,8 @@ describe('usePager', () => {
 			const allWrites = stdoutWriteSpy.mock.calls
 				.map(c => c[0])
 				.filter(w => typeof w === 'string');
-			const hasLeaveAlt = allWrites.some(
-				(w: string) => w.includes('\x1B[?1049l'),
+			const hasLeaveAlt = allWrites.some((w: string) =>
+				w.includes('\x1B[?1049l'),
 			);
 			expect(hasLeaveAlt).toBe(true);
 		}

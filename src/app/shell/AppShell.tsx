@@ -11,10 +11,7 @@ import {Box, Static, Text, useApp, useInput, useStdout} from 'ink';
 import PermissionDialog from '../../ui/components/PermissionDialog';
 import QuestionDialog from '../../ui/components/QuestionDialog';
 import ErrorBoundary from '../../ui/components/ErrorBoundary';
-import {
-	HookProvider,
-	useHookContextSelector,
-} from '../providers/RuntimeProvider';
+import {HookProvider} from '../providers/RuntimeProvider';
 import {useHarnessProcess} from '../process/useHarnessProcess';
 import {useHeaderMetrics} from '../../ui/hooks/useHeaderMetrics';
 import {useAppMode} from '../../ui/hooks/useAppMode';
@@ -64,14 +61,17 @@ import {fit} from '../../shared/utils/format';
 import type {WorkflowConfig} from '../../core/workflows/types';
 import SetupWizard from '../../setup/SetupWizard';
 import {bootstrapRuntimeConfig} from '../bootstrap/bootstrapConfig';
+import type {FocusMode, InputMode} from './types';
+import {useRuntimeSelectors} from './useRuntimeSelectors';
+import {useSessionScope, useTimelineCurrentRun} from './useSessionScope';
 import {useShellInput} from './useShellInput';
-import {evaluateEscapeInterruptGate} from './escapeInterruptGate';
+import {useInputLayout} from './useInputLayout';
+import {useGlobalKeyboard} from './useGlobalKeyboard';
 import {
 	isPerfEnabled,
 	logPerfEvent,
 	logReactCommit,
 	startEventLoopMonitor,
-	startInputMeasure,
 } from '../../shared/utils/perf';
 
 type Props = {
@@ -101,11 +101,6 @@ type AppPhase =
 	| {type: 'session-select'}
 	| {type: 'main'; initialSessionId?: string};
 
-type FocusMode = 'feed' | 'input' | 'todo';
-type InputMode = 'normal' | 'search';
-
-/** Fallback for crashed PermissionDialog -- lets user press Escape to deny. */
-
 function PermissionErrorFallback({onDeny}: {onDeny: () => void}) {
 	const theme = useTheme();
 	useInput((_input, key) => {
@@ -118,7 +113,6 @@ function PermissionErrorFallback({onDeny}: {onDeny: () => void}) {
 	);
 }
 
-/** Fallback for crashed QuestionDialog -- lets user press Escape to skip. */
 function QuestionErrorFallback({onSkip}: {onSkip: () => void}) {
 	const theme = useTheme();
 	useInput((_input, key) => {
@@ -170,80 +164,33 @@ function AppContent({
 	const [hintsForced, setHintsForced] = useState<boolean | null>(null);
 	const [showRunOverlay, setShowRunOverlay] = useState(false);
 	const [searchQuery, setSearchQuery] = useState('');
-	const runFilter = 'all';
-	const errorsOnly = false;
-
 	const messagesRef = useRef(messages);
 	messagesRef.current = messages;
 
 	const theme = useTheme();
-	const feedEvents = useHookContextSelector(value => value.feedEvents);
-	const feedItems = useHookContextSelector(value => value.items);
-	const tasks = useHookContextSelector(value => value.tasks);
-	const session = useHookContextSelector(value => value.session);
-	const currentRun = useHookContextSelector(value => value.currentRun);
-	const currentPermissionRequest = useHookContextSelector(
-		value => value.currentPermissionRequest,
-	);
-	const permissionQueueCount = useHookContextSelector(
-		value => value.permissionQueueCount,
-	);
-	const resolvePermission = useHookContextSelector(
-		value => value.resolvePermission,
-	);
-	const currentQuestionRequest = useHookContextSelector(
-		value => value.currentQuestionRequest,
-	);
-	const questionQueueCount = useHookContextSelector(
-		value => value.questionQueueCount,
-	);
-	const resolveQuestion = useHookContextSelector(
-		value => value.resolveQuestion,
-	);
-	const postByToolUseId = useHookContextSelector(
-		value => value.postByToolUseId,
-	);
-	const allocateSeq = useHookContextSelector(value => value.allocateSeq);
-	const clearEvents = useHookContextSelector(value => value.clearEvents);
-	const printTaskSnapshot = useHookContextSelector(
-		value => value.printTaskSnapshot,
-	);
-	const recordTokens = useHookContextSelector(value => value.recordTokens);
-	const restoredTokens = useHookContextSelector(value => value.restoredTokens);
-	const hookCommandFeed = useMemo(
-		() => ({printTaskSnapshot}),
-		[printTaskSnapshot],
-	);
+	const {
+		feedEvents,
+		feedItems,
+		tasks,
+		session,
+		currentRun,
+		currentPermissionRequest,
+		permissionQueueCount,
+		resolvePermission,
+		currentQuestionRequest,
+		questionQueueCount,
+		resolveQuestion,
+		postByToolUseId,
+		allocateSeq,
+		clearEvents,
+		recordTokens,
+		restoredTokens,
+		hookCommandFeed,
+	} = useRuntimeSelectors();
 
 	const currentSessionId = session?.session_id ?? null;
-	const sessionScope = useMemo(() => {
-		const persisted = getSessionMeta(athenaSessionId)?.adapterSessionIds ?? [];
-		const ids = [...persisted];
-		if (currentSessionId && !ids.includes(currentSessionId)) {
-			ids.push(currentSessionId);
-		}
-		const total = ids.length;
-		const index =
-			currentSessionId !== null ? ids.indexOf(currentSessionId) + 1 : null;
-		return {
-			current: index !== null && index > 0 ? index : null,
-			total,
-		};
-	}, [athenaSessionId, currentSessionId]);
-	const currentRunId = currentRun?.run_id ?? null;
-	const currentRunStartedAt = currentRun?.started_at ?? null;
-	const currentRunPromptPreview = currentRun?.trigger.prompt_preview;
-	const timelineCurrentRun = useMemo(
-		() =>
-			currentRunId && currentRunStartedAt !== null
-				? {
-						run_id: currentRunId,
-						trigger: {prompt_preview: currentRunPromptPreview},
-						started_at: currentRunStartedAt,
-					}
-				: null,
-		[currentRunId, currentRunStartedAt, currentRunPromptPreview],
-	);
+	const sessionScope = useSessionScope(athenaSessionId, currentSessionId);
+	const timelineCurrentRun = useTimelineCurrentRun(currentRun);
 
 	const onExitTokens = useCallback(
 		(tokens: import('../../shared/types/headerMetrics').TokenUsage) => {
@@ -317,14 +264,10 @@ function AppContent({
 		onClear();
 	}, [clearEvents, onClear]);
 
-	// ── Timeline + Todo + Layout ────────────────────────────
-
 	const timeline = useTimeline({
 		feedItems,
 		feedEvents,
 		currentRun: timelineCurrentRun,
-		runFilter,
-		errorsOnly,
 		searchQuery,
 		postByToolUseId,
 		verbose,
@@ -377,16 +320,11 @@ function AppContent({
 	});
 	staticHwmRef.current = staticHighWaterMark;
 
-	// Compute frame dimensions early (only depends on terminalWidth)
 	const frameWidth = safeTerminalWidth;
 	const innerWidth = frameWidth - 2;
 
-	// ── Refs for callbacks ──────────────────────────────────
-
 	const filteredEntriesRef = useRef(filteredEntries);
 	filteredEntriesRef.current = filteredEntries;
-
-	// ── Prompt submission ───────────────────────────────────
 
 	const submitPromptOrSlashCommand = useCallback(
 		(value: string) => {
@@ -459,8 +397,6 @@ function AppContent({
 		],
 	);
 
-	// ── Input handling ──────────────────────────────────────
-
 	const {
 		inputRows,
 		inputValueRef,
@@ -481,10 +417,14 @@ function AppContent({
 		setSearchMatchPos,
 	});
 
-	// History callbacks for MultiLineInput — inputHistory methods are stable refs
 	const {back: handleHistoryBack, forward: handleHistoryForward} = inputHistory;
 
-	// ── Frame lines + Layout ────────────────────────────────
+	const stableSetInputValue = useCallback(
+		(v: string) => setInputValueRef.current(v),
+		[setInputValueRef],
+	);
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	const stableGetInputValue = useCallback(() => inputValueRef.current, []);
 
 	const {
 		frame,
@@ -530,8 +470,6 @@ function AppContent({
 		pageStep,
 	} = layout;
 
-	// ── Focus cycling ───────────────────────────────────────
-
 	const visibleTodoItemsRef = useRef(todoPanel.visibleTodoItems);
 	visibleTodoItemsRef.current = todoPanel.visibleTodoItems;
 
@@ -548,8 +486,6 @@ function AppContent({
 			return 'feed';
 		});
 	}, [todoPanel.todoVisible, feedNav]);
-
-	// ── Permission/question handlers ────────────────────────
 
 	const handlePermissionDecision = useCallback(
 		(decision: PermissionDecision) => {
@@ -570,76 +506,29 @@ function AppContent({
 		resolveQuestion(currentQuestionRequest.cause.hook_request_id, {});
 	}, [currentQuestionRequest, resolveQuestion]);
 
-	// ── Pager mode ──────────────────────────────────────────
-
 	const {pagerActive, handleExpandForPager} = usePager({
 		filteredEntriesRef,
 		feedCursor: feedNav.feedCursor,
 	});
 
-	// ── Keyboard hooks ──────────────────────────────────────
-
-	const interruptEscapeAtRef = useRef<number | null>(null);
-	useEffect(() => {
-		if (!isHarnessRunning || focusMode !== 'feed') {
-			interruptEscapeAtRef.current = null;
-		}
-	}, [isHarnessRunning, focusMode]);
-
-	useInput(
-		(input, key) => {
-			const done = startInputMeasure('app.global', input, key);
-			try {
-				if (dialogActive) return;
-
-				const interruptGate = evaluateEscapeInterruptGate({
-					keyEscape: key.escape,
-					isHarnessRunning,
-					focusMode,
-					lastEscapeAtMs: interruptEscapeAtRef.current,
-					nowMs: Date.now(),
-				});
-				interruptEscapeAtRef.current = interruptGate.nextLastEscapeAtMs;
-				if (interruptGate.shouldInterrupt) {
-					interrupt();
-					return;
-				}
-				if (key.ctrl && input === 't') {
-					todoPanel.setTodoVisible(v => !v);
-					if (focusMode === 'todo') setFocusMode('feed');
-					return;
-				}
-				if (key.ctrl && input === '/') {
-					setHintsForced(prev => (prev === null ? true : prev ? false : null));
-					return;
-				}
-				if (focusMode === 'input') {
-					if (key.escape) {
-						setFocusMode('feed');
-						setInputMode('normal');
-						return;
-					}
-					if (key.tab) {
-						cycleFocus();
-						return;
-					}
-					if (key.ctrl && input === 'p') {
-						const prev = inputHistory.back(inputValueRef.current);
-						if (prev !== undefined) setInputValueRef.current(prev);
-						return;
-					}
-					if (key.ctrl && input === 'n') {
-						const next = inputHistory.forward();
-						if (next !== undefined) setInputValueRef.current(next);
-						return;
-					}
-				}
-			} finally {
-				done();
-			}
+	useGlobalKeyboard({
+		isActive: !dialogActive && !pagerActive,
+		isHarnessRunning,
+		focusMode,
+		dialogActive,
+		callbacks: {
+			interrupt,
+			cycleFocus,
+			setFocusMode,
+			setInputMode,
+			setHintsForced,
+			setTodoVisible: todoPanel.setTodoVisible,
+			historyBack: inputHistory.back,
+			historyForward: inputHistory.forward,
+			getInputValue: stableGetInputValue,
+			setInputValue: stableSetInputValue,
 		},
-		{isActive: !dialogActive && !pagerActive},
-	);
+	});
 
 	useFeedKeyboard({
 		isActive: focusMode === 'feed' && !dialogActive && !pagerActive,
@@ -653,7 +542,7 @@ function AppContent({
 			cycleFocus,
 			setFocusMode,
 			setInputMode,
-			setInputValue: (v: string) => setInputValueRef.current(v),
+			setInputValue: stableSetInputValue,
 			setShowRunOverlay,
 			setSearchQuery,
 			setSearchMatchPos,
@@ -670,7 +559,7 @@ function AppContent({
 		callbacks: {
 			setFocusMode,
 			setInputMode,
-			setInputValue: (v: string) => setInputValueRef.current(v),
+			setInputValue: stableSetInputValue,
 			setTodoCursor: todoPanel.setTodoCursor,
 			setFeedCursor: feedNav.setFeedCursor,
 			setTailFollow: feedNav.setTailFollow,
@@ -749,8 +638,6 @@ function AppContent({
 		hasColor,
 	]);
 
-	// ── Body lines ──────────────────────────────────────────
-
 	const prefixBodyLines = useMemo(
 		() =>
 			buildBodyLines({
@@ -770,7 +657,7 @@ function AppContent({
 					totalCount: todoPanel.todoItems.length,
 					spinnerFrame,
 				},
-				runOverlay: {actualRunOverlayRows, runSummaries, runFilter},
+				runOverlay: {actualRunOverlayRows, runSummaries, runFilter: 'all'},
 				theme,
 			}),
 		[
@@ -788,14 +675,12 @@ function AppContent({
 			spinnerFrame,
 			actualRunOverlayRows,
 			runSummaries,
-			runFilter,
 			theme,
 		],
 	);
 
 	const feedCols = useFeedColumns(filteredEntries, innerWidth);
 
-	// ── Static scrollback slicing ────────────────────────────
 	const dynamicEntries = useMemo(
 		() => filteredEntries.slice(staticHighWaterMark),
 		[filteredEntries, staticHighWaterMark],
@@ -817,39 +702,16 @@ function AppContent({
 		[staticHighWaterMark],
 	);
 
-	const runBadge = isHarnessRunning ? '[RUN]' : '[IDLE]';
-	const modeBadges = [
-		runBadge,
-		...(inputMode === 'search' ? ['[SEARCH]'] : []),
-	];
-	const badgeText = modeBadges.join('');
-	const inputPrefix = 'input> ';
-	const inputContentWidth = Math.max(
-		1,
-		innerWidth - inputPrefix.length - badgeText.length,
-	);
+	const {inputPrefix, badgeText, inputContentWidth, textInputPlaceholder} =
+		useInputLayout({
+			innerWidth,
+			inputMode,
+			isHarnessRunning,
+			lastRunStatus,
+			dialogActive,
+			dialogType: appMode.type,
+		});
 	inputContentWidthRef.current = inputContentWidth;
-	let inputPlaceholder: string;
-	if (inputMode === 'search') {
-		inputPlaceholder = '/search';
-	} else if (lastRunStatus === 'completed') {
-		inputPlaceholder = 'Run complete - type a follow-up';
-	} else if (lastRunStatus === 'failed' || lastRunStatus === 'aborted') {
-		inputPlaceholder = 'Run failed - type a follow-up';
-	} else {
-		inputPlaceholder = 'Type a prompt or /command';
-	}
-
-	let textInputPlaceholder: string;
-	if (!dialogActive) {
-		textInputPlaceholder = inputPlaceholder;
-	} else if (appMode.type === 'question') {
-		textInputPlaceholder = 'Answer question in dialog...';
-	} else {
-		textInputPlaceholder = 'Respond to permission dialog...';
-	}
-
-	// ── Render ──────────────────────────────────────────────
 
 	if (pagerActive) {
 		return <Box />;
@@ -953,6 +815,25 @@ function AppContent({
 	);
 }
 
+function MaybeProfiler({
+	enabled,
+	id,
+	onRender,
+	children,
+}: {
+	enabled: boolean;
+	id: string;
+	onRender: React.ProfilerProps['onRender'];
+	children: React.ReactNode;
+}) {
+	if (!enabled) return <>{children}</>;
+	return (
+		<Profiler id={id} onRender={onRender}>
+			{children}
+		</Profiler>
+	);
+}
+
 export default function App({
 	projectDir,
 	instanceId,
@@ -1040,15 +921,6 @@ export default function App({
 		[],
 	);
 
-	const withProfiler = (id: string, node: React.ReactElement) =>
-		perfEnabled ? (
-			<Profiler id={id} onRender={handleProfilerRender}>
-				{node}
-			</Profiler>
-		) : (
-			node
-		);
-
 	const handleSessionSelect = useCallback((sessionId: string) => {
 		// sessionId here is an athena session ID from the picker.
 		// Look up the most recent adapter session ID for prompt resume.
@@ -1083,95 +955,115 @@ export default function App({
 		}));
 	}, [projectDir, phase]);
 
+	const handleSetupComplete = useCallback(
+		(setupResult: import('../../setup/SetupWizard').SetupResult) => {
+			setActiveTheme(resolveTheme(setupResult.theme));
+			try {
+				const refreshed = bootstrapRuntimeConfig({
+					projectDir,
+					showSetup: false,
+					workflowFlag,
+					pluginFlags,
+					isolationPreset,
+					verbose,
+				});
+				for (const warning of refreshed.warnings) {
+					console.error(warning);
+				}
+				setRuntimeState({
+					harness: refreshed.harness,
+					isolation: refreshed.isolationConfig,
+					pluginMcpConfig: refreshed.pluginMcpConfig,
+					modelName: refreshed.modelName,
+					workflowRef: refreshed.workflowRef,
+					workflow: refreshed.workflow,
+				});
+			} catch (error) {
+				console.error(`Error: ${(error as Error).message}`);
+			}
+			setPhase({type: 'main'});
+		},
+		[projectDir, workflowFlag, pluginFlags, isolationPreset, verbose],
+	);
+
 	if (phase.type === 'setup') {
-		return withProfiler(
-			'app.setup',
-			<ThemeProvider value={activeTheme}>
-				<SetupWizard
-					onThemePreview={themeName => {
-						setActiveTheme(resolveTheme(themeName));
-					}}
-					onComplete={setupResult => {
-						setActiveTheme(resolveTheme(setupResult.theme));
-						try {
-							const refreshed = bootstrapRuntimeConfig({
-								projectDir,
-								showSetup: false,
-								workflowFlag,
-								pluginFlags,
-								isolationPreset,
-								verbose,
-							});
-							for (const warning of refreshed.warnings) {
-								console.error(warning);
-							}
-							setRuntimeState({
-								harness: refreshed.harness,
-								isolation: refreshed.isolationConfig,
-								pluginMcpConfig: refreshed.pluginMcpConfig,
-								modelName: refreshed.modelName,
-								workflowRef: refreshed.workflowRef,
-								workflow: refreshed.workflow,
-							});
-						} catch (error) {
-							console.error(`Error: ${(error as Error).message}`);
-						}
-						setPhase({type: 'main'});
-					}}
-				/>
-			</ThemeProvider>,
+		return (
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.setup"
+				onRender={handleProfilerRender}
+			>
+				<ThemeProvider value={activeTheme}>
+					<SetupWizard
+						onThemePreview={themeName => {
+							setActiveTheme(resolveTheme(themeName));
+						}}
+						onComplete={handleSetupComplete}
+					/>
+				</ThemeProvider>
+			</MaybeProfiler>
 		);
 	}
 
 	if (phase.type === 'session-select') {
-		return withProfiler(
-			'app.session-select',
-			<ErrorBoundary
-				fallback={
-					<Text color="red">
-						[Session picker error -- starting new session]
-					</Text>
-				}
+		return (
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.session-select"
+				onRender={handleProfilerRender}
 			>
-				<SessionPicker
-					sessions={sessions}
-					onSelect={handleSessionSelect}
-					onCancel={handleSessionCancel}
-				/>
-			</ErrorBoundary>,
+				<ErrorBoundary
+					fallback={
+						<Text color="red">
+							[Session picker error -- starting new session]
+						</Text>
+					}
+				>
+					<SessionPicker
+						sessions={sessions}
+						onSelect={handleSessionSelect}
+						onCancel={handleSessionCancel}
+					/>
+				</ErrorBoundary>
+			</MaybeProfiler>
 		);
 	}
 
-	return withProfiler(
-		'app.main',
-		<ThemeProvider value={activeTheme}>
-			<HookProvider
-				projectDir={projectDir}
-				instanceId={instanceId}
-				harness={runtimeState.harness}
-				allowedTools={runtimeState.isolation?.allowedTools}
-				athenaSessionId={athenaSessionId}
-			>
-				<AppContent
-					key={clearCount}
+	return (
+		<MaybeProfiler
+			enabled={perfEnabled}
+			id="app.main"
+			onRender={handleProfilerRender}
+		>
+			<ThemeProvider value={activeTheme}>
+				<HookProvider
 					projectDir={projectDir}
 					instanceId={instanceId}
 					harness={runtimeState.harness}
-					isolation={runtimeState.isolation}
-					verbose={verbose}
-					pluginMcpConfig={runtimeState.pluginMcpConfig}
-					modelName={runtimeState.modelName}
+					allowedTools={runtimeState.isolation?.allowedTools}
 					athenaSessionId={athenaSessionId}
-					initialSessionId={phase.initialSessionId}
-					onClear={() => setClearCount(c => c + 1)}
-					onShowSessions={handleShowSessions}
-					onShowSetup={handleShowSetup}
-					inputHistory={inputHistory}
-					workflowRef={runtimeState.workflowRef}
-					workflow={runtimeState.workflow}
-					ascii={ascii}
-				/>
-			</HookProvider>
-		</ThemeProvider>,
+				>
+					<AppContent
+						key={clearCount}
+						projectDir={projectDir}
+						instanceId={instanceId}
+						harness={runtimeState.harness}
+						isolation={runtimeState.isolation}
+						verbose={verbose}
+						pluginMcpConfig={runtimeState.pluginMcpConfig}
+						modelName={runtimeState.modelName}
+						athenaSessionId={athenaSessionId}
+						initialSessionId={phase.initialSessionId}
+						onClear={() => setClearCount(c => c + 1)}
+						onShowSessions={handleShowSessions}
+						onShowSetup={handleShowSetup}
+						inputHistory={inputHistory}
+						workflowRef={runtimeState.workflowRef}
+						workflow={runtimeState.workflow}
+						ascii={ascii}
+					/>
+				</HookProvider>
+			</ThemeProvider>
+		</MaybeProfiler>
 	);
 }

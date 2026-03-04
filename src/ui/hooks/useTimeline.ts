@@ -82,8 +82,8 @@ export type UseTimelineOptions = {
 		trigger: {prompt_preview?: string};
 		started_at: number;
 	} | null;
-	runFilter: string;
-	errorsOnly: boolean;
+	runFilter?: string;
+	errorsOnly?: boolean;
 	searchQuery: string;
 	postByToolUseId?: Map<string, FeedEvent>;
 	verbose?: boolean;
@@ -103,8 +103,8 @@ export function useTimeline({
 	feedItems,
 	feedEvents,
 	currentRun,
-	runFilter,
-	errorsOnly,
+	runFilter = 'all',
+	errorsOnly = false,
 	searchQuery,
 	postByToolUseId,
 	verbose,

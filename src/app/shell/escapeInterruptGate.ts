@@ -1,4 +1,4 @@
-type FocusMode = 'feed' | 'input' | 'todo';
+import type {FocusMode} from './types';
 
 export const DOUBLE_ESCAPE_INTERRUPT_WINDOW_MS = 900;
 

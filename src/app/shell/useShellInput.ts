@@ -3,9 +3,7 @@ import {computeInputRows} from '../../shared/utils/format';
 import {parseInput} from '../commands/parser';
 import {type TimelineEntry} from '../../core/feed/timeline';
 import {type UseFeedNavigationResult} from '../../ui/hooks/useFeedNavigation';
-
-type InputMode = 'normal' | 'search';
-type FocusMode = 'feed' | 'input' | 'todo';
+import type {FocusMode, InputMode} from './types';
 
 function deriveInputMode(value: string): InputMode {
 	return value.startsWith('/') ? 'search' : 'normal';
@@ -115,7 +113,6 @@ export function useShellInput({
 				}
 			}
 
-			// Always reset input state after submission
 			setInputValueRef.current('');
 			setInputMode('normal');
 			setFocusMode('feed');
