@@ -71,11 +71,7 @@ export function MultiLineInput({
 			if (key.ctrl) return; // handled by parent AppShell
 
 			if (key.upArrow) {
-				const {line: cursorLine} = cursorToVisualPosition(
-					val,
-					cursor,
-					width,
-				);
+				const {line: cursorLine} = cursorToVisualPosition(val, cursor, width);
 				if (cursorLine === 0) {
 					// First visual line — delegate to history
 					const recalled = historyBackRef.current?.(val);

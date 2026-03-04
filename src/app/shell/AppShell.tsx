@@ -30,6 +30,8 @@ import {useTodoKeyboard} from '../../ui/hooks/useTodoKeyboard';
 import {useSpinner} from '../../ui/hooks/useSpinner';
 import {useTimeline} from '../../ui/hooks/useTimeline';
 import {useLayout} from '../../ui/hooks/useLayout';
+import {usePager} from '../../ui/hooks/usePager';
+import {useFrameChrome} from '../../ui/hooks/useFrameChrome';
 import {buildBodyLines} from '../../ui/layout/buildBodyLines';
 import {FeedGrid} from '../../ui/components/FeedGrid';
 import {formatFeedRowLine} from '../../ui/components/FeedRow';
@@ -37,7 +39,6 @@ import {type TimelineEntry} from '../../core/feed/timeline';
 import {FrameRow} from '../../ui/components/FrameRow';
 import {MultiLineInput} from '../../ui/components/MultiLineInput';
 import {useFeedColumns} from '../../ui/hooks/useFeedColumns';
-import {buildFrameLines} from '../../ui/layout/buildFrameLines';
 import {buildHeaderModel} from '../../ui/header/model';
 import {renderHeaderLines} from '../../ui/header/renderLines';
 import type {Message as MessageType} from '../../shared/types/common';
@@ -59,16 +60,11 @@ import SessionPicker from '../../ui/components/SessionPicker';
 import type {SessionEntry} from '../../shared/types/session';
 import type {AthenaHarness} from '../../infra/plugins/config';
 import {listSessions, getSessionMeta} from '../../infra/sessions/registry';
-import {fit, fitAnsi, computeInputRows} from '../../shared/utils/format';
-import {frameGlyphs} from '../../ui/glyphs/index';
+import {fit} from '../../shared/utils/format';
 import type {WorkflowConfig} from '../../core/workflows/types';
 import SetupWizard from '../../setup/SetupWizard';
 import {bootstrapRuntimeConfig} from '../bootstrap/bootstrapConfig';
-import {
-	renderDetailLines,
-	renderMarkdownToLines,
-} from '../../ui/layout/renderDetailLines';
-import chalk from 'chalk';
+import {useShellInput} from './useShellInput';
 import {evaluateEscapeInterruptGate} from './escapeInterruptGate';
 import {
 	isPerfEnabled,
@@ -107,11 +103,6 @@ type AppPhase =
 
 type FocusMode = 'feed' | 'input' | 'todo';
 type InputMode = 'normal' | 'search';
-
-function deriveInputMode(value: string): InputMode {
-	if (value.startsWith('/')) return 'search';
-	return 'normal';
-}
 
 /** Fallback for crashed PermissionDialog -- lets user press Escape to deny. */
 
@@ -165,6 +156,7 @@ function AppContent({
 	| 'workflowFlag'
 	| 'pluginFlags'
 	| 'isolationPreset'
+	| 'version'
 > & {
 	initialSessionId?: string;
 	onClear: () => void;
@@ -178,7 +170,6 @@ function AppContent({
 	const [hintsForced, setHintsForced] = useState<boolean | null>(null);
 	const [showRunOverlay, setShowRunOverlay] = useState(false);
 	const [searchQuery, setSearchQuery] = useState('');
-	const [pagerActive, setPagerActive] = useState(false);
 	const runFilter = 'all';
 	const errorsOnly = false;
 
@@ -470,148 +461,56 @@ function AppContent({
 
 	// ── Input handling ──────────────────────────────────────
 
-	const setInputValueRef = useRef<(value: string) => void>(() => {});
-	const inputValueRef = useRef('');
-	const [inputRows, setInputRows] = useState(1);
-
-	const syncInputModeFromValue = useCallback((value: string) => {
-		const nextMode = deriveInputMode(value);
-		setInputMode(prev => (prev === nextMode ? prev : nextMode));
-		if (value.length === 0) {
-			setSearchQuery('');
-		}
-	}, []);
-
-	// Called by MultiLineInput via setValueRef callback
-	const handleSetValueRef = useCallback(
-		(setValue: (value: string) => void) => {
-			setInputValueRef.current = (value: string) => {
-				inputValueRef.current = value;
-				syncInputModeFromValue(value);
-				setValue(value);
-				setInputRows(computeInputRows(value, inputContentWidthRef.current));
-			};
-		},
-		[syncInputModeFromValue],
-	);
-	// Keep inputContentWidth accessible via ref for computeInputRows
-	const inputContentWidthRef = useRef(1);
-
-	const handleInputSubmit = useCallback(
-		(rawValue: string) => {
-			const trimmed = rawValue.trim();
-			const resetInput = () => {
-				setInputValueRef.current('');
-				setInputMode('normal');
-				setFocusMode('feed');
-				setInputRows(1);
-			};
-			if (!trimmed) {
-				resetInput();
-				return;
-			}
-			const parsedSlash = parseInput(trimmed);
-			if (parsedSlash.type === 'command') {
-				submitPromptOrSlashCommand(trimmed);
-				resetInput();
-				return;
-			}
-			if (trimmed.startsWith('/') || inputMode === 'search') {
-				const query = trimmed.replace(/^\//, '').trim();
-				setSearchQuery(query);
-				if (query.length > 0) {
-					const q = query.toLowerCase();
-					const entries = filteredEntriesRef.current;
-					let firstIdx = -1;
-					for (let i = staticHwmRef.current; i < entries.length; i++) {
-						if (entries[i]!.searchText.toLowerCase().includes(q)) {
-							firstIdx = i;
-							break;
-						}
-					}
-					if (firstIdx >= 0) {
-						feedNav.setFeedCursor(firstIdx);
-						feedNav.setTailFollow(false);
-						setSearchMatchPos(0);
-					}
-				}
-				resetInput();
-				return;
-			}
-			submitPromptOrSlashCommand(trimmed);
-			resetInput();
-		},
-		[inputMode, submitPromptOrSlashCommand, feedNav, setSearchMatchPos],
-	);
-
-	const handleMainInputChange = useCallback(
-		(value: string) => {
-			inputValueRef.current = value;
-			syncInputModeFromValue(value);
-			setInputRows(computeInputRows(value, inputContentWidthRef.current));
-		},
-		[syncInputModeFromValue],
-	);
+	const {
+		inputRows,
+		inputValueRef,
+		setInputValueRef,
+		inputContentWidthRef,
+		handleMainInputChange,
+		handleInputSubmit,
+		handleSetValueRef,
+	} = useShellInput({
+		inputMode,
+		setInputMode,
+		setFocusMode,
+		setSearchQuery,
+		submitPromptOrSlashCommand,
+		filteredEntriesRef,
+		staticHwmRef,
+		feedNav,
+		setSearchMatchPos,
+	});
 
 	// History callbacks for MultiLineInput — inputHistory methods are stable refs
 	const {back: handleHistoryBack, forward: handleHistoryForward} = inputHistory;
 
 	// ── Frame lines + Layout ────────────────────────────────
 
-	// Derive last run status for contextual input prompt (X2)
-	const lastRunStatus = useMemo(() => {
-		if (isHarnessRunning) return null;
-		const last = runSummaries.at(-1);
-		if (!last) return null;
-		if (last.status === 'SUCCEEDED') return 'completed' as const;
-		if (last.status === 'FAILED') return 'failed' as const;
-		if (last.status === 'CANCELLED') return 'aborted' as const;
-		return null;
-	}, [isHarnessRunning, runSummaries]);
-
-	const visibleSearchMatches = useMemo(
-		() => searchMatches.filter(idx => idx >= staticHighWaterMark),
-		[searchMatches, staticHighWaterMark],
-	);
-
-	const frame = useMemo(
-		() =>
-			buildFrameLines({
-				innerWidth,
-				focusMode,
-				inputMode,
-				searchQuery,
-				searchMatches: visibleSearchMatches,
-				searchMatchPos,
-				isClaudeRunning: isHarnessRunning,
-				inputValue: '',
-				cursorOffset: 0,
-				dialogActive,
-				dialogType: appMode.type,
-				accentColor: theme.inputPrompt,
-				hintsForced,
-				ascii: !!ascii,
-				lastRunStatus,
-				skipInputLines: true,
-			}),
-		[
-			innerWidth,
-			focusMode,
-			inputMode,
-			searchQuery,
-			visibleSearchMatches,
-			searchMatchPos,
-			isHarnessRunning,
-			dialogActive,
-			appMode.type,
-			theme.inputPrompt,
-			hintsForced,
-			ascii,
-			lastRunStatus,
-		],
-	);
-
-	const footerRows = (frame.footerHelp !== null ? 1 : 0) + 1;
+	const {
+		frame,
+		footerRows,
+		topBorder,
+		bottomBorder,
+		sectionBorder,
+		frameLine,
+		lastRunStatus,
+		visibleSearchMatches,
+	} = useFrameChrome({
+		innerWidth,
+		focusMode,
+		inputMode,
+		searchQuery,
+		searchMatches,
+		searchMatchPos,
+		isHarnessRunning,
+		dialogActive,
+		dialogType: appMode.type,
+		hintsForced,
+		ascii: !!ascii,
+		accentColor: theme.inputPrompt,
+		runSummaries,
+		staticHighWaterMark,
+	});
 
 	const layout = useLayout({
 		terminalRows,
@@ -630,21 +529,6 @@ function AppContent({
 		actualRunOverlayRows,
 		pageStep,
 	} = layout;
-
-	const fr = useMemo(() => frameGlyphs(!!ascii), [ascii]);
-	const {topBorder, bottomBorder, sectionBorder} = useMemo(
-		() => ({
-			topBorder: `${fr.topLeft}${fr.horizontal.repeat(innerWidth)}${fr.topRight}`,
-			bottomBorder: `${fr.bottomLeft}${fr.horizontal.repeat(innerWidth)}${fr.bottomRight}`,
-			sectionBorder: `${fr.teeLeft}${fr.horizontal.repeat(innerWidth)}${fr.teeRight}`,
-		}),
-		[fr, innerWidth],
-	);
-	const frameLine = useCallback(
-		(content: string): string =>
-			`${fr.vertical}${fitAnsi(content, innerWidth)}${fr.vertical}`,
-		[fr.vertical, innerWidth],
-	);
 
 	// ── Focus cycling ───────────────────────────────────────
 
@@ -685,6 +569,13 @@ function AppContent({
 		if (!currentQuestionRequest?.cause?.hook_request_id) return;
 		resolveQuestion(currentQuestionRequest.cause.hook_request_id, {});
 	}, [currentQuestionRequest, resolveQuestion]);
+
+	// ── Pager mode ──────────────────────────────────────────
+
+	const {pagerActive, handleExpandForPager} = usePager({
+		filteredEntriesRef,
+		feedCursor: feedNav.feedCursor,
+	});
 
 	// ── Keyboard hooks ──────────────────────────────────────
 
@@ -749,178 +640,6 @@ function AppContent({
 		},
 		{isActive: !dialogActive && !pagerActive},
 	);
-
-	// ── Pager mode ──────────────────────────────────────────
-	//
-	// The pager uses the terminal's alternate screen buffer (\x1B[?1049h).
-	// Content is written via useEffect AFTER Ink commits <Box /> to avoid
-	// Ink's log-update clobbering the alternate buffer. Scroll state is
-	// held in refs (not React state) to avoid triggering Ink re-renders.
-
-	const PAGER_MARGIN = 3;
-	const PAGER_PAD_TOP = 1;
-	const PAGER_PAD_BOTTOM = 1; // blank line above the footer
-	const PAGER_MOUSE_SCROLL_LINES = 3;
-	const pendingPagerEntryRef = useRef<TimelineEntry | null>(null);
-	const pagerLinesRef = useRef<string[]>([]);
-	const pagerScrollRef = useRef(0);
-
-	/** Paint the visible portion of pager content onto the alternate screen. */
-	const paintPager = useCallback(() => {
-		const lines = pagerLinesRef.current;
-		const scroll = pagerScrollRef.current;
-		const rows = process.stdout.rows ?? 24;
-		// Reserve: top padding + bottom padding + footer
-		const contentRows = rows - PAGER_PAD_TOP - PAGER_PAD_BOTTOM - 1;
-		const visible = lines.slice(scroll, scroll + contentRows);
-		const margin = ' '.repeat(PAGER_MARGIN);
-
-		// Clear alternate buffer and move cursor home
-		process.stdout.write('\x1B[2J\x1B[H');
-
-		// Top padding
-		for (let i = 0; i < PAGER_PAD_TOP; i++) {
-			process.stdout.write('\n');
-		}
-
-		// Write visible lines, pad to fill viewport
-		for (let i = 0; i < contentRows; i++) {
-			process.stdout.write((visible[i] ?? '') + '\n');
-		}
-
-		// Bottom padding
-		for (let i = 0; i < PAGER_PAD_BOTTOM; i++) {
-			process.stdout.write('\n');
-		}
-
-		// Footer: scroll position + exit hint
-		const total = lines.length;
-		const end = Math.min(scroll + contentRows, total);
-		const pos = total > 0 ? `${scroll + 1}-${end}/${total}` : '0/0';
-		process.stdout.write(
-			margin + chalk.dim(`${pos}  ↑/↓ j/k scroll  PgUp/PgDn page  q exit`),
-		);
-	}, []);
-
-	/** Apply a scroll delta and repaint if the offset actually changed. */
-	const scrollPager = useCallback(
-		(delta: number) => {
-			const rows = process.stdout.rows ?? 24;
-			const contentRows = rows - PAGER_PAD_TOP - PAGER_PAD_BOTTOM - 1;
-			const maxScroll = Math.max(0, pagerLinesRef.current.length - contentRows);
-			const prev = pagerScrollRef.current;
-			pagerScrollRef.current = Math.max(0, Math.min(maxScroll, prev + delta));
-			if (pagerScrollRef.current !== prev) {
-				paintPager();
-			}
-		},
-		[paintPager],
-	);
-
-	const handleExpandForPager = useCallback(() => {
-		const entry = filteredEntriesRef.current[feedNav.feedCursor];
-		if (!entry?.expandable) return;
-		pendingPagerEntryRef.current = entry;
-		setPagerActive(true);
-	}, [feedNav.feedCursor]);
-
-	// Render pager content AFTER Ink has committed the empty <Box />.
-	useEffect(() => {
-		if (!pagerActive || !pendingPagerEntryRef.current) return;
-		const entry = pendingPagerEntryRef.current;
-		pendingPagerEntryRef.current = null;
-
-		const contentWidth = Math.max(
-			10,
-			(process.stdout.columns ?? 80) - PAGER_MARGIN * 2,
-		);
-		const margin = ' '.repeat(PAGER_MARGIN);
-
-		let lines: string[];
-		if (entry.feedEvent) {
-			lines = renderDetailLines(
-				entry.feedEvent,
-				contentWidth,
-				entry.pairedPostEvent,
-			).lines;
-		} else {
-			lines = renderMarkdownToLines(entry.details, contentWidth);
-		}
-
-		pagerLinesRef.current = lines.map(line => margin + line);
-		pagerScrollRef.current = 0;
-
-		// Enter alternate screen and enable SGR mouse tracking for wheel events
-		process.stdout.write('\x1B[?1049h');
-		process.stdout.write('\x1B[?1000h\x1B[?1006h');
-		paintPager();
-	}, [pagerActive, paintPager]);
-
-	// Pager keyboard handler: scroll + exit
-	useInput(
-		(input, key) => {
-			if (key.escape || input === 'q' || input === 'Q') {
-				pagerLinesRef.current = [];
-				pagerScrollRef.current = 0;
-				// Disable mouse tracking, then leave alternate screen
-				process.stdout.write('\x1B[?1006l\x1B[?1000l');
-				process.stdout.write('\x1B[?1049l');
-				setPagerActive(false);
-				return;
-			}
-
-			if (key.upArrow || input === 'k' || input === 'K') {
-				scrollPager(-1);
-			} else if (key.downArrow || input === 'j' || input === 'J') {
-				scrollPager(1);
-			} else if (key.pageUp) {
-				const rows = process.stdout.rows ?? 24;
-				scrollPager(
-					-Math.floor((rows - PAGER_PAD_TOP - PAGER_PAD_BOTTOM - 1) / 2),
-				);
-			} else if (key.pageDown) {
-				const rows = process.stdout.rows ?? 24;
-				scrollPager(
-					Math.floor((rows - PAGER_PAD_TOP - PAGER_PAD_BOTTOM - 1) / 2),
-				);
-			} else if (key.home || input === 'g') {
-				scrollPager(-Infinity);
-			} else if (key.end || input === 'G') {
-				scrollPager(Infinity);
-			}
-		},
-		{isActive: pagerActive},
-	);
-
-	// Pager mouse wheel handler: listen for SGR mouse escape sequences on stdin.
-	// Ink's useInput doesn't reliably pass multi-byte mouse sequences, so we
-	// attach a raw 'data' listener that matches the SGR wheel pattern.
-	useEffect(() => {
-		if (!pagerActive) return;
-
-		// SGR mouse format: \x1B[<button;col;rowM (press) or ...m (release)
-		// Button 64 = wheel up, 65 = wheel down
-		// eslint-disable-next-line no-control-regex
-		const SGR_MOUSE_RE = /\x1B\[<(64|65);\d+;\d+[Mm]/g;
-
-		const onData = (data: Buffer) => {
-			const str = data.toString('utf8');
-			let match: RegExpExecArray | null;
-			while ((match = SGR_MOUSE_RE.exec(str)) !== null) {
-				const button = match[1];
-				if (button === '64') {
-					scrollPager(-PAGER_MOUSE_SCROLL_LINES);
-				} else if (button === '65') {
-					scrollPager(PAGER_MOUSE_SCROLL_LINES);
-				}
-			}
-		};
-
-		process.stdin.on('data', onData);
-		return () => {
-			process.stdin.removeListener('data', onData);
-		};
-	}, [pagerActive, scrollPager]);
 
 	useFeedKeyboard({
 		isActive: focusMode === 'feed' && !dialogActive && !pagerActive,
@@ -1121,11 +840,14 @@ function AppContent({
 		inputPlaceholder = 'Type a prompt or /command';
 	}
 
-	const textInputPlaceholder = dialogActive
-		? appMode.type === 'question'
-			? 'Answer question in dialog...'
-			: 'Respond to permission dialog...'
-		: inputPlaceholder;
+	let textInputPlaceholder: string;
+	if (!dialogActive) {
+		textInputPlaceholder = inputPlaceholder;
+	} else if (appMode.type === 'question') {
+		textInputPlaceholder = 'Answer question in dialog...';
+	} else {
+		textInputPlaceholder = 'Respond to permission dialog...';
+	}
 
 	// ── Render ──────────────────────────────────────────────
 
@@ -1237,7 +959,6 @@ export default function App({
 	harness,
 	isolation,
 	verbose,
-	version,
 	pluginMcpConfig,
 	modelName,
 	theme,
@@ -1274,11 +995,14 @@ export default function App({
 		workflow,
 	});
 	const inputHistory = useInputHistory(projectDir);
-	const initialPhase: AppPhase = showSetup
-		? {type: 'setup'}
-		: showSessionPicker
-			? {type: 'session-select'}
-			: {type: 'main', initialSessionId};
+	let initialPhase: AppPhase;
+	if (showSetup) {
+		initialPhase = {type: 'setup'};
+	} else if (showSessionPicker) {
+		initialPhase = {type: 'session-select'};
+	} else {
+		initialPhase = {type: 'main', initialSessionId};
+	}
 	const [phase, setPhase] = useState<AppPhase>(initialPhase);
 
 	useEffect(() => {
@@ -1435,7 +1159,6 @@ export default function App({
 					harness={runtimeState.harness}
 					isolation={runtimeState.isolation}
 					verbose={verbose}
-					version={version}
 					pluginMcpConfig={runtimeState.pluginMcpConfig}
 					modelName={runtimeState.modelName}
 					athenaSessionId={athenaSessionId}
