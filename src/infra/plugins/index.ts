@@ -6,6 +6,8 @@ export type {
 	AthenaHarness,
 	McpServerOption,
 	McpServerChoices,
+	WorkflowSelection,
+	WorkflowSelections,
 } from './config';
 export {
 	isMarketplaceRef,

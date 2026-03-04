@@ -3,13 +3,15 @@ import {
 	listWorkflows,
 	removeWorkflow,
 } from '../../core/workflows/index';
+import {readGlobalConfig, writeGlobalConfig} from '../../infra/plugins/config';
 
 const USAGE = `Usage: athena-flow workflow <subcommand>
 
 Subcommands
   install <source>   Install a workflow from a file path or marketplace ref
   list               List installed workflows
-  remove <name>      Remove an installed workflow`;
+  remove <name>      Remove an installed workflow
+  use <name>         Set the globally active workflow`;
 
 export type WorkflowCommandInput = {
 	subcommand: string;
@@ -20,6 +22,8 @@ export type WorkflowCommandDeps = {
 	installWorkflow?: typeof installWorkflow;
 	listWorkflows?: typeof listWorkflows;
 	removeWorkflow?: typeof removeWorkflow;
+	readGlobalConfig?: typeof readGlobalConfig;
+	writeGlobalConfig?: typeof writeGlobalConfig;
 	logError?: (message: string) => void;
 	logOut?: (message: string) => void;
 };
@@ -31,6 +35,8 @@ export function runWorkflowCommand(
 	const install = deps.installWorkflow ?? installWorkflow;
 	const list = deps.listWorkflows ?? listWorkflows;
 	const remove = deps.removeWorkflow ?? removeWorkflow;
+	const readConfig = deps.readGlobalConfig ?? readGlobalConfig;
+	const writeConfig = deps.writeGlobalConfig ?? writeGlobalConfig;
 	const logError = deps.logError ?? console.error;
 	const logOut = deps.logOut ?? console.log;
 
@@ -73,6 +79,10 @@ export function runWorkflowCommand(
 			}
 			try {
 				remove(name);
+				if (readConfig().activeWorkflow === name) {
+					writeConfig({activeWorkflow: undefined});
+					logOut('Active workflow cleared.');
+				}
 				logOut(`Removed workflow: ${name}`);
 				return 0;
 			} catch (error) {
@@ -81,6 +91,24 @@ export function runWorkflowCommand(
 				);
 				return 1;
 			}
+		}
+
+		case 'use': {
+			const name = input.subcommandArgs[0];
+			if (!name) {
+				logError('Usage: athena-flow workflow use <name>');
+				return 1;
+			}
+
+			const installed = list();
+			if (!installed.includes(name)) {
+				logError(`Error: Workflow "${name}" is not installed.`);
+				return 1;
+			}
+
+			writeConfig({activeWorkflow: name});
+			logOut(`Active workflow: ${name}`);
+			return 0;
 		}
 
 		default:

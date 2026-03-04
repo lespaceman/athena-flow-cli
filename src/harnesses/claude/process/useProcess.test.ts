@@ -453,7 +453,7 @@ describe('useClaudeProcess', () => {
 		);
 	});
 
-	it('should allow per-command isolation to override pluginMcpConfig', async () => {
+	it('should keep pluginMcpConfig over per-command mcpConfig override', async () => {
 		const {result} = renderHook(() =>
 			useClaudeProcess(
 				'/test',
@@ -472,7 +472,7 @@ describe('useClaudeProcess', () => {
 		expect(spawnModule.spawnClaude).toHaveBeenCalledWith(
 			expect.objectContaining({
 				isolation: expect.objectContaining({
-					mcpConfig: '/per-command/mcp.json',
+					mcpConfig: '/tmp/plugin-mcp.json',
 				}),
 			}),
 		);

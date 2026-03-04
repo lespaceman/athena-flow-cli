@@ -80,7 +80,7 @@ const cli = meow(
 			sessions              Launch interactive session picker
 			resume [sessionId]    Resume most recent (or specified) session
 			exec "<prompt>"       Run non-interactively (CI/script mode)
-			workflow <sub>        Manage workflows (install, list, remove)
+			workflow <sub>        Manage workflows (install, list, remove, use)
 
 		Options
 			--project-dir   Project directory for hook socket (default: cwd)
@@ -92,7 +92,6 @@ const cli = meow(
 			--verbose       Show additional rendering detail and streaming display
 			--theme         Color theme: dark (default), light, or high-contrast
 			--ascii         Use ASCII-only UI glyphs for compatibility
-			--workflow      Workflow reference displayed in header (e.g. name@rev)
 			--continue      Resume most recent exec session, or use --continue=<athenaSessionId> (exec mode)
 			--json          Emit JSONL events to stdout (exec mode)
 			--output-last-message  Write final assistant message to a file (exec mode)
@@ -150,9 +149,6 @@ const cli = meow(
 				default: false,
 			},
 			theme: {
-				type: 'string',
-			},
-			workflow: {
 				type: 'string',
 			},
 			ascii: {
@@ -278,7 +274,6 @@ async function main(): Promise<void> {
 		runtimeConfig = bootstrapRuntimeConfig({
 			projectDir,
 			showSetup,
-			workflowFlag: cli.flags.workflow,
 			pluginFlags: cli.flags.plugin ?? [],
 			isolationPreset,
 			verbose: cli.flags.verbose,
@@ -354,7 +349,6 @@ async function main(): Promise<void> {
 			showSessionPicker={showSessionPicker}
 			workflowRef={runtimeConfig.workflowRef}
 			workflow={runtimeConfig.workflow}
-			workflowFlag={cli.flags.workflow}
 			pluginFlags={cli.flags.plugin ?? []}
 			isolationPreset={isolationPreset}
 			ascii={cli.flags.ascii}

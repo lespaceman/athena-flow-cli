@@ -27,7 +27,11 @@ describe('extractYankContent', () => {
 	it('extracts agent.message as raw markdown', () => {
 		const event = {
 			kind: 'agent.message' as const,
-			data: {message: '# Hello\n\nWorld', source: 'hook' as const, scope: 'root' as const},
+			data: {
+				message: '# Hello\n\nWorld',
+				source: 'hook' as const,
+				scope: 'root' as const,
+			},
 		} as FeedEvent;
 		const entry = makeEntry({feedEvent: event});
 		expect(extractYankContent(entry)).toBe('# Hello\n\nWorld');
@@ -59,7 +63,11 @@ describe('extractYankContent', () => {
 		} as FeedEvent;
 		const postEvent = {
 			kind: 'tool.post' as const,
-			data: {tool_name: 'Read', tool_input: {file_path: '/foo.ts'}, tool_response: 'file content here'},
+			data: {
+				tool_name: 'Read',
+				tool_input: {file_path: '/foo.ts'},
+				tool_response: 'file content here',
+			},
 		} as FeedEvent;
 		const entry = makeEntry({feedEvent: preEvent, pairedPostEvent: postEvent});
 		const result = extractYankContent(entry);
@@ -70,7 +78,11 @@ describe('extractYankContent', () => {
 	it('extracts tool.failure error message', () => {
 		const event = {
 			kind: 'tool.failure' as const,
-			data: {tool_name: 'Read', tool_input: {file_path: '/missing'}, error: 'File not found'},
+			data: {
+				tool_name: 'Read',
+				tool_input: {file_path: '/missing'},
+				error: 'File not found',
+			},
 		} as FeedEvent;
 		const entry = makeEntry({feedEvent: event});
 		const result = extractYankContent(entry);
@@ -94,7 +106,15 @@ describe('extractYankContent', () => {
 	it('falls back to JSON.stringify for unknown event kinds', () => {
 		const event = {
 			kind: 'run.end' as const,
-			data: {status: 'completed', counters: {tool_uses: 5, tool_failures: 0, permission_requests: 0, blocks: 0}},
+			data: {
+				status: 'completed',
+				counters: {
+					tool_uses: 5,
+					tool_failures: 0,
+					permission_requests: 0,
+					blocks: 0,
+				},
+			},
 		} as FeedEvent;
 		const entry = makeEntry({feedEvent: event});
 		const result = extractYankContent(entry);

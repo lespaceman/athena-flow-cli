@@ -80,14 +80,46 @@ describe('runWorkflowCommand', () => {
 		it('removes a workflow and prints confirmation', () => {
 			const logOut = vi.fn();
 			const removeWorkflow = vi.fn();
+			const readGlobalConfig = vi.fn().mockReturnValue({
+				plugins: [],
+				additionalDirectories: [],
+			});
 
 			const code = runWorkflowCommand(
 				{subcommand: 'remove', subcommandArgs: ['my-workflow']},
-				{removeWorkflow, logOut},
+				{removeWorkflow, readGlobalConfig, logOut},
 			);
 
 			expect(code).toBe(0);
 			expect(removeWorkflow).toHaveBeenCalledWith('my-workflow');
+			expect(logOut).toHaveBeenCalledWith('Removed workflow: my-workflow');
+		});
+
+		it('clears active workflow when removing the selected workflow', () => {
+			const logOut = vi.fn();
+			const removeWorkflow = vi.fn();
+			const readGlobalConfig = vi.fn().mockReturnValue({
+				plugins: [],
+				additionalDirectories: [],
+				activeWorkflow: 'my-workflow',
+			});
+			const writeGlobalConfig = vi.fn();
+
+			const code = runWorkflowCommand(
+				{subcommand: 'remove', subcommandArgs: ['my-workflow']},
+				{
+					removeWorkflow,
+					readGlobalConfig,
+					writeGlobalConfig,
+					logOut,
+				},
+			);
+
+			expect(code).toBe(0);
+			expect(writeGlobalConfig).toHaveBeenCalledWith({
+				activeWorkflow: undefined,
+			});
+			expect(logOut).toHaveBeenCalledWith('Active workflow cleared.');
 			expect(logOut).toHaveBeenCalledWith('Removed workflow: my-workflow');
 		});
 
@@ -119,6 +151,62 @@ describe('runWorkflowCommand', () => {
 			expect(code).toBe(1);
 			expect(logError).toHaveBeenCalledWith(
 				'Usage: athena-flow workflow remove <name>',
+			);
+		});
+	});
+
+	describe('use', () => {
+		it('sets active workflow when workflow exists', () => {
+			const logOut = vi.fn();
+			const listWorkflows = vi.fn().mockReturnValue(['alpha', 'beta']);
+			const writeGlobalConfig = vi.fn();
+
+			const code = runWorkflowCommand(
+				{subcommand: 'use', subcommandArgs: ['beta']},
+				{
+					listWorkflows,
+					writeGlobalConfig,
+					logOut,
+				},
+			);
+
+			expect(code).toBe(0);
+			expect(writeGlobalConfig).toHaveBeenCalledWith({activeWorkflow: 'beta'});
+			expect(logOut).toHaveBeenCalledWith('Active workflow: beta');
+		});
+
+		it('prints usage when name is missing', () => {
+			const logError = vi.fn();
+
+			const code = runWorkflowCommand(
+				{subcommand: 'use', subcommandArgs: []},
+				{logError},
+			);
+
+			expect(code).toBe(1);
+			expect(logError).toHaveBeenCalledWith(
+				'Usage: athena-flow workflow use <name>',
+			);
+		});
+
+		it('prints error when workflow is not installed', () => {
+			const logError = vi.fn();
+			const listWorkflows = vi.fn().mockReturnValue(['alpha']);
+			const writeGlobalConfig = vi.fn();
+
+			const code = runWorkflowCommand(
+				{subcommand: 'use', subcommandArgs: ['beta']},
+				{
+					listWorkflows,
+					writeGlobalConfig,
+					logError,
+				},
+			);
+
+			expect(code).toBe(1);
+			expect(writeGlobalConfig).not.toHaveBeenCalled();
+			expect(logError).toHaveBeenCalledWith(
+				'Error: Workflow "beta" is not installed.',
 			);
 		});
 	});

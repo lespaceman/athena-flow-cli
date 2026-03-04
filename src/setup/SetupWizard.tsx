@@ -109,12 +109,6 @@ export default function SetupWizard({onComplete, onThemePreview}: Props) {
 		[markSuccess],
 	);
 
-	const handleWorkflowSkip = useCallback(() => {
-		setResult(prev => ({...prev, workflow: undefined}));
-		setMcpServersWithOptions([]);
-		markSuccess();
-	}, [markSuccess]);
-
 	const handleMcpOptionsComplete = useCallback(
 		(choices: McpServerChoices) => {
 			setResult(prev => ({...prev, mcpServerOptions: choices}));
@@ -138,10 +132,6 @@ export default function SetupWizard({onComplete, onThemePreview}: Props) {
 			handleHarnessSkip();
 			return;
 		}
-		if (stepIndex === 2) {
-			handleWorkflowSkip();
-			return;
-		}
 		if (stepIndex === 3) {
 			handleMcpOptionsComplete({});
 		}
@@ -152,7 +142,6 @@ export default function SetupWizard({onComplete, onThemePreview}: Props) {
 		markSuccess,
 		onThemePreview,
 		handleHarnessSkip,
-		handleWorkflowSkip,
 		handleMcpOptionsComplete,
 	]);
 
@@ -197,12 +186,19 @@ export default function SetupWizard({onComplete, onThemePreview}: Props) {
 		if (isComplete && !completedRef.current) {
 			try {
 				completedRef.current = true;
+				const workflowSelections = result.workflow
+					? {
+							[result.workflow]: {
+								mcpServerOptions: result.mcpServerOptions,
+							},
+						}
+					: undefined;
 				writeGlobalConfig({
 					setupComplete: true,
 					theme: result.theme,
 					harness: result.harness,
-					workflow: result.workflow,
-					mcpServerOptions: result.mcpServerOptions,
+					activeWorkflow: result.workflow,
+					workflowSelections,
 				});
 				onComplete(result);
 			} catch (error) {
@@ -266,7 +262,6 @@ export default function SetupWizard({onComplete, onThemePreview}: Props) {
 						key={retryCount}
 						onComplete={handleWorkflowComplete}
 						onError={() => markError()}
-						onSkip={handleWorkflowSkip}
 					/>
 				)}
 

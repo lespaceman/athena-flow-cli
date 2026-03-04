@@ -23,7 +23,8 @@ import type {TokenUsageParserFactory} from '../../../core/runtime/process';
 export type {UseClaudeProcessResult};
 
 /**
- * Merge isolation layers: base preset -> plugin MCP config -> per-command override.
+ * Merge isolation layers: base preset -> per-command override -> workflow/plugin MCP config.
+ * Workflow/plugin mcpConfig must win to ensure selected workflow MCP settings are always applied.
  * Returns the original preset unchanged when no overrides are needed.
  */
 function mergeIsolation(
@@ -35,8 +36,8 @@ function mergeIsolation(
 
 	return {
 		...resolveIsolationConfig(base),
-		...(pluginMcpConfig ? {mcpConfig: pluginMcpConfig} : {}),
 		...(perCommand ?? {}),
+		...(pluginMcpConfig ? {mcpConfig: pluginMcpConfig} : {}),
 	};
 }
 

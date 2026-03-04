@@ -13,6 +13,7 @@
 ### Task 1: Create `copyToClipboard` utility
 
 **Files:**
+
 - Create: `src/shared/utils/clipboard.ts`
 - Create: `src/shared/utils/__tests__/clipboard.test.ts`
 
@@ -97,6 +98,7 @@ git commit -m "feat: add copyToClipboard utility using OSC 52"
 ### Task 2: Create `extractYankContent` function
 
 **Files:**
+
 - Create: `src/ui/utils/yankContent.ts`
 - Create: `src/ui/utils/__tests__/yankContent.test.ts`
 
@@ -133,7 +135,11 @@ describe('extractYankContent', () => {
 	it('extracts agent.message as raw markdown', () => {
 		const event = {
 			kind: 'agent.message' as const,
-			data: {message: '# Hello\n\nWorld', source: 'hook' as const, scope: 'root' as const},
+			data: {
+				message: '# Hello\n\nWorld',
+				source: 'hook' as const,
+				scope: 'root' as const,
+			},
 		} as FeedEvent;
 		const entry = makeEntry({feedEvent: event});
 		expect(extractYankContent(entry)).toBe('# Hello\n\nWorld');
@@ -165,7 +171,11 @@ describe('extractYankContent', () => {
 		} as FeedEvent;
 		const postEvent = {
 			kind: 'tool.post' as const,
-			data: {tool_name: 'Read', tool_input: {file_path: '/foo.ts'}, tool_response: 'file content here'},
+			data: {
+				tool_name: 'Read',
+				tool_input: {file_path: '/foo.ts'},
+				tool_response: 'file content here',
+			},
 		} as FeedEvent;
 		const entry = makeEntry({feedEvent: preEvent, pairedPostEvent: postEvent});
 		const result = extractYankContent(entry);
@@ -176,7 +186,11 @@ describe('extractYankContent', () => {
 	it('extracts tool.failure error message', () => {
 		const event = {
 			kind: 'tool.failure' as const,
-			data: {tool_name: 'Read', tool_input: {file_path: '/missing'}, error: 'File not found'},
+			data: {
+				tool_name: 'Read',
+				tool_input: {file_path: '/missing'},
+				error: 'File not found',
+			},
 		} as FeedEvent;
 		const entry = makeEntry({feedEvent: event});
 		const result = extractYankContent(entry);
@@ -200,7 +214,15 @@ describe('extractYankContent', () => {
 	it('falls back to JSON.stringify for unknown event kinds', () => {
 		const event = {
 			kind: 'run.end' as const,
-			data: {status: 'completed', counters: {tool_uses: 5, tool_failures: 0, permission_requests: 0, blocks: 0}},
+			data: {
+				status: 'completed',
+				counters: {
+					tool_uses: 5,
+					tool_failures: 0,
+					permission_requests: 0,
+					blocks: 0,
+				},
+			},
 		} as FeedEvent;
 		const entry = makeEntry({feedEvent: event});
 		const result = extractYankContent(entry);
@@ -316,6 +338,7 @@ git commit -m "feat: add extractYankContent for yank-to-clipboard"
 ### Task 3: Add `y` keybinding to feed view
 
 **Files:**
+
 - Modify: `src/ui/hooks/useFeedKeyboard.ts` — add `yankAtCursor` callback and `y` handler
 - Modify: `src/app/shell/AppShell.tsx` — wire yankAtCursor callback
 
@@ -343,12 +366,14 @@ if (input === 'y' || input === 'Y') {
 In `src/app/shell/AppShell.tsx`:
 
 1. Add imports at top:
+
 ```typescript
 import {copyToClipboard} from '../../shared/utils/clipboard';
 import {extractYankContent} from '../../ui/utils/yankContent';
 ```
 
 2. Create the callback before the `useFeedKeyboard` call:
+
 ```typescript
 const yankAtCursor = useCallback(() => {
 	const entry = filteredEntriesRef.current[feedNav.feedCursor];
@@ -359,6 +384,7 @@ const yankAtCursor = useCallback(() => {
 ```
 
 3. Add `yankAtCursor` to the callbacks object in the `useFeedKeyboard` call:
+
 ```typescript
 yankAtCursor,
 ```
@@ -380,6 +406,7 @@ git commit -m "feat: add y keybinding to yank cursor item in feed view"
 ### Task 4: Add `y` keybinding to pager view
 
 **Files:**
+
 - Modify: `src/ui/hooks/usePager.ts` — add `y` handler in pager's useInput
 
 **Step 1: Add imports to usePager.ts**
@@ -416,10 +443,13 @@ if (input === 'y' || input === 'Y') {
 **Step 3: Update pager footer hint to include `y`**
 
 In `paintPager`, update the footer text from:
+
 ```
 `${pos}  ↑/↓ j/k scroll  PgUp/PgDn page  q exit`
 ```
+
 to:
+
 ```
 `${pos}  ↑/↓ j/k scroll  PgUp/PgDn page  y copy  q exit`
 ```
@@ -483,6 +513,7 @@ git commit -m "feat: add y keybinding to yank content in pager view"
 ### Task 5: Add toast feedback in feed view
 
 **Files:**
+
 - Modify: `src/ui/hooks/usePager.ts` — return `toastMessage` state
 - Modify: `src/app/shell/AppShell.tsx` — show toast in footer area
 
@@ -524,20 +555,33 @@ const yankAtCursor = useCallback(() => {
 In the JSX return, add just before `</Box>` (after the question dialog):
 
 ```tsx
-{toastMessage && (
-	<Box position="absolute" marginLeft={2}>
-		<Text color="green" bold>{toastMessage}</Text>
-	</Box>
-)}
+{
+	toastMessage && (
+		<Box position="absolute" marginLeft={2}>
+			<Text color="green" bold>
+				{toastMessage}
+			</Text>
+		</Box>
+	);
+}
 ```
 
 **Note:** If Ink doesn't support `position="absolute"` cleanly, an alternative is to replace the `footerHelp` line temporarily when toast is active:
 
 In the `frame.footerHelp` section, change:
+
 ```tsx
-{frame.footerHelp !== null && (
-	<Text>{frameLine(toastMessage ? chalk.bold.green(toastMessage) : fit(frame.footerHelp, innerWidth))}</Text>
-)}
+{
+	frame.footerHelp !== null && (
+		<Text>
+			{frameLine(
+				toastMessage
+					? chalk.bold.green(toastMessage)
+					: fit(frame.footerHelp, innerWidth),
+			)}
+		</Text>
+	);
+}
 ```
 
 **Step 5: Run typecheck + lint + tests**
@@ -557,6 +601,7 @@ git commit -m "feat: add toast feedback for yank in feed view"
 ### Task 6: Update keyboard hints
 
 **Files:**
+
 - Find and modify the keyboard hint configuration to include `y` for yank
 
 **Step 1: Find where keyboard hints are defined**
@@ -605,6 +650,7 @@ Expected: No new dead code introduced
 **Step 5: Manual smoke test**
 
 Run: `npm run dev` and verify:
+
 1. Navigate feed with arrows, press `y` → "Copied to clipboard!" toast appears
 2. Open pager (Enter), press `y` → "Copied to clipboard!" appears in footer
 3. Paste clipboard content to verify correctness

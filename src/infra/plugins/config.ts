@@ -20,6 +20,10 @@ export type McpServerOption = {
 
 /** Server name → chosen args array */
 export type McpServerChoices = Record<string, string[]>;
+export type WorkflowSelection = {
+	mcpServerOptions?: McpServerChoices;
+};
+export type WorkflowSelections = Record<string, WorkflowSelection>;
 
 export type AthenaConfig = {
 	plugins: string[];
@@ -29,14 +33,14 @@ export type AthenaConfig = {
 	model?: string;
 	/** Color theme: 'dark' or 'light' */
 	theme?: string;
-	/** Workflow name from standalone registry */
-	workflow?: string;
+	/** Globally selected workflow name */
+	activeWorkflow?: string;
+	/** Per-workflow saved selections (for MCP option args, etc.) */
+	workflowSelections?: WorkflowSelections;
 	/** Whether the setup wizard has been completed */
 	setupComplete?: boolean;
 	/** Which AI coding harness is being used */
 	harness?: AthenaHarness;
-	/** User-selected MCP server args from the setup wizard */
-	mcpServerOptions?: McpServerChoices;
 };
 
 const EMPTY_CONFIG: AthenaConfig = {plugins: [], additionalDirectories: []};
@@ -72,10 +76,10 @@ function readConfigFile(configPath: string, baseDir: string): AthenaConfig {
 		additionalDirectories?: string[];
 		model?: string;
 		theme?: string;
-		workflow?: string;
+		activeWorkflow?: string;
+		workflowSelections?: WorkflowSelections;
 		setupComplete?: boolean;
 		harness?: string;
-		mcpServerOptions?: McpServerChoices;
 	};
 
 	const plugins = (raw.plugins ?? [])
@@ -104,7 +108,8 @@ function readConfigFile(configPath: string, baseDir: string): AthenaConfig {
 		additionalDirectories,
 		model: raw.model,
 		theme: raw.theme,
-		workflow: raw.workflow,
+		activeWorkflow: raw.activeWorkflow,
+		workflowSelections: raw.workflowSelections,
 		setupComplete: raw.setupComplete as boolean | undefined,
 		harness:
 			raw.harness === 'claude-code' ||
@@ -114,7 +119,6 @@ function readConfigFile(configPath: string, baseDir: string): AthenaConfig {
 				: raw.harness === 'codex'
 					? 'openai-codex'
 					: undefined,
-		mcpServerOptions: raw.mcpServerOptions,
 	};
 }
 
@@ -135,7 +139,18 @@ export function writeGlobalConfig(updates: Partial<AthenaConfig>): void {
 		>;
 	}
 
-	const merged = {...existing, ...updates};
+	const merged: Record<string, unknown> = {...existing, ...updates};
+	if (updates.workflowSelections) {
+		const existingSelections =
+			(existing['workflowSelections'] as WorkflowSelections | undefined) ?? {};
+		merged['workflowSelections'] = {
+			...existingSelections,
+			...updates.workflowSelections,
+		};
+	}
+	// Legacy keys from pre-workflowSelection configs are no longer valid.
+	delete merged['workflow'];
+	delete merged['mcpServerOptions'];
 	fs.mkdirSync(configDir, {recursive: true});
 	fs.writeFileSync(configPath, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
 }

@@ -68,7 +68,13 @@ export default function WorkflowInstallWizard({source, onDone}: Props) {
 	const handleMcpComplete = useCallback(
 		(choices: McpServerChoices) => {
 			if (Object.keys(choices).length > 0) {
-				writeGlobalConfig({mcpServerOptions: choices});
+				writeGlobalConfig({
+					workflowSelections: {
+						[workflowName]: {
+							mcpServerOptions: choices,
+						},
+					},
+				});
 			}
 			setMessage(`Installed workflow: ${workflowName}`);
 			setPhase('done');

@@ -48,9 +48,9 @@ function walkAllSteps(stdin: {write: (data: string) => void}) {
 	act(() => stdin.write('s'));
 	act(() => vi.advanceTimersByTime(500));
 
-	// Step 3: arrow down to "None - configure later", then select
-	act(() => stdin.write('\u001B[B'));
+	// Step 3: select e2e-test-builder
 	act(() => stdin.write('\r'));
+	act(() => vi.advanceTimersByTime(0));
 	act(() => vi.advanceTimersByTime(500));
 
 	// Step 4: MCP options — auto-skips when collectMcpServersWithOptions returns []
@@ -84,8 +84,12 @@ describe('SetupWizard', () => {
 			setupComplete: true,
 			theme: 'dark',
 			harness: undefined,
-			workflow: undefined,
-			mcpServerOptions: {},
+			activeWorkflow: 'e2e-test-builder',
+			workflowSelections: {
+				'e2e-test-builder': {
+					mcpServerOptions: {},
+				},
+			},
 		});
 		expect(onComplete).toHaveBeenCalledTimes(1);
 	});
@@ -179,5 +183,57 @@ describe('SetupWizard', () => {
 		const frame = lastFrame()!;
 		expect(frame).toContain('Configure MCP servers');
 		expect(frame).toContain('agent-web-interface');
+	});
+
+	it('persists active workflow and workflow-scoped MCP selections', async () => {
+		const {collectMcpServersWithOptions} =
+			await import('../../infra/plugins/mcpOptions');
+		vi.mocked(collectMcpServersWithOptions).mockReturnValue([
+			{
+				serverName: 'agent-web-interface',
+				options: [
+					{label: 'Visible browser', args: []},
+					{label: 'Headless browser', args: ['--headless']},
+				],
+			},
+		]);
+
+		const {stdin} = render(
+			<ThemeProvider value={darkTheme}>
+				<SetupWizard onComplete={() => {}} />
+			</ThemeProvider>,
+		);
+
+		// Step 1: theme
+		act(() => stdin.write('\r'));
+		act(() => vi.advanceTimersByTime(500));
+
+		// Step 2: harness skip
+		act(() => stdin.write('s'));
+		act(() => vi.advanceTimersByTime(500));
+
+		// Step 3: choose workflow
+		act(() => stdin.write('\r'));
+		act(() => vi.advanceTimersByTime(0));
+		act(() => vi.advanceTimersByTime(500));
+
+		// Step 4: choose headless option
+		act(() => stdin.write('\u001B[B'));
+		act(() => stdin.write('\r'));
+		act(() => vi.advanceTimersByTime(500));
+
+		expect(writeGlobalConfig).toHaveBeenCalledWith({
+			setupComplete: true,
+			theme: 'dark',
+			harness: undefined,
+			activeWorkflow: 'e2e-test-builder',
+			workflowSelections: {
+				'e2e-test-builder': {
+					mcpServerOptions: {
+						'agent-web-interface': ['--headless'],
+					},
+				},
+			},
+		});
 	});
 });

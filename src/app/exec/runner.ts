@@ -67,8 +67,8 @@ function mergeIsolation(
 
 	return {
 		...resolveIsolationConfig(base),
-		...(pluginMcpConfig ? {mcpConfig: pluginMcpConfig} : {}),
 		...(overrides ?? {}),
+		...(pluginMcpConfig ? {mcpConfig: pluginMcpConfig} : {}),
 	};
 }
 

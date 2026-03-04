@@ -22,7 +22,7 @@ athena
 athena-flow
 ```
 
-On first run, a setup wizard guides theme selection, harness configuration, and optional workflow activation.
+On first run, a setup wizard guides theme selection, harness configuration, and workflow activation.
 
 ## Usage
 
@@ -66,7 +66,6 @@ Claude Code -> hook-forwarder (stdin) -> UDS -> athena-flow runtime
 | `--isolation`   | Isolation preset: `strict` (default), `minimal`, `permissive` |
 | `--theme`       | Color theme: `dark` (default), `light`, `high-contrast`       |
 | `--ascii`       | Use ASCII-only UI glyphs for compatibility                    |
-| `--workflow`    | Workflow reference (for example `name@owner/repo`)            |
 | `--verbose`     | Show additional rendering detail                              |
 
 `exec`-only flags:
@@ -207,7 +206,14 @@ Config files are merged in order: global -> project -> CLI flags.
 {
 	"plugins": ["/path/to/plugin"],
 	"additionalDirectories": ["/path/to/allow"],
-	"workflow": "e2e-test-builder"
+	"activeWorkflow": "e2e-test-builder",
+	"workflowSelections": {
+		"e2e-test-builder": {
+			"mcpServerOptions": {
+				"agent-web-interface": ["--headless"]
+			}
+		}
+	}
 }
 ```
 

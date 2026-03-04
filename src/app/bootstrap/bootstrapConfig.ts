@@ -21,7 +21,6 @@ import {resolveHarnessConfigProfile} from '../../harnesses/configProfiles';
 export type RuntimeBootstrapInput = {
 	projectDir: string;
 	showSetup: boolean;
-	workflowFlag?: string;
 	pluginFlags?: string[];
 	isolationPreset: HarnessProcessPreset;
 	verbose?: boolean;
@@ -65,7 +64,6 @@ function mergePluginDirs({
 export function bootstrapRuntimeConfig({
 	projectDir,
 	showSetup,
-	workflowFlag,
 	pluginFlags = [],
 	isolationPreset: initialIsolationPreset,
 	verbose = false,
@@ -77,14 +75,22 @@ export function bootstrapRuntimeConfig({
 	const warnings: string[] = [];
 	const harness =
 		projectConfig.harness ?? globalConfig.harness ?? DEFAULT_HARNESS;
-	const workflowName =
-		workflowFlag ?? projectConfig.workflow ?? globalConfig.workflow;
+	const configuredActiveWorkflow = globalConfig.activeWorkflow;
+
+	if (!showSetup && !configuredActiveWorkflow) {
+		throw new Error(
+			'No active workflow selected. Run `athena-flow workflow use <name>` or `athena-flow setup`.',
+		);
+	}
 
 	let workflowPluginDirs: string[] = [];
 	let resolvedWorkflow: WorkflowConfig | undefined;
 
-	const workflowToResolve = shouldResolveWorkflow({showSetup, workflowName})
-		? workflowName
+	const workflowToResolve = shouldResolveWorkflow({
+		showSetup,
+		workflowName: configuredActiveWorkflow,
+	})
+		? configuredActiveWorkflow
 		: undefined;
 
 	if (workflowToResolve) {
@@ -100,7 +106,13 @@ export function bootstrapRuntimeConfig({
 	});
 	const pluginResult =
 		pluginDirs.length > 0
-			? registerPlugins(pluginDirs, globalConfig.mcpServerOptions)
+			? registerPlugins(
+					pluginDirs,
+					workflowToResolve
+						? globalConfig.workflowSelections?.[workflowToResolve]
+								?.mcpServerOptions
+						: undefined,
+				)
 			: {mcpConfig: undefined, workflows: [] as WorkflowConfig[]};
 	const pluginMcpConfig = pluginResult.mcpConfig;
 	const workflows = pluginResult.workflows;
@@ -110,7 +122,7 @@ export function bootstrapRuntimeConfig({
 		activeWorkflow = workflows[0];
 	} else if (!activeWorkflow && workflows.length > 1) {
 		warnings.push(
-			`Multiple workflows found: ${workflows.map(w => w.name).join(', ')}. Use --workflow=<name> to select one.`,
+			`Multiple workflows found: ${workflows.map(w => w.name).join(', ')}. Set one with \`athena-flow workflow use <name>\`.`,
 		);
 	}
 
@@ -156,7 +168,7 @@ export function bootstrapRuntimeConfig({
 		harness,
 		isolationConfig,
 		pluginMcpConfig,
-		workflowRef: workflowFlag ?? activeWorkflow?.name,
+		workflowRef: activeWorkflow?.name,
 		workflow: activeWorkflow,
 		modelName,
 		warnings,

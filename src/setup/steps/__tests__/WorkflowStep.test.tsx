@@ -13,49 +13,21 @@ vi.mock('../../../core/workflows/index', () => ({
 }));
 
 describe('WorkflowStep', () => {
-	it('renders workflow options including skip', () => {
+	it('renders workflow options without skip', () => {
 		const {lastFrame} = render(
-			<WorkflowStep
-				onComplete={() => {}}
-				onError={() => {}}
-				onSkip={() => {}}
-			/>,
+			<WorkflowStep onComplete={() => {}} onError={() => {}} />,
 		);
 		const frame = lastFrame()!;
+		expect(frame).toContain('Select a workflow to continue.');
 		expect(frame).toContain('e2e-test-builder');
-		expect(frame).toContain('None');
-	});
-
-	it('calls onSkip when None is selected', async () => {
-		let skipped = false;
-		const {stdin} = render(
-			<WorkflowStep
-				onComplete={() => {}}
-				onError={() => {}}
-				onSkip={() => {
-					skipped = true;
-				}}
-			/>,
-		);
-		// Move down past e2e-test-builder, past bug-triage (disabled), to "None"
-		await new Promise(r => setTimeout(r, 50));
-		stdin.write('\u001B[B'); // down to bug-triage
-		await new Promise(r => setTimeout(r, 50));
-		stdin.write('\u001B[B'); // down to None
-		await new Promise(r => setTimeout(r, 50));
-		stdin.write('\r');
-		await new Promise(r => setTimeout(r, 50));
-		expect(skipped).toBe(true);
+		expect(frame).toContain('bug-triage (coming soon)');
+		expect(frame).not.toContain('None');
 	});
 
 	it('calls onComplete with name and pluginDirs on successful install', async () => {
 		const onComplete = vi.fn();
 		const {stdin} = render(
-			<WorkflowStep
-				onComplete={onComplete}
-				onError={() => {}}
-				onSkip={() => {}}
-			/>,
+			<WorkflowStep onComplete={onComplete} onError={() => {}} />,
 		);
 		// Select e2e-test-builder (first option)
 		await new Promise(r => setTimeout(r, 50));

@@ -16,10 +16,9 @@ const E2E_WORKFLOW_REF =
 type Props = {
 	onComplete: (workflowName: string, pluginDirs: string[]) => void;
 	onError: (message: string) => void;
-	onSkip: () => void;
 };
 
-export default function WorkflowStep({onComplete, onError, onSkip}: Props) {
+export default function WorkflowStep({onComplete, onError}: Props) {
 	const theme = useTheme();
 	const [status, setStatus] = useState<
 		'selecting' | 'verifying' | 'success' | 'error'
@@ -27,11 +26,7 @@ export default function WorkflowStep({onComplete, onError, onSkip}: Props) {
 	const [message, setMessage] = useState('');
 
 	const handleSelect = useCallback(
-		(value: string) => {
-			if (value === 'none') {
-				onSkip();
-				return;
-			}
+		(_value: string) => {
 			setStatus('verifying');
 			setTimeout(() => {
 				try {
@@ -50,7 +45,7 @@ export default function WorkflowStep({onComplete, onError, onSkip}: Props) {
 				}
 			}, 0);
 		},
-		[onComplete, onError, onSkip],
+		[onComplete, onError],
 	);
 
 	return (
@@ -58,9 +53,7 @@ export default function WorkflowStep({onComplete, onError, onSkip}: Props) {
 			<Text bold color={theme.accent}>
 				Install a starter workflow
 			</Text>
-			<Text color={theme.textMuted}>
-				You can skip this and install workflows later from the CLI.
-			</Text>
+			<Text color={theme.textMuted}>Select a workflow to continue.</Text>
 			<Text color={theme.textMuted}>
 				Workflow defaults apply as soon as setup finishes.
 			</Text>
@@ -74,7 +67,6 @@ export default function WorkflowStep({onComplete, onError, onSkip}: Props) {
 								value: 'bug-triage',
 								disabled: true,
 							},
-							{label: 'None - configure later', value: 'none'},
 						]}
 						onSelect={handleSelect}
 					/>

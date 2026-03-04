@@ -231,29 +231,51 @@ describe('marketplace ref integration', () => {
 	});
 });
 
-describe('workflow field', () => {
-	it('reads workflow name from project config', () => {
+describe('activeWorkflow field', () => {
+	it('reads activeWorkflow name from project config', () => {
 		files['/project/.athena/config.json'] = JSON.stringify({
-			workflow: 'e2e-testing',
+			activeWorkflow: 'e2e-testing',
 		});
 
-		expect(readConfig('/project').workflow).toBe('e2e-testing');
+		expect(readConfig('/project').activeWorkflow).toBe('e2e-testing');
 	});
 
-	it('reads workflow name from global config', () => {
+	it('reads activeWorkflow name from global config', () => {
 		files['/home/testuser/.config/athena/config.json'] = JSON.stringify({
-			workflow: 'code-review',
+			activeWorkflow: 'code-review',
 		});
 
-		expect(readGlobalConfig().workflow).toBe('code-review');
+		expect(readGlobalConfig().activeWorkflow).toBe('code-review');
 	});
 
-	it('returns undefined workflow when not set', () => {
+	it('returns undefined activeWorkflow when not set', () => {
 		files['/project/.athena/config.json'] = JSON.stringify({
 			plugins: [],
 		});
 
-		expect(readConfig('/project').workflow).toBeUndefined();
+		expect(readConfig('/project').activeWorkflow).toBeUndefined();
+	});
+});
+
+describe('workflowSelections field', () => {
+	it('reads workflowSelections from config', () => {
+		files['/home/testuser/.config/athena/config.json'] = JSON.stringify({
+			workflowSelections: {
+				'e2e-test-builder': {
+					mcpServerOptions: {
+						'agent-web-interface': ['--headless'],
+					},
+				},
+			},
+		});
+
+		expect(readGlobalConfig().workflowSelections).toEqual({
+			'e2e-test-builder': {
+				mcpServerOptions: {
+					'agent-web-interface': ['--headless'],
+				},
+			},
+		});
 	});
 });
 
@@ -300,6 +322,62 @@ describe('writeGlobalConfig', () => {
 			files['/home/testuser/.config/athena/config.json']!,
 		);
 		expect(written.harness).toBe('openai-codex');
+	});
+
+	it('deep-merges workflowSelections by workflow key', () => {
+		files['/home/testuser/.config/athena/config.json'] = JSON.stringify({
+			workflowSelections: {
+				workflowA: {
+					mcpServerOptions: {
+						serverA: ['--a'],
+					},
+				},
+			},
+		});
+
+		writeGlobalConfig({
+			workflowSelections: {
+				workflowB: {
+					mcpServerOptions: {
+						serverB: ['--b'],
+					},
+				},
+			},
+		});
+
+		const written = JSON.parse(
+			files['/home/testuser/.config/athena/config.json']!,
+		);
+		expect(written.workflowSelections).toEqual({
+			workflowA: {
+				mcpServerOptions: {
+					serverA: ['--a'],
+				},
+			},
+			workflowB: {
+				mcpServerOptions: {
+					serverB: ['--b'],
+				},
+			},
+		});
+	});
+
+	it('removes deprecated workflow and top-level mcpServerOptions keys', () => {
+		files['/home/testuser/.config/athena/config.json'] = JSON.stringify({
+			workflow: 'legacy-workflow',
+			mcpServerOptions: {legacyServer: ['--legacy']},
+			activeWorkflow: 'e2e-test-builder',
+		});
+
+		writeGlobalConfig({theme: 'dark'});
+
+		const written = JSON.parse(
+			files['/home/testuser/.config/athena/config.json']!,
+		);
+		expect(written).not.toHaveProperty('workflow');
+		expect(written).not.toHaveProperty('mcpServerOptions');
+		expect(written.activeWorkflow).toBe('e2e-test-builder');
+		expect(written.theme).toBe('dark');
 	});
 
 	it('normalizes legacy codex harness to openai-codex when reading config', () => {

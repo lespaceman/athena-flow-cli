@@ -24,16 +24,16 @@ Add a `y` (yank) keybinding that copies the currently focused item's content to 
 
 Content is copied as **markdown source / raw text** (not ANSI-formatted):
 
-| Event Kind | Yanked Content |
-|---|---|
-| `agent.message` | Raw `data.message` (markdown) |
-| `user.prompt` | Raw `data.prompt` |
-| `tool.pre` / `permission.request` | JSON of `tool_input` |
-| `tool.post` (paired) | JSON of `tool_input` + `tool_response` |
-| `tool.failure` | JSON of `tool_input` + error string |
-| `notification` | Raw `data.message` |
-| `subagent.stop` | `last_assistant_message` if present |
-| Other | JSON of `event.data` |
+| Event Kind                        | Yanked Content                         |
+| --------------------------------- | -------------------------------------- |
+| `agent.message`                   | Raw `data.message` (markdown)          |
+| `user.prompt`                     | Raw `data.prompt`                      |
+| `tool.pre` / `permission.request` | JSON of `tool_input`                   |
+| `tool.post` (paired)              | JSON of `tool_input` + `tool_response` |
+| `tool.failure`                    | JSON of `tool_input` + error string    |
+| `notification`                    | Raw `data.message`                     |
+| `subagent.stop`                   | `last_assistant_message` if present    |
+| Other                             | JSON of `event.data`                   |
 
 ## Keybinding
 
