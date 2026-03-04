@@ -59,4 +59,12 @@ describe('buildFrameLines contextual prompt', () => {
 		expect(footerHelp?.toLowerCase()).toContain('esc esc');
 		expect(footerHelp).toContain('Interrupt');
 	});
+
+	it('shows yank hint in feed mode', () => {
+		const {footerHelp} = buildFrameLines({
+			...baseCtx,
+			focusMode: 'feed',
+		});
+		expect(footerHelp).toContain('Yank');
+	});
 });

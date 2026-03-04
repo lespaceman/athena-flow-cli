@@ -76,6 +76,7 @@ export function buildFrameLines(ctx: FrameContext): FrameLines {
 		const feedPairs: Array<[string, string]> = [
 			[h.arrows, 'Navigate'],
 			[h.enter, 'Expand'],
+			['y', 'Yank'],
 			['/', 'Search'],
 			['End', 'Tail'],
 		];
