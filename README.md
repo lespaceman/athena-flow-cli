@@ -34,6 +34,8 @@ athena-flow sessions                    # Pick a session interactively
 athena-flow resume                      # Resume most recent session
 athena-flow resume <sessionId>          # Resume specific session
 athena-flow exec "summarize repo state" # Non-interactive run (CI/script)
+athena-flow workflow list               # List available workflows
+athena-flow workflow install <source>   # Install workflow from marketplace/repo
 athena-flow --help                      # Show full command/flag manual
 athena-flow --version                   # Print CLI version
 ```
@@ -82,12 +84,13 @@ Claude Code -> hook-forwarder (stdin) -> UDS -> athena-flow runtime
 
 ## CLI Commands
 
-| Command              | Description                                   |
-| -------------------- | --------------------------------------------- |
-| `setup`              | Re-run setup wizard                           |
-| `sessions`           | Launch interactive session picker             |
-| `resume [sessionId]` | Resume most recent session, or a specific one |
-| `exec "<prompt>"`    | Run Athena without Ink/TUI (automation mode)  |
+| Command              | Description                                           |
+| -------------------- | ----------------------------------------------------- |
+| `setup`              | Re-run setup wizard                                   |
+| `sessions`           | Launch interactive session picker                     |
+| `resume [sessionId]` | Resume most recent session, or a specific one         |
+| `exec "<prompt>"`    | Run Athena without Ink/TUI (automation mode)          |
+| `workflow <sub>`     | Manage workflows (`install`, `list`, `remove`, `use`) |
 
 ## Non-Interactive Exec Mode
 
