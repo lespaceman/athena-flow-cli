@@ -4,6 +4,13 @@ import {evaluateEscapeInterruptGate} from './escapeInterruptGate';
 import {startInputMeasure} from '../../shared/utils/perf';
 import type {FocusMode, InputMode} from './types';
 
+type CommandSuggestionCallbacks = {
+	moveUp: () => void;
+	moveDown: () => void;
+	tab: () => void;
+	visible: boolean;
+};
+
 type GlobalKeyboardCallbacks = {
 	interrupt: () => void;
 	cycleFocus: () => void;
@@ -15,6 +22,8 @@ type GlobalKeyboardCallbacks = {
 	historyForward: () => string | undefined;
 	getInputValue: () => string;
 	setInputValue: (value: string) => void;
+	commandSuggestions?: CommandSuggestionCallbacks;
+	inputMode?: InputMode;
 };
 
 type GlobalKeyboardOptions = {
@@ -69,6 +78,23 @@ export function useGlobalKeyboard({
 					return;
 				}
 				if (focusMode === 'input') {
+					// Command suggestion navigation (must come before Tab/arrow handlers)
+					const cs = callbacks.commandSuggestions;
+					if (callbacks.inputMode === 'command' && cs?.visible) {
+						if (key.upArrow) {
+							cs.moveUp();
+							return;
+						}
+						if (key.downArrow) {
+							cs.moveDown();
+							return;
+						}
+						if (key.tab) {
+							cs.tab();
+							return;
+						}
+					}
+
 					if (key.escape) {
 						callbacks.setFocusMode('feed');
 						callbacks.setInputMode('normal');

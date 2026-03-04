@@ -102,7 +102,7 @@ describe('useShellInput', () => {
 		});
 		const {result} = renderHook(() => useShellInput(opts));
 		act(() => {
-			result.current.handleInputSubmit('/baz');
+			result.current.handleInputSubmit(':baz');
 		});
 		expect(setSearchQuery).toHaveBeenCalledWith('baz');
 		expect(setFeedCursor).toHaveBeenCalledWith(1);

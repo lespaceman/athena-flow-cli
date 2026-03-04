@@ -77,7 +77,8 @@ export function buildFrameLines(ctx: FrameContext): FrameLines {
 			[h.arrows, 'Navigate'],
 			[h.enter, 'Expand'],
 			['y', 'Yank'],
-			['/', 'Search'],
+			['/', 'Cmds'],
+			[':', 'Search'],
 			['End', 'Tail'],
 		];
 		if (ctx.isClaudeRunning) {
@@ -92,6 +93,7 @@ export function buildFrameLines(ctx: FrameContext): FrameLines {
 	const modeBadges = [
 		runBadge,
 		...(ctx.inputMode === 'search' ? ['[SEARCH]'] : []),
+		...(ctx.inputMode === 'command' ? ['[CMD]'] : []),
 	];
 	const badgeText = modeBadges.join('');
 	const rawPrefix = 'input> ';
@@ -104,7 +106,9 @@ export function buildFrameLines(ctx: FrameContext): FrameLines {
 	);
 	let inputPlaceholder: string;
 	if (ctx.inputMode === 'search') {
-		inputPlaceholder = '/search';
+		inputPlaceholder = ':search';
+	} else if (ctx.inputMode === 'command') {
+		inputPlaceholder = '/command';
 	} else if (ctx.lastRunStatus === 'completed') {
 		inputPlaceholder = 'Run complete \u2014 type a follow-up';
 	} else if (

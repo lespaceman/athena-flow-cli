@@ -6,7 +6,7 @@ import {startInputMeasure} from '../../shared/utils/perf';
 
 export type TodoKeyboardCallbacks = {
 	setFocusMode: (mode: 'feed' | 'input' | 'todo') => void;
-	setInputMode: (mode: 'normal' | 'search') => void;
+	setInputMode: (mode: 'normal' | 'search' | 'command') => void;
 	setInputValue: (value: string) => void;
 	setTodoCursor: React.Dispatch<React.SetStateAction<number>>;
 	setFeedCursor: (cursor: number) => void;

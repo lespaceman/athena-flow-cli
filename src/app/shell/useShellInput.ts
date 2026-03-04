@@ -2,10 +2,13 @@ import {useState, useCallback, useRef} from 'react';
 import {computeInputRows} from '../../shared/utils/format';
 import {parseInput} from '../commands/parser';
 import {type TimelineEntry} from '../../core/feed/timeline';
+import type {Command} from '../commands/types';
 import type {FocusMode, InputMode} from './types';
 
 function deriveInputMode(value: string): InputMode {
-	return value.startsWith('/') ? 'search' : 'normal';
+	if (value.startsWith('/')) return 'command';
+	if (value.startsWith(':')) return 'search';
+	return 'normal';
 }
 
 function findFirstSearchMatch(
@@ -33,10 +36,12 @@ export type UseShellInputOptions = {
 	setFeedCursorRef: React.MutableRefObject<(cursor: number) => void>;
 	setTailFollowRef: React.MutableRefObject<(follow: boolean) => void>;
 	setSearchMatchPos: React.Dispatch<React.SetStateAction<number>>;
+	getSelectedCommand?: () => Command | undefined;
 };
 
 export type UseShellInputResult = {
 	inputRows: number;
+	inputValue: string;
 	inputValueRef: React.RefObject<string>;
 	setInputValueRef: React.RefObject<(value: string) => void>;
 	inputContentWidthRef: React.RefObject<number>;
@@ -56,10 +61,12 @@ export function useShellInput({
 	setFeedCursorRef,
 	setTailFollowRef,
 	setSearchMatchPos,
+	getSelectedCommand,
 }: UseShellInputOptions): UseShellInputResult {
 	const setInputValueRef = useRef<(value: string) => void>(() => {});
 	const inputValueRef = useRef('');
 	const [inputRows, setInputRows] = useState(1);
+	const [inputValue, setInputValueState] = useState('');
 
 	const syncInputModeFromValue = useCallback(
 		(value: string) => {
@@ -78,6 +85,7 @@ export function useShellInput({
 		(setValue: (value: string) => void) => {
 			setInputValueRef.current = (value: string) => {
 				inputValueRef.current = value;
+				setInputValueState(value);
 				syncInputModeFromValue(value);
 				setValue(value);
 				setInputRows(computeInputRows(value, inputContentWidthRef.current));
@@ -94,8 +102,14 @@ export function useShellInput({
 				const parsed = parseInput(trimmed);
 				if (parsed.type === 'command') {
 					submitPromptOrSlashCommand(trimmed);
-				} else if (trimmed.startsWith('/') || inputMode === 'search') {
-					const query = trimmed.replace(/^\//, '').trim();
+				} else if (inputMode === 'command') {
+					// Bare '/' or partial that didn't match a full command — use selected suggestion
+					const cmd = getSelectedCommand?.();
+					if (cmd) {
+						submitPromptOrSlashCommand(`/${cmd.name}`);
+					}
+				} else if (inputMode === 'search') {
+					const query = trimmed.replace(/^:/, '').trim();
 					setSearchQuery(query);
 					if (query.length > 0) {
 						const firstIdx = findFirstSearchMatch(
@@ -115,6 +129,7 @@ export function useShellInput({
 			}
 
 			setInputValueRef.current('');
+			setInputValueState('');
 			setInputMode('normal');
 			setFocusMode('feed');
 			setInputRows(1);
@@ -122,6 +137,7 @@ export function useShellInput({
 		[
 			inputMode,
 			submitPromptOrSlashCommand,
+			getSelectedCommand,
 			setInputMode,
 			setFocusMode,
 			setSearchQuery,
@@ -136,6 +152,7 @@ export function useShellInput({
 	const handleMainInputChange = useCallback(
 		(value: string) => {
 			inputValueRef.current = value;
+			setInputValueState(value);
 			syncInputModeFromValue(value);
 			setInputRows(computeInputRows(value, inputContentWidthRef.current));
 		},
@@ -144,6 +161,7 @@ export function useShellInput({
 
 	return {
 		inputRows,
+		inputValue,
 		inputValueRef,
 		setInputValueRef,
 		inputContentWidthRef,

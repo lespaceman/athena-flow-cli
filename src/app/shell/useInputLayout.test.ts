@@ -5,8 +5,8 @@ import {
 } from './useInputLayout';
 
 describe('deriveInputPlaceholder', () => {
-	it('returns /search for search mode', () => {
-		expect(deriveInputPlaceholder('search', null)).toBe('/search');
+	it('returns :search for search mode', () => {
+		expect(deriveInputPlaceholder('search', null)).toBe(':search');
 	});
 
 	it('returns follow-up message on completed run', () => {
