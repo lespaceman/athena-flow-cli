@@ -7,7 +7,10 @@ import {
 	resolveWorkflow,
 	installWorkflowPlugins,
 } from '../../core/workflows/index';
-import {writeGlobalConfig, type McpServerChoices} from '../../infra/plugins/config';
+import {
+	writeGlobalConfig,
+	type McpServerChoices,
+} from '../../infra/plugins/config';
 import {
 	collectMcpServersWithOptions,
 	type McpServerWithOptions,
@@ -79,10 +82,7 @@ export default function WorkflowInstallWizard({source, onDone}: Props) {
 				<StepStatus status="verifying" message="Installing workflow..." />
 			)}
 			{phase === 'mcp-options' && (
-				<McpOptionsStep
-					servers={mcpServers}
-					onComplete={handleMcpComplete}
-				/>
+				<McpOptionsStep servers={mcpServers} onComplete={handleMcpComplete} />
 			)}
 			{phase === 'done' && <StepStatus status="success" message={message} />}
 			{phase === 'error' && <StepStatus status="error" message={message} />}

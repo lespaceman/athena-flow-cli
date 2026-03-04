@@ -14,6 +14,8 @@ export type UseLayoutOptions = {
 	runSummaries: RunSummary[];
 	todoPanel: UseTodoPanelResult;
 	footerRows: number;
+	/** Number of visual rows the input field occupies (default: 1) */
+	inputRows?: number;
 };
 
 export type UseLayoutResult = {
@@ -36,13 +38,18 @@ export function useLayout({
 	runSummaries,
 	todoPanel,
 	footerRows,
+	inputRows = 1,
 }: UseLayoutOptions): UseLayoutResult {
 	const frameWidth = Math.max(4, terminalWidth);
 	const innerWidth = frameWidth - 2;
 
 	const bodyHeight = Math.max(
 		1,
-		terminalRows - HEADER_ROWS - footerRows - FRAME_BORDER_ROWS,
+		terminalRows -
+			HEADER_ROWS -
+			footerRows -
+			FRAME_BORDER_ROWS -
+			(inputRows - 1),
 	);
 
 	const todoRowsTarget = todoPanel.todoVisible

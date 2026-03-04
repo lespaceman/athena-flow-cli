@@ -33,10 +33,7 @@ const TWO_SERVERS: McpServerWithOptions[] = [
 describe('McpOptionsStep', () => {
 	it('renders first server options', () => {
 		const {lastFrame} = render(
-			<McpOptionsStep
-				servers={TWO_SERVERS}
-				onComplete={() => {}}
-				/>,
+			<McpOptionsStep servers={TWO_SERVERS} onComplete={() => {}} />,
 		);
 		const frame = lastFrame()!;
 		expect(frame).toContain('agent-web-interface');
@@ -47,10 +44,7 @@ describe('McpOptionsStep', () => {
 
 	it('advances to second server after selecting first', async () => {
 		const {stdin, lastFrame} = render(
-			<McpOptionsStep
-				servers={TWO_SERVERS}
-				onComplete={() => {}}
-				/>,
+			<McpOptionsStep servers={TWO_SERVERS} onComplete={() => {}} />,
 		);
 
 		// Select first option (Visible browser) for first server
@@ -66,10 +60,7 @@ describe('McpOptionsStep', () => {
 	it('calls onComplete with choices after selecting all servers', () => {
 		const onComplete = vi.fn();
 		const {stdin} = render(
-			<McpOptionsStep
-				servers={TWO_SERVERS}
-				onComplete={onComplete}
-				/>,
+			<McpOptionsStep servers={TWO_SERVERS} onComplete={onComplete} />,
 		);
 
 		// Select first option for first server
@@ -86,22 +77,14 @@ describe('McpOptionsStep', () => {
 
 	it('auto-calls onComplete with empty choices when no servers', () => {
 		const onComplete = vi.fn();
-		render(
-			<McpOptionsStep
-				servers={[]}
-				onComplete={onComplete}
-				/>,
-		);
+		render(<McpOptionsStep servers={[]} onComplete={onComplete} />);
 
 		expect(onComplete).toHaveBeenCalledWith({});
 	});
 
 	it('renders nothing when servers is empty', () => {
 		const {lastFrame} = render(
-			<McpOptionsStep
-				servers={[]}
-				onComplete={() => {}}
-				/>,
+			<McpOptionsStep servers={[]} onComplete={() => {}} />,
 		);
 		// Should render null (empty frame)
 		expect(lastFrame()!.trim()).toBe('');

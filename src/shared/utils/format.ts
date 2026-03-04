@@ -301,6 +301,103 @@ const CURSOR_ON = '\x1b[7m';
 const CURSOR_OFF = '\x1b[27m';
 
 /**
+ * Maps a flat cursor offset in the original string to a visual (line, col) position.
+ * Accounts for `\n` characters that are consumed by wrapText but don't appear in any line.
+ */
+export function cursorToVisualPosition(
+	value: string,
+	cursorOffset: number,
+	width: number,
+): {line: number; col: number; totalLines: number} {
+	if (width <= 0) return {line: 0, col: cursorOffset, totalLines: 1};
+
+	const segments = value.split('\n');
+	let visualLine = 0;
+	let globalOffset = 0;
+
+	for (let s = 0; s < segments.length; s++) {
+		const seg = segments[s]!;
+		const segEnd = globalOffset + seg.length;
+
+		if (cursorOffset <= segEnd) {
+			// Cursor is within this segment
+			const posInSeg = cursorOffset - globalOffset;
+			const totalLines =
+				visualLine + countSegmentVisualLines(segments, s, width);
+			if (seg.length === 0) {
+				return {line: visualLine, col: 0, totalLines};
+			}
+			const lineInSeg = Math.min(
+				Math.floor(posInSeg / width),
+				segmentVisualLines(seg.length, width) - 1,
+			);
+			const colInLine = posInSeg - lineInSeg * width;
+			return {line: visualLine + lineInSeg, col: colInLine, totalLines};
+		}
+
+		visualLine += segmentVisualLines(seg.length, width);
+		globalOffset = segEnd + 1; // +1 for \n
+	}
+
+	// Fallback: cursor at very end
+	const totalLines = wrapText(value, width).length;
+	return {line: Math.max(0, totalLines - 1), col: 0, totalLines};
+}
+
+/** Visual lines occupied by a single segment at the given width. */
+function segmentVisualLines(segLen: number, width: number): number {
+	return segLen === 0 ? 1 : Math.ceil(segLen / width);
+}
+
+/** Count total visual lines from segment index onwards. */
+function countSegmentVisualLines(
+	segments: string[],
+	fromIdx: number,
+	width: number,
+): number {
+	let count = 0;
+	for (let i = fromIdx; i < segments.length; i++) {
+		count += segmentVisualLines(segments[i]!.length, width);
+	}
+	return count;
+}
+
+/**
+ * Maps a visual (line, col) position back to a flat cursor offset in the original string.
+ * Inverse of cursorToVisualPosition.
+ */
+export function visualPositionToOffset(
+	value: string,
+	targetLine: number,
+	targetCol: number,
+	width: number,
+): number {
+	if (width <= 0) return targetCol;
+
+	const segments = value.split('\n');
+	let visualLine = 0;
+	let globalOffset = 0;
+
+	for (let s = 0; s < segments.length; s++) {
+		const seg = segments[s]!;
+		const numWrappedLines = segmentVisualLines(seg.length, width);
+
+		if (targetLine < visualLine + numWrappedLines) {
+			// Target is within this segment
+			const lineInSeg = targetLine - visualLine;
+			const lineStart = lineInSeg * width;
+			const lineLen = Math.min(width, seg.length - lineStart);
+			return globalOffset + lineStart + Math.min(targetCol, lineLen);
+		}
+
+		visualLine += numWrappedLines;
+		globalOffset += seg.length + 1; // +1 for \n
+	}
+
+	return value.length;
+}
+
+/**
  * Renders input text with ANSI block cursor, supporting multi-line wrapping.
  * Returns an array of strings (1 to MAX_INPUT_ROWS lines).
  */
@@ -327,19 +424,12 @@ export function renderInputLines(
 
 	const rawLines = wrapText(value, width);
 
-	// Find which line the cursor is on
-	let charCount = 0;
-	let cursorLine = 0;
-	let cursorCol = 0;
-	for (let i = 0; i < rawLines.length; i++) {
-		const lineLen = rawLines[i]!.length;
-		if (cursorOffset <= charCount + lineLen) {
-			cursorLine = i;
-			cursorCol = cursorOffset - charCount;
-			break;
-		}
-		charCount += lineLen;
-	}
+	// Find which line the cursor is on using newline-aware mapping
+	const {line: cursorLine, col: cursorCol} = cursorToVisualPosition(
+		value,
+		cursorOffset,
+		width,
+	);
 
 	// Viewport scrolling when more than MAX_INPUT_ROWS
 	let viewStart = 0;
@@ -368,7 +458,7 @@ export function renderInputLines(
 	});
 }
 
-function wrapText(text: string, width: number): string[] {
+export function wrapText(text: string, width: number): string[] {
 	if (width <= 0) return [text];
 	const lines: string[] = [];
 	for (const segment of text.split('\n')) {
@@ -381,6 +471,15 @@ function wrapText(text: string, width: number): string[] {
 		}
 	}
 	return lines;
+}
+
+/**
+ * Compute the number of visual rows an input value occupies at the given width.
+ * Result is clamped between 1 and MAX_INPUT_ROWS.
+ */
+export function computeInputRows(value: string, width: number): number {
+	if (!value || width <= 0) return 1;
+	return Math.max(1, Math.min(wrapText(value, width).length, MAX_INPUT_ROWS));
 }
 
 export function formatInputBuffer(

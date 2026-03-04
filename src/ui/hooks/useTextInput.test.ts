@@ -206,6 +206,90 @@ describe('textInputReducer', () => {
 		});
 	});
 
+	describe('move-up', () => {
+		it('moves cursor to equivalent column on previous visual line', () => {
+			// "abcdefghij" at width 5 wraps to: ["abcde", "fghij"]
+			// cursor at offset 7 = line 1, col 2 → move up → line 0, col 2 = offset 2
+			const state = {value: 'abcdefghij', cursorOffset: 7};
+			const result = textInputReducer(state, {type: 'move-up', width: 5});
+			expect(result.cursorOffset).toBe(2);
+		});
+
+		it('no-ops when already on first visual line', () => {
+			const state = {value: 'abcdefghij', cursorOffset: 2};
+			const result = textInputReducer(state, {type: 'move-up', width: 5});
+			expect(result).toBe(state);
+		});
+
+		it('clamps column when target line is shorter', () => {
+			// "abcdefgh" at width 5 wraps to: ["abcde", "fgh"]
+			// cursor at offset 8 (line 1, col 3=end of "fgh") → move up → line 0, col 3
+			const state = {value: 'abcdefgh', cursorOffset: 8};
+			const result = textInputReducer(state, {type: 'move-up', width: 5});
+			expect(result.cursorOffset).toBe(3);
+		});
+
+		it('no-ops on single-line text', () => {
+			const state = {value: 'hello', cursorOffset: 3};
+			const result = textInputReducer(state, {type: 'move-up', width: 20});
+			expect(result).toBe(state);
+		});
+
+		it('works across newline boundaries', () => {
+			// "abc\ndef" at width 20 → visual lines ["abc", "def"]
+			// cursor at offset 5 ('e', line 1 col 1) → move up → line 0, col 1 = offset 1
+			const state = {value: 'abc\ndef', cursorOffset: 5};
+			const result = textInputReducer(state, {type: 'move-up', width: 20});
+			expect(result.cursorOffset).toBe(1);
+		});
+	});
+
+	describe('move-down', () => {
+		it('moves cursor to equivalent column on next visual line', () => {
+			// "abcdefghij" at width 5 → ["abcde", "fghij"]
+			// cursor at offset 2 = line 0, col 2 → move down → line 1, col 2 = offset 7
+			const state = {value: 'abcdefghij', cursorOffset: 2};
+			const result = textInputReducer(state, {type: 'move-down', width: 5});
+			expect(result.cursorOffset).toBe(7);
+		});
+
+		it('no-ops when already on last visual line', () => {
+			const state = {value: 'abcdefghij', cursorOffset: 7};
+			const result = textInputReducer(state, {type: 'move-down', width: 5});
+			expect(result).toBe(state);
+		});
+
+		it('clamps column when target line is shorter', () => {
+			// "abcdefgh" at width 5 → ["abcde", "fgh"]
+			// cursor at offset 4 (line 0, col 4) → move down → line 1 has 3 chars → col 3 → offset 8
+			const state = {value: 'abcdefgh', cursorOffset: 4};
+			const result = textInputReducer(state, {type: 'move-down', width: 5});
+			expect(result.cursorOffset).toBe(8);
+		});
+
+		it('no-ops on single-line text', () => {
+			const state = {value: 'hello', cursorOffset: 3};
+			const result = textInputReducer(state, {type: 'move-down', width: 20});
+			expect(result).toBe(state);
+		});
+
+		it('works with three visual lines from wrapping', () => {
+			// "abcdefghijklmno" at width 5 → ["abcde", "fghij", "klmno"]
+			// cursor at offset 2 (line 0, col 2) → move down → line 1, col 2 = offset 7
+			const state = {value: 'abcdefghijklmno', cursorOffset: 2};
+			const result = textInputReducer(state, {type: 'move-down', width: 5});
+			expect(result.cursorOffset).toBe(7);
+		});
+
+		it('works across newline boundaries', () => {
+			// "abc\ndef" at width 20 → visual lines ["abc", "def"]
+			// cursor at offset 1 ('b', line 0 col 1) → move down → line 1, col 1 = offset 5
+			const state = {value: 'abc\ndef', cursorOffset: 1};
+			const result = textInputReducer(state, {type: 'move-down', width: 20});
+			expect(result.cursorOffset).toBe(5);
+		});
+	});
+
 	describe('set-value', () => {
 		it('replaces value and moves cursor to end', () => {
 			const state = {value: 'old', cursorOffset: 1};

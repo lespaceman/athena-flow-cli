@@ -139,4 +139,45 @@ describe('SetupWizard', () => {
 		);
 		expect(lastFrame()!).toContain('Step 1 of 4');
 	});
+
+	it('shows MCP options step when workflow has servers with options', async () => {
+		const {collectMcpServersWithOptions} =
+			await import('../../infra/plugins/mcpOptions');
+		vi.mocked(collectMcpServersWithOptions).mockReturnValue([
+			{
+				serverName: 'agent-web-interface',
+				options: [
+					{label: 'Visible browser', args: []},
+					{label: 'Headless browser', args: ['--headless']},
+				],
+			},
+		]);
+
+		const onComplete = vi.fn();
+		const {stdin, lastFrame} = render(
+			<ThemeProvider value={darkTheme}>
+				<SetupWizard onComplete={onComplete} />
+			</ThemeProvider>,
+		);
+
+		// Step 1: select Dark theme
+		act(() => stdin.write('\r'));
+		act(() => vi.advanceTimersByTime(500));
+
+		// Step 2: skip harness
+		act(() => stdin.write('s'));
+		act(() => vi.advanceTimersByTime(500));
+
+		// Step 3: select e2e-test-builder (first option)
+		act(() => stdin.write('\r'));
+		// Wait for setTimeout(fn, 0) in WorkflowStep to fire
+		act(() => vi.advanceTimersByTime(0));
+		// Auto-advance after success
+		act(() => vi.advanceTimersByTime(500));
+
+		// Step 4: MCP options should be showing
+		const frame = lastFrame()!;
+		expect(frame).toContain('Configure MCP servers');
+		expect(frame).toContain('agent-web-interface');
+	});
 });

@@ -15,6 +15,10 @@ import {
 	MAX_INPUT_ROWS,
 	shortenPath,
 	shortenPathStructured,
+	computeInputRows,
+	wrapText,
+	cursorToVisualPosition,
+	visualPositionToOffset,
 } from './format';
 
 describe('compactText', () => {
@@ -545,5 +549,166 @@ describe('renderInputLines', () => {
 	it('returns empty string for width <= 0', () => {
 		const lines = renderInputLines('hello', 0, 0, true, '');
 		expect(lines).toEqual(['']);
+	});
+});
+
+describe('wrapText', () => {
+	it('wraps long text at width boundary', () => {
+		expect(wrapText('abcdefghij', 5)).toEqual(['abcde', 'fghij']);
+	});
+
+	it('splits on explicit newlines', () => {
+		expect(wrapText('abc\ndef', 10)).toEqual(['abc', 'def']);
+	});
+
+	it('handles empty segments from consecutive newlines', () => {
+		expect(wrapText('a\n\nb', 10)).toEqual(['a', '', 'b']);
+	});
+
+	it('returns original text in array when width <= 0', () => {
+		expect(wrapText('hello', 0)).toEqual(['hello']);
+	});
+});
+
+describe('computeInputRows', () => {
+	it('returns 1 for empty string', () => {
+		expect(computeInputRows('', 20)).toBe(1);
+	});
+
+	it('returns 1 for short text', () => {
+		expect(computeInputRows('hello', 20)).toBe(1);
+	});
+
+	it('returns 2 for text that wraps once', () => {
+		expect(computeInputRows('abcdefghij', 5)).toBe(2);
+	});
+
+	it('returns correct count for text with newlines', () => {
+		expect(computeInputRows('a\nb\nc', 20)).toBe(3);
+	});
+
+	it('caps at MAX_INPUT_ROWS', () => {
+		const longText = Array(20).fill('line').join('\n');
+		expect(computeInputRows(longText, 20)).toBe(MAX_INPUT_ROWS);
+	});
+
+	it('returns 1 when width <= 0', () => {
+		expect(computeInputRows('hello', 0)).toBe(1);
+	});
+});
+
+describe('cursorToVisualPosition', () => {
+	it('maps simple single-line text', () => {
+		const result = cursorToVisualPosition('hello', 3, 20);
+		expect(result).toEqual({line: 0, col: 3, totalLines: 1});
+	});
+
+	it('maps wrapped text to correct visual line', () => {
+		// "abcdefghij" at width 5 → ["abcde", "fghij"]
+		// offset 7 → line 1, col 2
+		const result = cursorToVisualPosition('abcdefghij', 7, 5);
+		expect(result).toEqual({line: 1, col: 2, totalLines: 2});
+	});
+
+	it('maps cursor at wrap boundary to next line start', () => {
+		// "abcdefghij" at width 5, offset 5 → line 1, col 0
+		const result = cursorToVisualPosition('abcdefghij', 5, 5);
+		expect(result).toEqual({line: 1, col: 0, totalLines: 2});
+	});
+
+	it('maps cursor at end of exactly-full line to same line', () => {
+		// "abcde" at width 5, offset 5 → line 0, col 5 (cursor at end)
+		const result = cursorToVisualPosition('abcde', 5, 5);
+		expect(result).toEqual({line: 0, col: 5, totalLines: 1});
+	});
+
+	it('accounts for \\n characters in offset mapping', () => {
+		// "abc\ndef" → segments ["abc", "def"]
+		// offset 0 = 'a' → line 0, col 0
+		expect(cursorToVisualPosition('abc\ndef', 0, 20)).toEqual({
+			line: 0,
+			col: 0,
+			totalLines: 2,
+		});
+		// offset 3 = end of "abc" → line 0, col 3
+		expect(cursorToVisualPosition('abc\ndef', 3, 20)).toEqual({
+			line: 0,
+			col: 3,
+			totalLines: 2,
+		});
+		// offset 4 = 'd' (first char of line 2) → line 1, col 0
+		expect(cursorToVisualPosition('abc\ndef', 4, 20)).toEqual({
+			line: 1,
+			col: 0,
+			totalLines: 2,
+		});
+		// offset 6 = 'f' → line 1, col 2
+		expect(cursorToVisualPosition('abc\ndef', 6, 20)).toEqual({
+			line: 1,
+			col: 2,
+			totalLines: 2,
+		});
+	});
+
+	it('handles multiple newlines', () => {
+		// "a\nb\nc" → 3 visual lines
+		expect(cursorToVisualPosition('a\nb\nc', 2, 20)).toEqual({
+			line: 1,
+			col: 0,
+			totalLines: 3,
+		});
+		expect(cursorToVisualPosition('a\nb\nc', 4, 20)).toEqual({
+			line: 2,
+			col: 0,
+			totalLines: 3,
+		});
+	});
+
+	it('handles empty segments from consecutive newlines', () => {
+		// "a\n\nb" → segments ["a", "", "b"] → 3 visual lines
+		expect(cursorToVisualPosition('a\n\nb', 2, 20)).toEqual({
+			line: 1,
+			col: 0,
+			totalLines: 3,
+		});
+		expect(cursorToVisualPosition('a\n\nb', 3, 20)).toEqual({
+			line: 2,
+			col: 0,
+			totalLines: 3,
+		});
+	});
+});
+
+describe('visualPositionToOffset', () => {
+	it('maps simple position back to offset', () => {
+		expect(visualPositionToOffset('hello', 0, 3, 20)).toBe(3);
+	});
+
+	it('maps wrapped line position back to offset', () => {
+		// "abcdefghij" at width 5 → ["abcde", "fghij"]
+		// line 1, col 2 → offset 7
+		expect(visualPositionToOffset('abcdefghij', 1, 2, 5)).toBe(7);
+	});
+
+	it('accounts for \\n in reverse mapping', () => {
+		// "abc\ndef" → line 1, col 0 → offset 4 (skipping \\n at offset 3)
+		expect(visualPositionToOffset('abc\ndef', 1, 0, 20)).toBe(4);
+		// line 1, col 2 → offset 6
+		expect(visualPositionToOffset('abc\ndef', 1, 2, 20)).toBe(6);
+	});
+
+	it('clamps column to line length', () => {
+		// "abcdefgh" at width 5 → ["abcde", "fgh"]
+		// line 1, col 10 → should clamp to offset 8 (end of "fgh")
+		expect(visualPositionToOffset('abcdefgh', 1, 10, 5)).toBe(8);
+	});
+
+	it('roundtrips with cursorToVisualPosition', () => {
+		const text = 'hello\nworld\nfoo';
+		for (let offset = 0; offset <= text.length; offset++) {
+			const {line, col} = cursorToVisualPosition(text, offset, 20);
+			const back = visualPositionToOffset(text, line, col, 20);
+			expect(back).toBe(offset);
+		}
 	});
 });

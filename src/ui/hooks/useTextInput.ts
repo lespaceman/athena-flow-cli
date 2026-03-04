@@ -1,6 +1,10 @@
 import {useReducer, useCallback, useEffect, useRef} from 'react';
 import {useInput, useStdin} from 'ink';
 import {startInputMeasure} from '../../shared/utils/perf';
+import {
+	cursorToVisualPosition,
+	visualPositionToOffset,
+} from '../../shared/utils/format';
 
 export type TextInputState = {
 	value: string;
@@ -18,6 +22,8 @@ export type TextInputAction =
 	| {type: 'delete-word-back'}
 	| {type: 'clear-line'}
 	| {type: 'newline-escape'}
+	| {type: 'move-up'; width: number}
+	| {type: 'move-down'; width: number}
 	| {type: 'set-value'; value: string};
 
 export function textInputReducer(
@@ -88,6 +94,25 @@ export function textInputReducer(
 			return {value: before + '\n' + after, cursorOffset};
 		}
 
+		case 'move-up':
+		case 'move-down': {
+			const {
+				line: curLine,
+				col: curCol,
+				totalLines,
+			} = cursorToVisualPosition(value, cursorOffset, action.width);
+			if (totalLines <= 1) return state;
+			const targetLine = action.type === 'move-up' ? curLine - 1 : curLine + 1;
+			if (targetLine < 0 || targetLine >= totalLines) return state;
+			const newOffset = visualPositionToOffset(
+				value,
+				targetLine,
+				curCol,
+				action.width,
+			);
+			return {...state, cursorOffset: newOffset};
+		}
+
 		case 'set-value':
 			if (action.value === value && cursorOffset === action.value.length)
 				return state;
@@ -111,6 +136,8 @@ type UseTextInputReturn = {
 	cursorOffset: number;
 	/** Programmatically set the value (cursor moves to end) */
 	setValue: (value: string) => void;
+	/** Dispatch raw actions to the reducer (for move-up/move-down etc.) */
+	dispatch: React.Dispatch<TextInputAction>;
 };
 
 export function useTextInput(
@@ -272,5 +299,6 @@ export function useTextInput(
 		value: state.value,
 		cursorOffset: state.cursorOffset,
 		setValue,
+		dispatch,
 	};
 }

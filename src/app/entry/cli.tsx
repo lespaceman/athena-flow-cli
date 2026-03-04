@@ -228,9 +228,8 @@ async function main(): Promise<void> {
 		// Interactive install: renders MCP options wizard if servers have options
 		if (subcommand === 'install' && subcommandArgs[0]) {
 			const source = subcommandArgs[0];
-			const {default: WorkflowInstallWizard} = await import(
-				'../../setup/steps/WorkflowInstallWizard'
-			);
+			const {default: WorkflowInstallWizard} =
+				await import('../../setup/steps/WorkflowInstallWizard');
 			const {waitUntilExit} = render(
 				<WorkflowInstallWizard
 					source={source}
