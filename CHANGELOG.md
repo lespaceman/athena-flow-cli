@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.2](https://github.com/lespaceman/athena-flow/compare/athena-flow-cli-v0.3.1...athena-flow-cli-v0.3.2) (2026-03-04)
+
+
+### Features
+
+* add copyToClipboard utility using OSC 52 ([4fd67f6](https://github.com/lespaceman/athena-flow/commit/4fd67f644f0d3336bc3243ff98a68dd1ba4c8542))
+* add extractYankContent for yank-to-clipboard ([92c1128](https://github.com/lespaceman/athena-flow/commit/92c112876b88a5804fc754aea42d5ba13d1bfb6c))
+* add toast feedback for yank in feed view ([81926b6](https://github.com/lespaceman/athena-flow/commit/81926b6323c78233400856e8504977b1540fe541))
+* add y keybinding to yank content in pager view ([be64f4d](https://github.com/lespaceman/athena-flow/commit/be64f4d1d402f4eb8cf97e38543ad28214fe75ca))
+* add y keybinding to yank cursor item in feed view ([85b30c0](https://github.com/lespaceman/athena-flow/commit/85b30c0ddc608a290cc4757130ce6452d284aae5))
+* add yank hint to keyboard help ([d203d10](https://github.com/lespaceman/athena-flow/commit/d203d10bc8d7311dbc82a5a61fddce685a8b0bc4))
+* finalize setup/workflow updates and refresh docs ([c845434](https://github.com/lespaceman/athena-flow/commit/c845434d1c25d775c1771bb4c8fd47640b822aa4))
+* **tui:** align feed styling and tool pill visuals with mock ([f6d8ea1](https://github.com/lespaceman/athena-flow/commit/f6d8ea166860d076ad6c40e79fb603e149bca936))
+
+
+### Bug Fixes
+
+* exclude docs/mockup.html from prettier (JSX in .html extension) ([7b5ab4e](https://github.com/lespaceman/athena-flow/commit/7b5ab4ecaa9caf9eb2519993c31509addbabe068))
+* **tui:** preserve session context and normalize pill categorization ([39ec145](https://github.com/lespaceman/athena-flow/commit/39ec1458e9d9a6c5274ba72d515ebf26f1dfeca0))
+* **ui:** stabilize feed viewport sizing and clamp tiny todo rendering ([a5533e9](https://github.com/lespaceman/athena-flow/commit/a5533e97ab0f5496472116e9882e4a5a0c3b3246))
+* use platform CLI tools (xclip/pbcopy) for clipboard, OSC 52 as fallback ([e3a24d9](https://github.com/lespaceman/athena-flow/commit/e3a24d9b82fad28a0232f66c5af95b8ef8bb43fe))
+* **yank:** harden copy flow and preserve rich detail output ([aea81dd](https://github.com/lespaceman/athena-flow/commit/aea81dd31d989f7c9a3c7837f95a1473dd3837a9))
+
 ## [0.3.1](https://github.com/lespaceman/athena-flow/compare/athena-flow-cli-v0.3.0...athena-flow-cli-v0.3.1) (2026-03-04)
 
 
