@@ -34,9 +34,8 @@ function cachedStringWidth(text: string): number {
 export function spaces(count: number): string {
 	if (count <= 0) return '';
 	if (count < SPACE_CACHE_MAX) {
-		const cached = spaceCache[count];
-		if (cached !== undefined) {
-			return cached;
+		if (count in spaceCache) {
+			return spaceCache[count];
 		}
 		const generated = ' '.repeat(count);
 		spaceCache[count] = generated;
@@ -282,15 +281,15 @@ export function summarizeToolPrimaryInput(
 	toolName: string,
 	toolInput: Record<string, unknown>,
 ): string {
-	const extractor = PRIMARY_INPUT_EXTRACTORS[toolName];
-	if (extractor) {
+	if (toolName in PRIMARY_INPUT_EXTRACTORS) {
 		if (Object.keys(toolInput).length === 0) return '';
-		return extractor(toolInput);
+		return PRIMARY_INPUT_EXTRACTORS[toolName](toolInput);
 	}
 	const parsed = parseToolName(toolName);
 	if (parsed.isMcp && parsed.mcpAction) {
-		const mcpExtractor = MCP_INPUT_EXTRACTORS[parsed.mcpAction];
-		if (mcpExtractor) return mcpExtractor(toolInput);
+		if (parsed.mcpAction in MCP_INPUT_EXTRACTORS) {
+			return MCP_INPUT_EXTRACTORS[parsed.mcpAction](toolInput);
+		}
 	}
 	if (Object.keys(toolInput).length === 0) return '';
 	return summarizeToolInput(toolInput);
@@ -506,4 +505,9 @@ export function formatInputBuffer(
 	const desiredStart = Math.max(0, cursorOffset + 1 - Math.floor(width * 0.65));
 	const start = Math.min(desiredStart, withCursor.length - width);
 	return fit(withCursor.slice(start, start + width), width);
+}
+
+/** True when value is a slash-command prefix (starts with `/`, no spaces yet). */
+export function isCommandPrefix(value: string): boolean {
+	return value.startsWith('/') && !value.includes(' ');
 }
