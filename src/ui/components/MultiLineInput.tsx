@@ -27,6 +27,8 @@ export type MultiLineInputProps = {
 	textColor?: string;
 	/** Optional text color when showing placeholder */
 	placeholderColor?: string;
+	/** When true, up/down arrow keys are suppressed (e.g. command suggestions handle them) */
+	suppressArrows?: boolean;
 };
 
 export function MultiLineInput({
@@ -40,6 +42,7 @@ export function MultiLineInput({
 	setValueRef,
 	textColor,
 	placeholderColor,
+	suppressArrows,
 }: MultiLineInputProps) {
 	const {value, cursorOffset, setValue, dispatch} = useTextInput({
 		onChange,
@@ -61,6 +64,8 @@ export function MultiLineInput({
 	historyBackRef.current = onHistoryBack;
 	const historyForwardRef = useRef(onHistoryForward);
 	historyForwardRef.current = onHistoryForward;
+	const suppressArrowsRef = useRef(suppressArrows);
+	suppressArrowsRef.current = suppressArrows;
 
 	const handleArrows = useCallback(
 		(
@@ -75,6 +80,8 @@ export function MultiLineInput({
 
 			// Ctrl+P/N always trigger history
 			if (key.ctrl) return; // handled by parent AppShell
+
+			if (suppressArrowsRef.current && (key.upArrow || key.downArrow)) return;
 
 			if (key.upArrow) {
 				const {line: cursorLine} = cursorToVisualPosition(val, cursor, width);

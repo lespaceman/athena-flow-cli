@@ -833,6 +833,7 @@ function AppContent({
 						onSubmit={handleInputSubmit}
 						onHistoryBack={handleHistoryBack}
 						onHistoryForward={handleHistoryForward}
+						suppressArrows={commandSuggestions.showSuggestions}
 						setValueRef={handleSetValueRef}
 					/>
 				</Box>

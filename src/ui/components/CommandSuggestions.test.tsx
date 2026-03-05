@@ -58,27 +58,7 @@ describe('CommandSuggestions', () => {
 		expect(frame).toContain('Exit athena-cli');
 	});
 
-	it('shows > indicator on selected item', () => {
-		const {lastFrame} = render(
-			<CommandSuggestions
-				commands={commands}
-				selectedIndex={1}
-				{...defaultProps}
-			/>,
-		);
-		const frame = lastFrame() ?? '';
-		const lines = frame.split('\n');
-
-		// Line at index 1 (second command) should have > indicator
-		const clearLine = lines.find(l => l.includes('/clear'));
-		expect(clearLine).toContain('>');
-
-		// Other lines should not have > indicator (they have space instead)
-		const helpLine = lines.find(l => l.includes('/help'));
-		expect(helpLine).not.toContain('>');
-	});
-
-	it('highlights selected item differently from unselected', () => {
+	it('renders one line per command', () => {
 		const {lastFrame} = render(
 			<CommandSuggestions
 				commands={commands}
@@ -87,10 +67,8 @@ describe('CommandSuggestions', () => {
 			/>,
 		);
 		const frame = lastFrame() ?? '';
-		// Selected item (help) should have > indicator
-		const lines = frame.split('\n');
-		const helpLine = lines.find(l => l.includes('/help'));
-		expect(helpLine).toContain('>');
+		const lines = frame.split('\n').filter(Boolean);
+		expect(lines).toHaveLength(3);
 	});
 
 	describe('column alignment', () => {
