@@ -71,7 +71,7 @@ function extractTextContent(response: unknown): string {
 		if (parts.length > 0) return parts.join('\n').trim();
 	}
 
-	if (typeof response === 'object' && response !== null) {
+	if (typeof response === 'object') {
 		const text = prop(response, 'text');
 		if (typeof text === 'string' && prop(response, 'type') === 'text') {
 			return text.trim();
@@ -441,12 +441,10 @@ export function extractToolOutput(
 	toolResponse: unknown,
 ): RenderableOutput {
 	const extractor = EXTRACTORS[toolName];
-	if (extractor) {
-		try {
-			return withPreview(extractor(toolInput, toolResponse));
-		} catch {
-			// fall through to generic text
-		}
+	try {
+		return withPreview(extractor(toolInput, toolResponse));
+	} catch {
+		// fall through to generic text
 	}
 	return withPreview({
 		type: 'text',

@@ -1,4 +1,3 @@
-import process from 'node:process';
 import React from 'react';
 import {Box, Text} from 'ink';
 import type {FeedEvent} from '../../core/feed/types';
@@ -6,6 +5,7 @@ import {getGlyphs} from '../glyphs/index';
 import {useTheme} from '../theme/index';
 import {truncateLine} from '../../shared/utils/truncate';
 import MarkdownText from './ToolOutput/MarkdownText';
+import {termColumns} from '../../shared/utils/terminal';
 
 type Props = {
 	event: FeedEvent;
@@ -23,7 +23,7 @@ export default function AgentMessageEvent({
 	const theme = useTheme();
 	if (event.kind !== 'agent.message') return null;
 
-	const width = parentWidth ?? process.stdout.columns ?? 80;
+	const width = parentWidth ?? termColumns();
 	const {message, scope} = event.data;
 	const g = getGlyphs();
 	const glyph = g['message.agent'];

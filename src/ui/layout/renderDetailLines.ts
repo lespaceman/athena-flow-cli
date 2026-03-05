@@ -294,8 +294,16 @@ function detailSubject(event: FeedEvent): string | undefined {
 			return event.data.reason;
 		case 'agent.message':
 			return event.data.scope === 'subagent' ? event.actor_id : undefined;
-		default:
+		case 'user.prompt':
+		case 'stop.request':
+		case 'compact.pre':
+		case 'setup':
+		case 'teammate.idle':
 			return undefined;
+		default: {
+			const _exhaustive: never = event;
+			return _exhaustive;
+		}
 	}
 }
 
@@ -311,8 +319,32 @@ function toolUseId(event: FeedEvent): string | undefined {
 		case 'tool.failure':
 		case 'permission.request':
 			return event.data.tool_use_id;
-		default:
+		case 'session.start':
+		case 'session.end':
+		case 'run.start':
+		case 'run.end':
+		case 'user.prompt':
+		case 'permission.decision':
+		case 'stop.request':
+		case 'stop.decision':
+		case 'subagent.start':
+		case 'subagent.stop':
+		case 'notification':
+		case 'compact.pre':
+		case 'setup':
+		case 'unknown.hook':
+		case 'todo.add':
+		case 'todo.update':
+		case 'todo.done':
+		case 'agent.message':
+		case 'teammate.idle':
+		case 'task.completed':
+		case 'config.change':
 			return undefined;
+		default: {
+			const _exhaustive: never = event;
+			return _exhaustive;
+		}
 	}
 }
 
@@ -533,7 +565,7 @@ export function renderDetailLines(
 				});
 			}
 			if (sections.length === 0) {
-				const fallback = JSON.stringify(event.data, null, 2) ?? '{}';
+				const fallback = JSON.stringify(event.data, null, 2);
 				sections.push({
 					title: 'Payload',
 					lines: highlightCode(fallback, width, 'json'),
@@ -552,8 +584,23 @@ export function renderDetailLines(
 				},
 			]);
 
-		default: {
-			const json = JSON.stringify(event.raw ?? event.data, null, 2) ?? '{}';
+		case 'session.start':
+		case 'session.end':
+		case 'run.start':
+		case 'run.end':
+		case 'permission.decision':
+		case 'stop.request':
+		case 'stop.decision':
+		case 'compact.pre':
+		case 'setup':
+		case 'unknown.hook':
+		case 'todo.add':
+		case 'todo.update':
+		case 'todo.done':
+		case 'teammate.idle':
+		case 'task.completed':
+		case 'config.change': {
+			const json = JSON.stringify(event.raw ?? event.data, null, 2);
 			return composeDetailView(event, width, [
 				{
 					title: 'Payload',
@@ -561,6 +608,10 @@ export function renderDetailLines(
 					showLineNumbers: true,
 				},
 			]);
+		}
+		default: {
+			const _exhaustive: never = event;
+			return _exhaustive;
 		}
 	}
 }

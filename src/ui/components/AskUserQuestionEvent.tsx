@@ -24,7 +24,7 @@ export default function AskUserQuestionEvent({event}: Props): React.ReactNode {
 
 	if (event.kind !== 'tool.pre') return null;
 
-	const toolInput = event.data.tool_input ?? {};
+	const toolInput = event.data.tool_input;
 	const questions = toolInput.questions as
 		| Array<{question: string; header: string}>
 		| undefined;

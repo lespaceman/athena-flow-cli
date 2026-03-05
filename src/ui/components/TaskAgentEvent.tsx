@@ -7,6 +7,7 @@ import {truncateLine} from '../../shared/utils/truncate';
 import {ToolResultContainer} from './ToolOutput/index';
 import MarkdownText from './ToolOutput/MarkdownText';
 import {getGlyphs} from '../glyphs/index';
+import {termColumns} from '../../shared/utils/terminal';
 
 const BULLET = getGlyphs()['tool.bullet'];
 
@@ -20,15 +21,15 @@ export default function TaskAgentEvent({
 
 	if (event.kind !== 'tool.pre') return null;
 
-	const toolInput = event.data.tool_input ?? {};
+	const toolInput = event.data.tool_input;
 	const agentType =
-		(toolInput.subagent_type as string) ??
-		(toolInput.description as string) ??
+		(toolInput.subagent_type as string) ||
+		(toolInput.description as string) ||
 		'Agent';
-	const description = (toolInput.description as string) ?? '';
-	const prompt = (toolInput.prompt as string) ?? '';
+	const description = (toolInput.description as string) || '';
+	const prompt = (toolInput.prompt as string) || '';
 
-	const terminalWidth = process.stdout.columns ?? 80;
+	const terminalWidth = termColumns();
 	const bulletWidth = 2; // "● "
 	const nameWidth = agentType.length;
 	const availableForDesc = terminalWidth - bulletWidth - nameWidth;

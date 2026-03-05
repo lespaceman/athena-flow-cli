@@ -27,10 +27,7 @@ export default function McpOptionsStep({servers, onComplete}: Props) {
 	const handleSelect = useCallback(
 		(value: string) => {
 			const server = servers[serverIndex];
-			if (!server) return;
-
 			const selectedOption = server.options[Number(value)];
-			if (!selectedOption) return;
 
 			choicesRef.current = {
 				...choicesRef.current,
@@ -51,7 +48,6 @@ export default function McpOptionsStep({servers, onComplete}: Props) {
 	}
 
 	const currentServer = servers[serverIndex];
-	if (!currentServer) return null;
 
 	const selectorOptions = currentServer.options.map((opt, i) => ({
 		label: i === 0 ? `${opt.label} (default)` : opt.label,

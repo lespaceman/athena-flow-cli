@@ -65,8 +65,10 @@ export default function FeedList({
 	dialogActive,
 }: Props): React.ReactNode {
 	const {stdout} = useStdout();
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- columns/rows can be undefined in non-TTY
 	const terminalWidth = stdout?.columns ?? 80;
 	const contentWidth = terminalWidth - FEEDLIST_ROW_OVERHEAD;
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
 	const viewportSize = Math.max(10, (stdout?.rows ?? 24) - VIEWPORT_RESERVE);
 
 	// Find the index of the focused item to ensure it's in the viewport

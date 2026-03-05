@@ -76,7 +76,7 @@ export default function StepSelector({
 				moveCursor(-1);
 			} else if (key.return) {
 				const opt = options[cursor];
-				if (opt && !opt.disabled) {
+				if (!opt.disabled) {
 					onSelect(opt.value);
 				}
 			}
@@ -89,7 +89,7 @@ export default function StepSelector({
 			return;
 		}
 		const option = options[cursor];
-		if (!option || option.disabled) {
+		if (option.disabled) {
 			return;
 		}
 		if (highlightedRef.current === option.value) {

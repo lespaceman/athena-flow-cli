@@ -47,7 +47,7 @@ export function useFocusableList(
 
 	const toggleFocused = useCallback(() => {
 		const id = focusableIds[cursor];
-		if (id !== undefined) toggleExpand(id);
+		toggleExpand(id);
 	}, [cursor, focusableIds, toggleExpand]);
 
 	const expandById = useCallback(

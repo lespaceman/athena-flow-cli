@@ -170,10 +170,9 @@ export function summarizeToolResult(
 		return compactText(firstLine, 160);
 	}
 
-	const summarizer = SUMMARIZERS[toolName];
-	if (summarizer) {
+	if (toolName in SUMMARIZERS) {
 		try {
-			return summarizer(toolInput, toolResponse);
+			return SUMMARIZERS[toolName](toolInput, toolResponse);
 		} catch {
 			return '';
 		}
@@ -181,10 +180,9 @@ export function summarizeToolResult(
 
 	const parsed = parseToolName(toolName);
 	if (parsed.isMcp && parsed.mcpAction) {
-		const mcpSummarizer = MCP_SUMMARIZERS[parsed.mcpAction];
-		if (mcpSummarizer) {
+		if (parsed.mcpAction in MCP_SUMMARIZERS) {
 			try {
-				return mcpSummarizer(toolInput, toolResponse);
+				return MCP_SUMMARIZERS[parsed.mcpAction](toolInput, toolResponse);
 			} catch {
 				return '';
 			}

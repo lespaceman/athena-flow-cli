@@ -24,8 +24,7 @@ export default function SessionEndEvent({event}: Props) {
 		second: '2-digit',
 	});
 
-	const reason =
-		event.kind === 'session.end' ? (event.data.reason ?? 'unknown') : 'unknown';
+	const reason = event.kind === 'session.end' ? event.data.reason : 'unknown';
 
 	return (
 		<Box

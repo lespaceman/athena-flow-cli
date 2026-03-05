@@ -60,6 +60,7 @@ export default function PermissionDialog({
 	const theme = useTheme();
 	const g = getGlyphs();
 	const {stdout} = useStdout();
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- can be undefined in non-TTY
 	const columns = stdout?.columns ?? 80;
 	const rule = g['general.divider'].repeat(columns);
 

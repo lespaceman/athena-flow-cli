@@ -187,7 +187,7 @@ export function useTextInput(
 	const isForwardDeleteRef = useRef(false);
 
 	useEffect(() => {
-		if (!isActive || !stdin) return;
+		if (!isActive) return;
 
 		const FORWARD_DELETE = '\x1b[3~';
 		let peeking = false;

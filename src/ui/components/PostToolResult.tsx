@@ -25,14 +25,13 @@ export default function PostToolResult({
 	}
 
 	const toolName = event.data.tool_name;
-	const toolInput = event.data.tool_input ?? {};
+	const toolInput = event.data.tool_input;
 	const isFailed = event.kind === 'tool.failure';
 
 	let responseNode: React.ReactNode;
 
 	if (isFailed) {
-		const errorText =
-			event.kind === 'tool.failure' ? event.data.error : 'Unknown error';
+		const errorText = event.data.error;
 		responseNode = (
 			<ToolResultContainer
 				gutterColor={statusColors.blocked}
@@ -43,13 +42,12 @@ export default function PostToolResult({
 			</ToolResultContainer>
 		);
 	} else {
-		const toolResponse =
-			event.kind === 'tool.post' ? event.data.tool_response : undefined;
+		const toolResponse = event.data.tool_response;
 		const outputMeta = extractToolOutput(toolName, toolInput, toolResponse);
 		responseNode = (
 			<ToolResultContainer
-				previewLines={outputMeta?.previewLines}
-				totalLineCount={outputMeta?.totalLineCount}
+				previewLines={outputMeta.previewLines}
+				totalLineCount={outputMeta.totalLineCount}
 				toolId={event.data.tool_use_id}
 				parentWidth={parentWidth}
 			>

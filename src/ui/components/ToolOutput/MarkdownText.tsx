@@ -3,6 +3,7 @@ import {Box, Text} from 'ink';
 import {type Tokens} from 'marked';
 import chalk from 'chalk';
 import {createMarkedInstance} from '../../../shared/utils/markedFactory';
+import {termColumns} from '../../../shared/utils/terminal';
 
 type Props = {
 	content: string;
@@ -32,7 +33,7 @@ export default function MarkdownText({
 }: Props): React.ReactNode {
 	if (!content) return null;
 
-	const width = availableWidth ?? process.stdout.columns ?? 80;
+	const width = availableWidth ?? termColumns();
 	const marked = createMarked(width);
 
 	let rendered: string;

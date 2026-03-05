@@ -48,7 +48,6 @@ function extractQuestions(request: FeedEvent): Question[] {
 	if (request.kind !== 'tool.pre' && request.kind !== 'permission.request')
 		return [];
 	const toolInput = request.data.tool_input;
-	if (!toolInput) return [];
 	const questions = toolInput.questions as Question[] | undefined;
 	return Array.isArray(questions) ? questions : [];
 }
@@ -68,7 +67,7 @@ function QuestionTabs({
 	return (
 		<Box gap={1}>
 			{questions.map((q, i) => {
-				const answered = answers[q.question] !== undefined;
+				const answered = q.question in answers;
 				const active = i === currentIndex;
 				const prefix = answered ? 'x' : `${i + 1}`;
 				const label = `${prefix}. ${q.header}`;
@@ -254,7 +253,6 @@ export default function QuestionDialog({
 	const handleQuestionAnswer = useCallback(
 		(answer: string) => {
 			const question = questions[currentIndex];
-			if (!question) return;
 
 			const newAnswers = {...answers, [question.question]: answer};
 
@@ -271,6 +269,7 @@ export default function QuestionDialog({
 	const theme = useTheme();
 
 	const {stdout} = useStdout();
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- can be undefined in non-TTY
 	const columns = stdout?.columns ?? 80;
 
 	const g = getGlyphs();

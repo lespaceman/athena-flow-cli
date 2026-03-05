@@ -230,7 +230,20 @@ export function eventDetail(event: FeedEvent): string {
 			return event.data.source;
 		case 'config.change':
 			return event.data.source;
-		default:
+		case 'setup':
+		case 'session.end':
+		case 'run.start':
+		case 'run.end':
+		case 'user.prompt':
+		case 'permission.decision':
+		case 'stop.request':
+		case 'stop.decision':
+		case 'notification':
+		case 'compact.pre':
+		case 'unknown.hook':
+		case 'agent.message':
+		case 'teammate.idle':
+		case 'task.completed':
 			return '\u2500'; // ─ em dash placeholder
 	}
 }
@@ -346,7 +359,24 @@ export function eventSummary(event: FeedEvent): SummaryResult {
 			const text = eventSummaryText(event);
 			return {text, segments: [{text, role: 'plain'}]};
 		}
-		default: {
+		case 'setup':
+		case 'session.start':
+		case 'session.end':
+		case 'run.start':
+		case 'run.end':
+		case 'user.prompt':
+		case 'permission.decision':
+		case 'stop.request':
+		case 'stop.decision':
+		case 'notification':
+		case 'compact.pre':
+		case 'unknown.hook':
+		case 'todo.add':
+		case 'todo.update':
+		case 'todo.done':
+		case 'teammate.idle':
+		case 'task.completed':
+		case 'config.change': {
 			const text = eventSummaryText(event);
 			return {text, segments: [{text, role: 'target'}]};
 		}
@@ -453,7 +483,12 @@ function eventSummaryText(event: FeedEvent): string {
 				`${event.data.source}${event.data.file_path ? ` ${event.data.file_path}` : ''}`,
 				200,
 			);
-		default:
+		case 'tool.pre':
+		case 'tool.post':
+		case 'tool.failure':
+		case 'permission.request':
+		case 'subagent.start':
+		case 'subagent.stop':
 			return compactText('event', 200);
 	}
 }
@@ -500,7 +535,25 @@ export function expansionForEvent(event: FeedEvent): string {
 		case 'subagent.stop':
 		case 'run.end':
 			return JSON.stringify(event.data, null, 2);
-		default:
+		case 'setup':
+		case 'session.start':
+		case 'session.end':
+		case 'run.start':
+		case 'user.prompt':
+		case 'permission.decision':
+		case 'stop.request':
+		case 'stop.decision':
+		case 'subagent.start':
+		case 'notification':
+		case 'compact.pre':
+		case 'unknown.hook':
+		case 'todo.add':
+		case 'todo.update':
+		case 'todo.done':
+		case 'agent.message':
+		case 'teammate.idle':
+		case 'task.completed':
+		case 'config.change':
 			return JSON.stringify(event.raw ?? event.data, null, 2);
 	}
 }
@@ -612,7 +665,7 @@ export function mergedEventSummary(
 	}
 
 	const toolName = event.data.tool_name;
-	const toolInput = event.data.tool_input ?? {};
+	const toolInput = event.data.tool_input;
 	const parsed = parseToolName(toolName);
 	const name = resolveVerb(toolName, parsed);
 	const primaryInput = withMcpServerContext(

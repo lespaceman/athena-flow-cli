@@ -86,7 +86,7 @@ function resolveHookForwarderPath(entryUrl: string): string | null {
 	}
 
 	// Development/layout fallback: look for <root>/dist/hook-forwarder.js
-	while (true) {
+	for (;;) {
 		const candidatePath = path.join(currentDir, 'dist', 'hook-forwarder.js');
 		if (fs.existsSync(candidatePath)) {
 			return candidatePath;

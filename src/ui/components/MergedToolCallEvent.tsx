@@ -7,6 +7,7 @@ import {
 } from '../../shared/utils/toolNameParser';
 import {truncateLine} from '../../shared/utils/truncate';
 import {summarizeToolResult} from '../../core/feed/toolSummary';
+import {termColumns} from '../../shared/utils/terminal';
 import {useTheme} from '../theme/index';
 import {getGlyphs} from '../glyphs/index';
 import {ToolOutputRenderer, ToolResultContainer} from './ToolOutput/index';
@@ -36,7 +37,7 @@ export default function MergedToolCallEvent({
 		return null;
 
 	const toolName = event.data.tool_name;
-	const toolInput = event.data.tool_input ?? {};
+	const toolInput = event.data.tool_input;
 	const parsed = parseToolName(toolName);
 
 	// Determine state: pending, success, or failure
@@ -75,7 +76,7 @@ export default function MergedToolCallEvent({
 	}
 
 	// Build header line
-	const terminalWidth = parentWidth ?? process.stdout.columns ?? 80;
+	const terminalWidth = parentWidth ?? termColumns();
 	const glyphWidth = 2; // "✔ "
 	const nameWidth = parsed.displayName.length;
 
@@ -145,13 +146,13 @@ function renderOutput(
 	}
 	if (postEvent.kind === 'tool.post') {
 		const toolName = postEvent.data.tool_name;
-		const toolInput = postEvent.data.tool_input ?? {};
+		const toolInput = postEvent.data.tool_input;
 		const toolResponse = postEvent.data.tool_response;
 		const outputMeta = extractToolOutput(toolName, toolInput, toolResponse);
 		return (
 			<ToolResultContainer
-				previewLines={outputMeta?.previewLines}
-				totalLineCount={outputMeta?.totalLineCount}
+				previewLines={outputMeta.previewLines}
+				totalLineCount={outputMeta.totalLineCount}
 				toolId={postEvent.data.tool_use_id}
 				parentWidth={parentWidth}
 			>

@@ -1,9 +1,9 @@
-import process from 'node:process';
 import React from 'react';
 import {Box, Text} from 'ink';
 import type {FeedEvent} from '../../core/feed/types';
 import {useTheme} from '../theme/index';
 import {truncateLine} from '../../shared/utils/truncate';
+import {termColumns} from '../../shared/utils/terminal';
 
 type Props = {
 	event: FeedEvent;
@@ -19,7 +19,7 @@ export default function SubagentStopEvent({
 	const theme = useTheme();
 	if (event.kind !== 'subagent.stop') return null;
 
-	const width = parentWidth ?? process.stdout.columns ?? 80;
+	const width = parentWidth ?? termColumns();
 	const label = `⏹ ${event.data.agent_type || 'Agent'} done`;
 
 	return (

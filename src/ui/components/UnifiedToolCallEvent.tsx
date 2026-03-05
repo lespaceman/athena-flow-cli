@@ -8,6 +8,7 @@ import {
 import {truncateLine} from '../../shared/utils/truncate';
 import {getStatusColors} from './hookEventUtils';
 import {useTheme} from '../theme/index';
+import {termColumns} from '../../shared/utils/terminal';
 import {getGlyphs} from '../glyphs/index';
 
 type Props = {
@@ -33,12 +34,12 @@ export default function UnifiedToolCallEvent({
 		return null;
 
 	const toolName = event.data.tool_name;
-	const toolInput = event.data.tool_input ?? {};
+	const toolInput = event.data.tool_input;
 
 	const parsed = parseToolName(toolName);
 	const inlineParams = formatInlineParams(toolInput);
 
-	const terminalWidth = parentWidth ?? process.stdout.columns ?? 80;
+	const terminalWidth = parentWidth ?? termColumns();
 	const bulletWidth = 2; // "● "
 	const nameWidth = parsed.displayName.length;
 	const availableForParams = terminalWidth - bulletWidth - nameWidth;

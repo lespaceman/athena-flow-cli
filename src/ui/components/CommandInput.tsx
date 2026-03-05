@@ -60,9 +60,7 @@ export default function CommandInput({
 			let submitted = val;
 			if (cur.showSuggestions) {
 				const cmd = cur.filteredCommands[cur.safeIndex];
-				if (cmd) {
-					submitted = `/${cmd.name}`;
-				}
+				submitted = `/${cmd.name}`;
 			}
 			if (!submitted.trim()) return;
 			onSubmit(submitted);
@@ -134,7 +132,6 @@ export default function CommandInput({
 			setValue: set,
 		} = latest.current;
 		const cmd = cmds[idx];
-		if (!cmd) return;
 		set(`/${cmd.name} `);
 	}, []);
 

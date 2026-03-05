@@ -120,10 +120,6 @@ export function buildBodyLines({
 
 			for (let i = 0; i < renderSlots; i++) {
 				const item = items[tScroll + i];
-				if (!item) {
-					bodyLines.push(fitAnsi('', innerWidth));
-					continue;
-				}
 				const isFocused = todoFocus === 'todo' && tCursor === tScroll + i;
 				const caret = isFocused ? g.caret : ' ';
 				const row = g.styledRow(item);
@@ -176,10 +172,6 @@ export function buildBodyLines({
 		const start = Math.max(0, runSummaries.length - listRows);
 		for (let i = 0; i < actualRunOverlayRows - 1; i++) {
 			const summary = runSummaries[start + i];
-			if (!summary) {
-				bodyLines.push(fitAnsi('', innerWidth));
-				continue;
-			}
 			const active =
 				runFilter !== 'all' && runFilter === summary.runId ? '*' : ' ';
 			const line = `${active} ${formatRunLabel(summary.runId)} ${summary.status.padEnd(9, ' ')} ${compactText(summary.title, 48)}`;

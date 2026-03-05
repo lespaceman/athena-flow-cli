@@ -232,7 +232,6 @@ export function createSessionStore(opts: SessionStoreOptions): SessionStore {
 
 	function toBootstrap(): MapperBootstrap | undefined {
 		const stored = restore();
-		if (!stored) return undefined;
 		return {
 			feedEvents: stored.feedEvents,
 			adapterSessionIds: stored.session.adapterSessionIds,

@@ -3,6 +3,7 @@ import {Box, Text} from 'ink';
 import {useTheme} from '../../theme/index';
 import {type DiffHunk, type DiffLine} from '../../../shared/types/toolOutput';
 import {fileLink} from '../../../shared/utils/hyperlink';
+import {termColumns} from '../../../shared/utils/terminal';
 
 type Props = {
 	oldText: string;
@@ -177,7 +178,7 @@ export default function DiffBlock({
 
 	// Rich hunk-based rendering
 	if (hunks && hunks.length > 0) {
-		const width = availableWidth ?? process.stdout.columns ?? 80;
+		const width = availableWidth ?? termColumns();
 		return (
 			<Box flexDirection="column">
 				{filePath && <Text dimColor>{fileLink(filePath)}</Text>}

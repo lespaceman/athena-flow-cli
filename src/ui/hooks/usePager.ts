@@ -9,6 +9,7 @@ import {
 	renderMarkdownToLines,
 } from '../layout/renderDetailLines';
 import {type TimelineEntry} from '../../core/feed/timeline';
+import {termColumns, termRows} from '../../shared/utils/terminal';
 
 const PAGER_MARGIN = 3;
 const PAGER_PAD_TOP = 1;
@@ -17,8 +18,7 @@ const PAGER_MOUSE_SCROLL_LINES = 3;
 
 /** Visible content rows in the pager viewport. */
 function pagerContentRows(): number {
-	const rows = process.stdout.rows ?? 24;
-	return rows - PAGER_PAD_TOP - PAGER_PAD_BOTTOM - 1;
+	return termRows() - PAGER_PAD_TOP - PAGER_PAD_BOTTOM - 1;
 }
 
 export type UsePagerOptions = {
@@ -95,6 +95,7 @@ export function usePager({filteredEntriesRef, feedCursor}: UsePagerOptions): {
 
 	const handleExpandForPager = useCallback(() => {
 		const entry = filteredEntriesRef.current[feedCursor];
+		// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- entry can be undefined at runtime when feedCursor is out of bounds
 		if (!entry?.expandable) return;
 		pendingPagerEntryRef.current = entry;
 		setPagerActive(true);
@@ -106,10 +107,7 @@ export function usePager({filteredEntriesRef, feedCursor}: UsePagerOptions): {
 		const entry = pendingPagerEntryRef.current;
 		pendingPagerEntryRef.current = null;
 
-		const contentWidth = Math.max(
-			10,
-			(process.stdout.columns ?? 80) - PAGER_MARGIN * 2,
-		);
+		const contentWidth = Math.max(10, termColumns() - PAGER_MARGIN * 2);
 		const margin = ' '.repeat(PAGER_MARGIN);
 
 		const lines = entry.feedEvent
@@ -158,7 +156,7 @@ export function usePager({filteredEntriesRef, feedCursor}: UsePagerOptions): {
 				copyToClipboard(content);
 				// Flash "Copied!" in pager footer
 				const margin = ' '.repeat(PAGER_MARGIN);
-				const rows = process.stdout.rows ?? 24;
+				const rows = termRows();
 				process.stdout.write(`\x1B[${rows};1H`);
 				process.stdout.write(
 					margin + chalk.bold.green('Copied to clipboard!') + '\x1B[K',

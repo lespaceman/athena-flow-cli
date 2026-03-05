@@ -901,16 +901,30 @@ export function resolveEventDisplay(event: FeedEvent): {
 		case 'session.start':
 			return {
 				toolColumn: '',
-				segments: [{text: event.data.source ?? '', role: 'target'}],
+				segments: [{text: event.data.source, role: 'target'}],
 			};
 
 		case 'session.end':
 			return {
 				toolColumn: '',
-				segments: [{text: event.data.reason ?? '', role: 'target'}],
+				segments: [{text: event.data.reason, role: 'target'}],
 			};
 
-		default:
+		case 'setup':
+		case 'tool.pre':
+		case 'tool.post':
+		case 'tool.failure':
+		case 'permission.decision':
+		case 'stop.decision':
+		case 'notification':
+		case 'compact.pre':
+		case 'unknown.hook':
+		case 'todo.add':
+		case 'todo.update':
+		case 'todo.done':
+		case 'teammate.idle':
+		case 'task.completed':
+		case 'config.change':
 			return {toolColumn: '', segments: []};
 	}
 }
@@ -952,7 +966,28 @@ export function resolveEventToolColumn(event: FeedEvent): string {
 			return event.data.agent_type;
 		case 'permission.request':
 			return resolveToolColumn(event.data.tool_name);
-		default:
+		case 'setup':
+		case 'session.start':
+		case 'session.end':
+		case 'run.start':
+		case 'run.end':
+		case 'user.prompt':
+		case 'tool.pre':
+		case 'tool.post':
+		case 'tool.failure':
+		case 'permission.decision':
+		case 'stop.request':
+		case 'stop.decision':
+		case 'notification':
+		case 'compact.pre':
+		case 'unknown.hook':
+		case 'todo.add':
+		case 'todo.update':
+		case 'todo.done':
+		case 'agent.message':
+		case 'teammate.idle':
+		case 'task.completed':
+		case 'config.change':
 			return '';
 	}
 }

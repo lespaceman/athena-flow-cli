@@ -45,7 +45,7 @@ export function getPostToolText(payload: unknown): string {
 
 	// PostToolUseFailure has 'error' field
 	if (p.hook_event_name === 'PostToolUseFailure') {
-		return (p.error as string) ?? '';
+		return p.error as string;
 	}
 
 	const toolName = p.tool_name as string | undefined;

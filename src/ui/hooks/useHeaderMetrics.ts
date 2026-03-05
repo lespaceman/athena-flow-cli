@@ -85,7 +85,7 @@ export function useHeaderMetrics(events: FeedEvent[]): SessionMetrics {
 				const agentType = event.data.agent_type;
 				if (agentId && !subagentMap.has(agentId)) {
 					subagentMap.set(agentId, {
-						agentType: agentType ?? 'Agent',
+						agentType: agentType,
 						toolCallCount: 0,
 					});
 				}

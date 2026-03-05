@@ -91,20 +91,20 @@ export function spawnClaude(options: SpawnClaudeOptions): ChildProcess {
 	// Register for cleanup on app exit
 	processRegistry.register(child);
 
-	if (onStdout && child.stdout) {
+	if (onStdout) {
 		child.stdout.on('data', (data: Buffer) => {
 			onStdout(data.toString());
 		});
 	}
 
-	if (onStderr && child.stderr) {
+	if (onStderr) {
 		child.stderr.on('data', (data: Buffer) => {
 			onStderr(data.toString());
 		});
 	}
 
 	// Spawn jq sidecar to filter stdout when jqFilter is set
-	if (jqFilter && child.stdout) {
+	if (jqFilter) {
 		const jqChild = spawn('jq', ['--unbuffered', '-rj', jqFilter], {
 			stdio: ['pipe', 'pipe', 'pipe'],
 		});
@@ -114,35 +114,35 @@ export function spawnClaude(options: SpawnClaudeOptions): ChildProcess {
 		// Forward Claude's stdout to jq's stdin (manual write to avoid pipe() conflict)
 		child.stdout.on('data', (data: Buffer) => {
 			try {
-				jqChild.stdin?.write(data);
+				jqChild.stdin.write(data);
 			} catch {
 				// jq may have exited; suppress write errors
 			}
 		});
 		child.stdout.on('end', () => {
 			try {
-				jqChild.stdin?.end();
+				jqChild.stdin.end();
 			} catch {
 				// Suppress errors if jq stdin is already closed
 			}
 		});
 
 		// Wire jq stdout to filtered callback
-		if (onFilteredStdout && jqChild.stdout) {
+		if (onFilteredStdout) {
 			jqChild.stdout.on('data', (data: Buffer) => {
 				onFilteredStdout(data.toString());
 			});
 		}
 
 		// Wire jq stderr to error callback
-		if (onJqStderr && jqChild.stderr) {
+		if (onJqStderr) {
 			jqChild.stderr.on('data', (data: Buffer) => {
 				onJqStderr(data.toString());
 			});
 		}
 
 		// Suppress EPIPE errors on jq stdin
-		jqChild.stdin?.on('error', () => {
+		jqChild.stdin.on('error', () => {
 			// jq may exit before Claude finishes writing
 		});
 

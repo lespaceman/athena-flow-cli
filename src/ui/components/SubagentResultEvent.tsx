@@ -4,6 +4,7 @@ import type {FeedEvent} from '../../core/feed/types';
 import {useTheme} from '../theme/index';
 import {truncateLine} from '../../shared/utils/truncate';
 import PostToolResult from './PostToolResult';
+import {termColumns} from '../../shared/utils/terminal';
 
 type Props = {
 	event: FeedEvent;
@@ -25,13 +26,13 @@ export default function SubagentResultEvent({
 		return null;
 	}
 
-	const toolInput = event.data.tool_input ?? {};
+	const toolInput = event.data.tool_input;
 	const agentType =
 		typeof toolInput.subagent_type === 'string'
 			? toolInput.subagent_type
 			: 'Agent';
 
-	const terminalWidth = process.stdout.columns ?? 80;
+	const terminalWidth = termColumns();
 	const headerText = truncateLine(`${agentType} — Done`, terminalWidth - 4);
 
 	return (

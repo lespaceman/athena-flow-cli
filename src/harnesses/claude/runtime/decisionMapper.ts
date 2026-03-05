@@ -28,7 +28,7 @@ export function mapDecisionToResult(
 		// No intent but type is json — pass through raw data if available
 		return {
 			action: 'json_output',
-			stdout_json: (decision.data as Record<string, unknown>) ?? {},
+			stdout_json: decision.data as Record<string, unknown>,
 		};
 	}
 

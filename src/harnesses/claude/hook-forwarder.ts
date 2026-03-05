@@ -143,7 +143,7 @@ async function main(): Promise<void> {
 		const envelope: HookEventEnvelope = {
 			request_id: requestId,
 			ts: Date.now(),
-			session_id: hookInput.session_id ?? 'unknown',
+			session_id: hookInput.session_id,
 			hook_event_name: hookInput.hook_event_name,
 			payload: hookInput,
 		};
@@ -193,15 +193,10 @@ async function main(): Promise<void> {
 			process.exit(2);
 		}
 
-		if (result.payload.action === 'json_output') {
-			// JSON output: exit 0, stdout JSON
-			if (result.payload.stdout_json) {
-				process.stdout.write(JSON.stringify(result.payload.stdout_json));
-			}
-			process.exit(0);
+		// JSON output: exit 0, stdout JSON
+		if (result.payload.stdout_json) {
+			process.stdout.write(JSON.stringify(result.payload.stdout_json));
 		}
-
-		// Unknown action, passthrough
 		process.exit(0);
 	} catch {
 		// Any error, passthrough to avoid blocking Claude Code

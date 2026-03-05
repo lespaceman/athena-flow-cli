@@ -33,10 +33,6 @@ export function readSessionIndex(projectDir: string): SessionEntry[] {
 		const raw = readFileSync(indexPath, 'utf-8');
 		const index = JSON.parse(raw) as SessionIndex;
 
-		if (!index.entries || !Array.isArray(index.entries)) {
-			return [];
-		}
-
 		return index.entries
 			.filter(e => !e.isSidechain)
 			.map(

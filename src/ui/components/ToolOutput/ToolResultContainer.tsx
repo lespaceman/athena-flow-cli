@@ -1,6 +1,7 @@
 import React from 'react';
 import {Box, Text} from 'ink';
 import {getGlyphs} from '../../glyphs/index';
+import {termColumns} from '../../../shared/utils/terminal';
 
 const GUTTER_CHAR = getGlyphs()['tool.gutter'];
 
@@ -34,7 +35,7 @@ export default function ToolResultContainer({
 }: Props): React.ReactNode {
 	if (children == null && !previewLines) return null;
 
-	const baseWidth = parentWidth ?? process.stdout.columns ?? 80;
+	const baseWidth = parentWidth ?? termColumns();
 	const availableWidth = Math.max(baseWidth - TOTAL_OVERHEAD, 20);
 
 	const shouldCollapse =

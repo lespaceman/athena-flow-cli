@@ -26,7 +26,7 @@ export function toTodoStatus(status: TodoItem['status']): TodoPanelStatus {
 			return 'done';
 		case 'failed':
 			return 'failed';
-		default:
+		case 'pending':
 			return 'open';
 	}
 }
@@ -70,7 +70,7 @@ function colorForStatus(
 			return colors.failed;
 		case 'blocked':
 			return colors.blocked;
-		default:
+		case 'open':
 			return colors.default;
 	}
 }
@@ -128,7 +128,7 @@ export function todoGlyphs(
 						suffix: chalk.hex(colors.blocked)('\u2190 blocked'),
 						elapsed: empty,
 					};
-				default:
+				case 'open':
 					return {
 						glyph: chalk.hex(colors.textMuted)(table.open),
 						text: (raw: string) => chalk.hex(colors.textMuted)(raw),

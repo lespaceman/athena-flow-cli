@@ -24,16 +24,12 @@ export default function OptionList({options, onSelect}: Props) {
 			setFocusIndex(i => (i - 1 + options.length) % options.length);
 		} else if (key.return) {
 			const option = options[focusIndex];
-			if (option) {
-				onSelect(option.value);
-			}
+			onSelect(option.value);
 		} else {
 			const num = parseInt(input, 10);
 			if (num >= 1 && num <= options.length) {
 				const option = options[num - 1];
-				if (option) {
-					onSelect(option.value);
-				}
+				onSelect(option.value);
 			}
 		}
 	});

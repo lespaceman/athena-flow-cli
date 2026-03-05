@@ -32,18 +32,14 @@ export default function MultiOptionList({options, onSubmit}: Props) {
 			setFocusIndex(i => (i - 1 + options.length) % options.length);
 		} else if (input === ' ') {
 			const option = options[focusIndex];
-			if (option) {
-				toggleOption(option.value);
-			}
+			toggleOption(option.value);
 		} else if (key.return) {
 			onSubmit(options.filter(o => selected.has(o.value)).map(o => o.value));
 		} else {
 			const num = parseInt(input, 10);
 			if (num >= 1 && num <= options.length) {
 				const option = options[num - 1];
-				if (option) {
-					toggleOption(option.value);
-				}
+				toggleOption(option.value);
 			}
 		}
 	});
