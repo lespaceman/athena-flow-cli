@@ -8,7 +8,7 @@ type CommandSuggestionCallbacks = {
 	moveUp: () => void;
 	moveDown: () => void;
 	tab: () => void;
-	visible: boolean;
+	visible: () => boolean;
 };
 
 type GlobalKeyboardCallbacks = {
@@ -80,7 +80,7 @@ export function useGlobalKeyboard({
 				if (focusMode === 'input') {
 					// Command suggestion navigation (must come before Tab/arrow handlers)
 					const cs = callbacks.commandSuggestions;
-					if (callbacks.inputMode === 'command' && cs?.visible) {
+					if (callbacks.inputMode === 'command' && cs?.visible()) {
 						if (key.upArrow) {
 							cs.moveUp();
 							return;

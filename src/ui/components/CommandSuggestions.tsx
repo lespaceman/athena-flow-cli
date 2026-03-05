@@ -22,14 +22,20 @@ export default function CommandSuggestions({
 	if (commands.length === 0) return null;
 
 	const nameColWidth = Math.max(...commands.map(cmd => cmd.name.length + 1));
-	const INDENT = 7; // align / with input prompt ('input> ' = 7 chars)
+	const PROMPT_WIDTH = 7; // 'input> ' = 7 chars — keeps `/` aligned with input text
+	const INDICATOR = 2; // '> ' or '  '
+	const INDENT = PROMPT_WIDTH - INDICATOR;
 	const GAP = 2;
-	const maxDescLen = Math.max(20, innerWidth - nameColWidth - INDENT - GAP);
+	const maxDescLen = Math.max(
+		20,
+		innerWidth - nameColWidth - PROMPT_WIDTH - GAP,
+	);
 
 	return (
 		<>
 			{commands.map((cmd, i) => {
 				const isSelected = i === selectedIndex;
+				const indicator = isSelected ? '>' : ' ';
 				const name = `/${cmd.name}`.padEnd(nameColWidth + 2);
 				const styledName = isSelected
 					? chalk.hex(theme.accent).bold(name)
@@ -40,7 +46,10 @@ export default function CommandSuggestions({
 						: cmd.description;
 				const styledDesc = chalk.dim(desc);
 				const padding = ' '.repeat(INDENT);
-				const line = fit(`${padding}${styledName}${styledDesc}`, innerWidth);
+				const line = fit(
+					`${padding}${indicator} ${styledName}${styledDesc}`,
+					innerWidth,
+				);
 				return <Text key={cmd.name}>{wrapLine(line)}</Text>;
 			})}
 		</>

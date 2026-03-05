@@ -555,7 +555,7 @@ function AppContent({
 			setInputValue: stableSetInputValue,
 			inputMode,
 			commandSuggestions: {
-				visible: suggestionPanelRef.current?.showSuggestions ?? false,
+				visible: () => suggestionPanelRef.current?.showSuggestions ?? false,
 				moveUp: () => suggestionPanelRef.current?.moveUp(),
 				moveDown: () => suggestionPanelRef.current?.moveDown(),
 				tab: () => {
