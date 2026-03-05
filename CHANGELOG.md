@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.4](https://github.com/lespaceman/athena-flow/compare/athena-flow-cli-v0.3.3...athena-flow-cli-v0.3.4) (2026-03-05)
+
+
+### Features
+
+* extract all assistant messages from transcript via incremental diffing ([6f1431f](https://github.com/lespaceman/athena-flow/commit/6f1431f4112a05a0d95152c108626bb089d26fb9))
+
+
+### Bug Fixes
+
+* cherry-pick post-revert fixes from main ([6f0c3e4](https://github.com/lespaceman/athena-flow/commit/6f0c3e4044de0ef607f498ab5a02180b90243fc3))
+* eliminate re-render cascade causing input field breakage ([607a264](https://github.com/lespaceman/athena-flow/commit/607a264f9a47a33c44626706534a1c1013d0f60f))
+* improve dimmed text readability and simplify input placeholders ([3196b5a](https://github.com/lespaceman/athena-flow/commit/3196b5ab99f3332c236c2cd58a41874e6e7722b0))
+* order agent messages before tool calls in feed ([1be5743](https://github.com/lespaceman/athena-flow/commit/1be5743fd23fc5c6b515e43bbd2b4bab17f233c9))
+* prevent duplicate agent messages on stop events ([c90b6ca](https://github.com/lespaceman/athena-flow/commit/c90b6caef087c7f3576eba0c654983a1084d20ed))
+* refine command suggestion UI alignment and arrow key navigation ([7f4fdae](https://github.com/lespaceman/athena-flow/commit/7f4fdae8c9c3ff042a8cbde0f293d69b2779b41c))
+* render CommandSuggestions within frame borders ([0f24052](https://github.com/lespaceman/athena-flow/commit/0f24052c45176aa2aa7b08e8526283583bd9f673))
+
+
+### Reverts
+
+* temporarily revert slash command palette (input field issues) ([dbfb7f4](https://github.com/lespaceman/athena-flow/commit/dbfb7f4461776d8042bfcfb74853b8bb722fb669))
+
 ## [0.3.3](https://github.com/lespaceman/athena-flow/compare/athena-flow-cli-v0.3.2...athena-flow-cli-v0.3.3) (2026-03-04)
 
 
