@@ -729,9 +729,13 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 			);
 		}
 
-		// Extract new assistant messages from transcript on every hook event
+		// Extract new assistant messages from transcript on every hook event.
+		// Skip stop events — they use last_assistant_message as the authoritative
+		// source to avoid duplicates caused by transcript flush timing.
 		const transcriptPath = event.context.transcriptPath;
-		if (transcriptPath) {
+		const isStopEvent =
+			eventKind === 'stop.request' || eventKind === 'subagent.stop';
+		if (transcriptPath && !isStopEvent) {
 			const transcriptMsgs = emitTranscriptMessages(
 				transcriptPath,
 				event,
@@ -742,25 +746,21 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 			results.unshift(...transcriptMsgs);
 		}
 
-		// For subagent.stop, also read the subagent's own transcript
+		// Stop events: use last_assistant_message directly (always available in payload).
+		// Drain the transcript to advance the byte offset and prevent the next event
+		// from re-emitting the same text.
+		if (eventKind === 'stop.request') {
+			if (transcriptPath) {
+				transcriptReader.readNewAssistantMessages(transcriptPath);
+			}
+			emitFallbackMessage('stop.request', 'agent:root', 'root');
+		}
 		if (eventKind === 'subagent.stop') {
 			const agentId = readString(d['agent_id']) ?? 'unknown';
-			const agentTranscript = readString(d['agent_transcript_path']);
-			if (agentTranscript) {
-				const subMsgs = emitTranscriptMessages(
-					agentTranscript,
-					event,
-					`subagent:${agentId}`,
-					'subagent',
-				);
-				results.unshift(...subMsgs);
+			if (transcriptPath) {
+				transcriptReader.readNewAssistantMessages(transcriptPath);
 			}
 			emitFallbackMessage('subagent.stop', `subagent:${agentId}`, 'subagent');
-		}
-
-		// For stop.request, fallback to last_assistant_message if no transcript messages
-		if (eventKind === 'stop.request') {
-			emitFallbackMessage('stop.request', 'agent:root', 'root');
 		}
 
 		return results;
