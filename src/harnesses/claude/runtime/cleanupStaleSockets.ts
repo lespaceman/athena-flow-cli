@@ -13,14 +13,8 @@ function isPidAlive(pid: number): boolean {
 		return true;
 	} catch (err: unknown) {
 		// EPERM means the process exists but we lack permission to signal it
-		if (
-			err instanceof Error &&
-			'code' in err &&
-			(err as NodeJS.ErrnoException).code === 'EPERM'
-		) {
-			return true;
-		}
-		return false;
+		const code = (err as NodeJS.ErrnoException).code;
+		return code === 'EPERM';
 	}
 }
 
