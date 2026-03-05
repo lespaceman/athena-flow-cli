@@ -11,6 +11,7 @@ import type {Session, Run, Actor} from './entities';
 import type {MapperBootstrap} from './bootstrap';
 import {ActorRegistry} from './entities';
 import {generateTitle} from './titleGen';
+import {createTranscriptReader} from './transcript';
 
 export type FeedMapper = {
 	mapEvent(event: RuntimeEvent): FeedEvent[];
@@ -226,6 +227,33 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 	const activeSubagentStack: string[] = []; // LIFO stack of active subagent actor IDs
 	let lastTaskDescription: string | undefined;
 	const subagentDescriptions = new Map<string, string>(); // agent_id → description
+	const transcriptReader = createTranscriptReader();
+
+	/**
+	 * Read new assistant messages from the transcript and emit agent.message events.
+	 * Called on every hook event that carries a transcript_path.
+	 */
+	function emitTranscriptMessages(
+		transcriptPath: string,
+		runtimeEvent: RuntimeEvent,
+		actorId: string,
+		scope: 'root' | 'subagent',
+	): FeedEvent[] {
+		const msgs = transcriptReader.readNewAssistantMessages(transcriptPath);
+		return msgs.map(msg =>
+			makeEvent(
+				'agent.message',
+				'info',
+				actorId,
+				{
+					message: msg.text,
+					source: 'transcript',
+					scope,
+				} satisfies import('./types').AgentMessageData,
+				runtimeEvent,
+			),
+		);
+	}
 
 	function resolveToolActor(): string {
 		return activeSubagentStack.length > 0
@@ -482,25 +510,6 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 					event,
 				);
 				results.push(stopEvt);
-
-				// Enrich: synthesize agent.message from last_assistant_message
-				const stopMsg = readString(d['last_assistant_message']);
-				if (stopMsg) {
-					results.push(
-						makeEvent(
-							'agent.message',
-							'info',
-							'agent:root',
-							{
-								message: stopMsg,
-								source: 'hook',
-								scope: 'root',
-							} satisfies import('./types').AgentMessageData,
-							event,
-							{parent_event_id: stopEvt.event_id},
-						),
-					);
-				}
 				break;
 			}
 
@@ -557,25 +566,6 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 					event,
 				);
 				results.push(subStopEvt);
-
-				// Enrich: synthesize agent.message from last_assistant_message
-				const subMsg = readString(d['last_assistant_message']);
-				if (subMsg) {
-					results.push(
-						makeEvent(
-							'agent.message',
-							'info',
-							subStopActorId,
-							{
-								message: subMsg,
-								source: 'hook',
-								scope: 'subagent',
-							} satisfies import('./types').AgentMessageData,
-							event,
-							{parent_event_id: subStopEvt.event_id},
-						),
-					);
-				}
 				break;
 			}
 
@@ -711,6 +701,66 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 				results.push(unknownEvt);
 				break;
 			}
+		}
+
+		// Fallback: emit agent.message from last_assistant_message when transcript yields nothing
+		function emitFallbackMessage(
+			parentKind: FeedEventKind,
+			actorId: string,
+			scope: 'root' | 'subagent',
+		): void {
+			if (results.some(r => r.kind === 'agent.message')) return;
+			const msg = readString(d['last_assistant_message']);
+			if (!msg) return;
+			const parentEvt = results.find(r => r.kind === parentKind);
+			results.push(
+				makeEvent(
+					'agent.message',
+					'info',
+					actorId,
+					{
+						message: msg,
+						source: 'hook',
+						scope,
+					} satisfies import('./types').AgentMessageData,
+					event,
+					parentEvt ? {parent_event_id: parentEvt.event_id} : undefined,
+				),
+			);
+		}
+
+		// Extract new assistant messages from transcript on every hook event
+		const transcriptPath = event.context.transcriptPath;
+		if (transcriptPath) {
+			const transcriptMsgs = emitTranscriptMessages(
+				transcriptPath,
+				event,
+				resolveToolActor(),
+				activeSubagentStack.length > 0 ? 'subagent' : 'root',
+			);
+			// Insert transcript messages before the main event(s) for correct ordering
+			results.unshift(...transcriptMsgs);
+		}
+
+		// For subagent.stop, also read the subagent's own transcript
+		if (eventKind === 'subagent.stop') {
+			const agentId = readString(d['agent_id']) ?? 'unknown';
+			const agentTranscript = readString(d['agent_transcript_path']);
+			if (agentTranscript) {
+				const subMsgs = emitTranscriptMessages(
+					agentTranscript,
+					event,
+					`subagent:${agentId}`,
+					'subagent',
+				);
+				results.unshift(...subMsgs);
+			}
+			emitFallbackMessage('subagent.stop', `subagent:${agentId}`, 'subagent');
+		}
+
+		// For stop.request, fallback to last_assistant_message if no transcript messages
+		if (eventKind === 'stop.request') {
+			emitFallbackMessage('stop.request', 'agent:root', 'root');
 		}
 
 		return results;

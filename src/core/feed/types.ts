@@ -220,7 +220,7 @@ export type TodoDoneData = {todo_id: string; reason?: string};
 
 export type AgentMessageData = {
 	message: string;
-	source: 'hook';
+	source: 'hook' | 'transcript';
 	scope: 'root' | 'subagent';
 };
 

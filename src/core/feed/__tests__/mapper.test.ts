@@ -1,5 +1,8 @@
 // src/feed/__tests__/mapper.test.ts
-import {describe, it, expect} from 'vitest';
+import {describe, it, expect, afterEach} from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {createFeedMapper} from '../mapper';
 import type {RuntimeEvent} from '../../runtime/types';
 import type {FeedEvent} from '../types';
@@ -1311,6 +1314,152 @@ describe('FeedMapper', () => {
 			expect(Number.isInteger(agentMsg!.seq)).toBe(true);
 			const subStopEvt = results.find(r => r.kind === 'subagent.stop');
 			expect(agentMsg!.cause?.parent_event_id).toBe(subStopEvt!.event_id);
+		});
+	});
+
+	describe('transcript-based agent.message extraction', () => {
+		const tmpFiles: string[] = [];
+
+		afterEach(() => {
+			for (const f of tmpFiles) {
+				try {
+					fs.unlinkSync(f);
+					fs.rmdirSync(path.dirname(f));
+				} catch {
+					/* ignore */
+				}
+			}
+			tmpFiles.length = 0;
+		});
+
+		function makeTmpTranscript(lines: unknown[]): string {
+			const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mapper-transcript-'));
+			const fp = path.join(dir, 'transcript.jsonl');
+			fs.writeFileSync(fp, lines.map(l => JSON.stringify(l)).join('\n') + '\n');
+			tmpFiles.push(fp);
+			return fp;
+		}
+
+		it('extracts intermediate assistant messages from transcript on PreToolUse', () => {
+			// Start with just the user message in transcript
+			const transcriptPath = makeTmpTranscript([
+				{type: 'user', message: {role: 'user', content: 'hello'}},
+			]);
+
+			const mapper = createFeedMapper();
+			mapper.mapEvent(
+				makeRuntimeEvent('UserPromptSubmit', {
+					payload: {
+						hook_event_name: 'UserPromptSubmit',
+						session_id: 'sess-1',
+						transcript_path: transcriptPath,
+						cwd: '/project',
+						prompt: 'hello',
+					},
+					context: {cwd: '/project', transcriptPath},
+				}),
+			);
+
+			// Simulate Claude writing text then calling a tool — append assistant entry
+			fs.appendFileSync(
+				transcriptPath,
+				JSON.stringify({
+					type: 'assistant',
+					message: {role: 'assistant', content: 'Let me read that file.'},
+				}) + '\n',
+			);
+
+			const results = mapper.mapEvent(
+				makeRuntimeEvent('PreToolUse', {
+					payload: {
+						hook_event_name: 'PreToolUse',
+						session_id: 'sess-1',
+						transcript_path: transcriptPath,
+						cwd: '/project',
+						tool_name: 'Read',
+						tool_input: {},
+					},
+					context: {cwd: '/project', transcriptPath},
+				}),
+			);
+
+			const agentMsgs = results.filter(r => r.kind === 'agent.message');
+			expect(agentMsgs).toHaveLength(1);
+			expect(agentMsgs[0]!.data.message).toBe('Let me read that file.');
+			expect(agentMsgs[0]!.data.source).toBe('transcript');
+			expect(agentMsgs[0]!.data.scope).toBe('root');
+		});
+
+		it('deduplicates via byte offset — same text not emitted twice', () => {
+			const transcriptPath = makeTmpTranscript([
+				{
+					type: 'assistant',
+					message: {role: 'assistant', content: 'First message'},
+				},
+			]);
+
+			const mapper = createFeedMapper();
+			mapper.mapEvent(
+				makeRuntimeEvent('UserPromptSubmit', {
+					payload: {
+						hook_event_name: 'UserPromptSubmit',
+						session_id: 'sess-1',
+						transcript_path: transcriptPath,
+						cwd: '/project',
+						prompt: 'go',
+					},
+					context: {cwd: '/project', transcriptPath},
+				}),
+			);
+
+			const r1 = mapper.mapEvent(
+				makeRuntimeEvent('PreToolUse', {
+					payload: {
+						hook_event_name: 'PreToolUse',
+						session_id: 'sess-1',
+						transcript_path: transcriptPath,
+						cwd: '/project',
+						tool_name: 'Read',
+						tool_input: {},
+					},
+					context: {cwd: '/project', transcriptPath},
+				}),
+			);
+			expect(r1.filter(r => r.kind === 'agent.message')).toHaveLength(0);
+			// First read happened on UserPromptSubmit — second read should have nothing new
+		});
+
+		it('falls back to last_assistant_message on stop when transcript is missing', () => {
+			const mapper = createFeedMapper();
+			mapper.mapEvent(
+				makeRuntimeEvent('UserPromptSubmit', {
+					payload: {
+						hook_event_name: 'UserPromptSubmit',
+						session_id: 'sess-1',
+						transcript_path: '/nonexistent.jsonl',
+						cwd: '/project',
+						prompt: 'go',
+					},
+					context: {cwd: '/project', transcriptPath: '/nonexistent.jsonl'},
+				}),
+			);
+			const results = mapper.mapEvent(
+				makeRuntimeEvent('Stop', {
+					payload: {
+						hook_event_name: 'Stop',
+						session_id: 'sess-1',
+						transcript_path: '/nonexistent.jsonl',
+						cwd: '/project',
+						stop_hook_active: false,
+						last_assistant_message: 'Fallback text',
+					},
+					context: {cwd: '/project', transcriptPath: '/nonexistent.jsonl'},
+				}),
+			);
+			const agentMsg = results.find(r => r.kind === 'agent.message');
+			expect(agentMsg).toBeDefined();
+			expect(agentMsg!.data.message).toBe('Fallback text');
+			expect(agentMsg!.data.source).toBe('hook');
 		});
 	});
 

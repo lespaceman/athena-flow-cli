@@ -149,6 +149,15 @@ export function useTimeline({
 					continue;
 				}
 
+				// Hide inactive stop hooks unless verbose — they're just noise
+				if (
+					!verbose &&
+					event.kind === 'stop.request' &&
+					!event.data.stop_hook_active
+				) {
+					continue;
+				}
+
 				// Merge tool.post/tool.failure into their paired tool.pre
 				// If this post/failure event is in the map, it will be rendered
 				// by the paired tool.pre entry — skip it here.
