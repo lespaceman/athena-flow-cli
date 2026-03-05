@@ -749,12 +749,12 @@ function AppContent({
 	const runBadgeStyled = isHarnessRunning
 		? chalk.bgHex('#4a3a0c').hex('#fbbf24')(' RUN ')
 		: chalk.bgHex('#10321d').hex('#3fb950')(' IDLE ');
-	const modeBadgeStyled =
-		inputMode === 'search'
-			? chalk.bgHex('#1b2a3f').hex(theme.accent)(' SEARCH ')
-			: inputMode === 'command'
-				? chalk.bgHex('#2a1b3f').hex(theme.accent)(' CMD ')
-				: '';
+	let modeBadgeStyled = '';
+	if (inputMode === 'search') {
+		modeBadgeStyled = chalk.bgHex('#1b2a3f').hex(theme.accent)(' SEARCH ');
+	} else if (inputMode === 'command') {
+		modeBadgeStyled = chalk.bgHex('#2a1b3f').hex(theme.accent)(' CMD ');
+	}
 	const withBorderEdges = useCallback(
 		(line: string): string => {
 			if (line.length < 2) return line;
