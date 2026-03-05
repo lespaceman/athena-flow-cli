@@ -22,7 +22,7 @@ export default function CommandSuggestions({
 	if (commands.length === 0) return null;
 
 	const nameColWidth = Math.max(...commands.map(cmd => cmd.name.length + 1));
-	const PROMPT_WIDTH = 7; // align `/` with input text ('input> ' = 7 chars)
+	const PROMPT_WIDTH = 7; // align '/' with input prompt ('input> ' = 7 chars)
 	const INDICATOR = 2; // '> ' or '  '
 	const INDENT = PROMPT_WIDTH - INDICATOR;
 	const GAP = 2;
