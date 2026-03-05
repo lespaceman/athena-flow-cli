@@ -23,6 +23,7 @@ export type TodoViewState = {
 	doneCount: number;
 	totalCount: number;
 	spinnerFrame: string;
+	skipHeader?: boolean;
 };
 
 export type RunOverlayState = {
@@ -37,6 +38,32 @@ export type BuildBodyLinesOptions = {
 	runOverlay: RunOverlayState;
 	theme: Theme;
 };
+
+/**
+ * Build just the todo panel header line (e.g. "● WORKING  2/5 tasks done").
+ * Separated so the spinner glyph can update independently of todo item rows.
+ */
+export function buildTodoHeaderLine(
+	innerWidth: number,
+	todo: Pick<TodoViewState, 'ascii' | 'appMode' | 'spinnerFrame' | 'colors' | 'doneCount' | 'totalCount'>,
+	theme: Theme,
+): string {
+	const isWorking = todo.appMode === 'working';
+	const idleGlyph = todo.ascii ? '*' : '\u25CF';
+	const rawLeadGlyph = isWorking ? todo.spinnerFrame : idleGlyph;
+	const leadColor = isWorking ? theme.status.warning : theme.status.success;
+	const leadGlyph = chalk.hex(leadColor)(rawLeadGlyph);
+	const statusWord = isWorking ? 'WORKING' : 'IDLE';
+	const statusColor = isWorking ? todo.colors?.doing : theme.status.success;
+	const coloredStatus = statusColor
+		? chalk.hex(statusColor)(statusWord)
+		: statusWord;
+	const stats =
+		todo.totalCount > 0
+			? `  ${chalk.hex(theme.text)(`${todo.doneCount}/${todo.totalCount}`)} ${chalk.hex(theme.textMuted)('tasks done')}`
+			: '';
+	return fitAnsi(`${leadGlyph} ${coloredStatus}${stats}`, innerWidth);
+}
 
 export function buildBodyLines({
 	innerWidth,
@@ -57,23 +84,9 @@ export function buildBodyLines({
 		} = tp;
 		const g = todoGlyphs(todo.ascii, todo.colors);
 
-		const isWorking = todo.appMode === 'working';
-		const idleGlyph = todo.ascii ? '*' : '\u25CF';
-		const rawLeadGlyph = isWorking ? todo.spinnerFrame : idleGlyph;
-		const leadColor = isWorking ? theme.status.warning : theme.status.success;
-		const leadGlyph = chalk.hex(leadColor)(rawLeadGlyph);
-		const statusWord = isWorking ? 'WORKING' : 'IDLE';
-		const statusColor = isWorking ? todo.colors?.doing : theme.status.success;
-		const coloredStatus = statusColor
-			? chalk.hex(statusColor)(statusWord)
-			: statusWord;
-		const stats =
-			todo.totalCount > 0
-				? `  ${chalk.hex(theme.text)(`${todo.doneCount}/${todo.totalCount}`)} ${chalk.hex(theme.textMuted)('tasks done')}`
-				: '';
-		bodyLines.push(
-			fitAnsi(`${leadGlyph} ${coloredStatus}${stats}`, innerWidth),
-		);
+		if (!todo.skipHeader) {
+			bodyLines.push(buildTodoHeaderLine(innerWidth, todo, theme));
+		}
 
 		// For ultra-small layouts, render only what fits in the assigned rows.
 		if (actualTodoRows > 1) {

@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {buildBodyLines} from './buildBodyLines';
+import {buildBodyLines, buildTodoHeaderLine} from './buildBodyLines';
 import {opCategory} from '../../core/feed/timeline';
 import {type TodoPanelItem} from '../../core/feed/todoPanel';
 import {darkTheme} from '../theme/themes';
@@ -83,5 +83,81 @@ describe('buildBodyLines — tiny todo panel row budget', () => {
 		const items = Array.from({length: 3}, (_, i) => makeTodoItem(String(i)));
 		const result = buildTodoOnly(items, 1, 0);
 		expect(result).toHaveLength(1);
+	});
+});
+
+describe('buildTodoHeaderLine', () => {
+	it('shows IDLE with dot glyph when not working', () => {
+		const line = buildTodoHeaderLine(80, {
+			ascii: true,
+			appMode: 'idle',
+			spinnerFrame: '',
+			doneCount: 2,
+			totalCount: 5,
+		}, defaultTheme);
+		const plain = stripAnsi(line);
+		expect(plain).toContain('IDLE');
+		expect(plain).toContain('2/5');
+	});
+
+	it('shows WORKING with spinner glyph when working', () => {
+		const line = buildTodoHeaderLine(80, {
+			ascii: false,
+			appMode: 'working',
+			spinnerFrame: '\u280B',
+			colors: {doing: '#facc15', done: '#888', failed: '#f00', blocked: '#facc15', text: '#fff', textMuted: '#888', default: '#888'},
+			doneCount: 1,
+			totalCount: 3,
+		}, defaultTheme);
+		const plain = stripAnsi(line);
+		expect(plain).toContain('WORKING');
+		expect(plain).toContain('\u280B');
+	});
+});
+
+describe('buildBodyLines — skipHeader', () => {
+	it('omits header line when skipHeader is true', () => {
+		const items = Array.from({length: 3}, (_, i) => makeTodoItem(String(i)));
+		const result = buildBodyLines({
+			innerWidth: 80,
+			todo: {
+				actualTodoRows: 5,
+				todoPanel: {todoScroll: 0, todoCursor: 0, visibleTodoItems: items},
+				focusMode: 'todo',
+				ascii: true,
+				appMode: 'idle',
+				doneCount: 0,
+				totalCount: 3,
+				spinnerFrame: '*',
+				skipHeader: true,
+			},
+			runOverlay: {actualRunOverlayRows: 0, runSummaries: [], runFilter: 'all'},
+			theme: defaultTheme,
+		});
+		// Without skipHeader, first line would be the "* IDLE ..." header.
+		// With skipHeader, first line should be an item row.
+		const firstPlain = stripAnsi(result[0] ?? '');
+		expect(firstPlain).not.toContain('IDLE');
+	});
+
+	it('includes header line when skipHeader is false/undefined', () => {
+		const items = Array.from({length: 3}, (_, i) => makeTodoItem(String(i)));
+		const result = buildBodyLines({
+			innerWidth: 80,
+			todo: {
+				actualTodoRows: 5,
+				todoPanel: {todoScroll: 0, todoCursor: 0, visibleTodoItems: items},
+				focusMode: 'todo',
+				ascii: true,
+				appMode: 'idle',
+				doneCount: 0,
+				totalCount: 3,
+				spinnerFrame: '*',
+			},
+			runOverlay: {actualRunOverlayRows: 0, runSummaries: [], runFilter: 'all'},
+			theme: defaultTheme,
+		});
+		const firstPlain = stripAnsi(result[0] ?? '');
+		expect(firstPlain).toContain('IDLE');
 	});
 });

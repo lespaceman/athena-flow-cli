@@ -33,7 +33,7 @@ import {useTimeline} from '../../ui/hooks/useTimeline';
 import {useLayout} from '../../ui/hooks/useLayout';
 import {usePager} from '../../ui/hooks/usePager';
 import {useFrameChrome} from '../../ui/hooks/useFrameChrome';
-import {buildBodyLines} from '../../ui/layout/buildBodyLines';
+import {buildBodyLines, buildTodoHeaderLine} from '../../ui/layout/buildBodyLines';
 import {FeedGrid} from '../../ui/components/FeedGrid';
 import {FrameRow} from '../../ui/components/FrameRow';
 import {MultiLineInput} from '../../ui/components/MultiLineInput';
@@ -693,6 +693,37 @@ function AppContent({
 		theme,
 	]);
 
+	// Memo 1: Todo header line — depends on spinnerFrame, updates every 500ms
+	const todoHeaderLine = useMemo(
+		() =>
+			actualTodoRows > 0
+				? buildTodoHeaderLine(
+						innerWidth,
+						{
+							ascii: useAscii,
+							appMode: appMode.type,
+							spinnerFrame,
+							colors: todoColors,
+							doneCount: todoPanel.doneCount,
+							totalCount: todoPanel.todoItems.length,
+						},
+						theme,
+					)
+				: null,
+		[
+			actualTodoRows,
+			innerWidth,
+			useAscii,
+			appMode.type,
+			spinnerFrame,
+			todoColors,
+			todoPanel.doneCount,
+			todoPanel.todoItems.length,
+			theme,
+		],
+	);
+
+	// Memo 2: Remaining body lines — does NOT depend on spinnerFrame
 	const prefixBodyLines = useMemo(
 		() =>
 			buildBodyLines({
@@ -710,7 +741,8 @@ function AppContent({
 					appMode: appMode.type,
 					doneCount: todoPanel.doneCount,
 					totalCount: todoPanel.todoItems.length,
-					spinnerFrame,
+					spinnerFrame: '',
+					skipHeader: true,
 				},
 				runOverlay: {actualRunOverlayRows, runSummaries, runFilter: 'all'},
 				theme,
@@ -727,7 +759,6 @@ function AppContent({
 			appMode.type,
 			todoPanel.doneCount,
 			todoPanel.todoItems.length,
-			spinnerFrame,
 			actualRunOverlayRows,
 			runSummaries,
 			theme,
@@ -791,6 +822,9 @@ function AppContent({
 			<Text>{border(topBorder)}</Text>
 			<Text>{withBorderEdges(frameLine(headerLine1))}</Text>
 			<Text>{border(sectionBorder)}</Text>
+			{todoHeaderLine !== null && (
+				<Text key="todo-header">{withBorderEdges(frameLine(todoHeaderLine))}</Text>
+			)}
 			{prefixBodyLines.map((line, index) => (
 				<Text key={`body-${index}`}>{withBorderEdges(frameLine(line))}</Text>
 			))}
