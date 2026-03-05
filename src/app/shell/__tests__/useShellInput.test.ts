@@ -139,6 +139,12 @@ describe('useShellInput', () => {
 		expect(result.current).toHaveProperty('inputValueRef');
 	});
 
+	it('does not expose filterTick — suggestion state belongs in useCommandSuggestions to avoid flickering', () => {
+		const opts = makeOptions();
+		const {result} = renderHook(() => useShellInput(opts));
+		expect(result.current).not.toHaveProperty('filterTick');
+	});
+
 	it('command mode submit uses getSelectedCommand when no exact match', () => {
 		const submitSpy = vi.fn();
 		const getSelectedCommand = vi.fn().mockReturnValue({name: 'help'});

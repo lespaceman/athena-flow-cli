@@ -65,7 +65,7 @@ describe('useCommandSuggestions', () => {
 		expect(result.current.selectedIndex).toBe(2); // wraps to last
 	});
 
-	it('resets selectedIndex synchronously when prefix changes', () => {
+	it('resets selectedIndex when prefix changes on re-render', () => {
 		const ref = {current: '/'};
 		const {result, rerender} = renderHook(() =>
 			useCommandSuggestions(ref, true),
@@ -74,21 +74,40 @@ describe('useCommandSuggestions', () => {
 		act(() => result.current.moveDown());
 		expect(result.current.selectedIndex).toBe(1);
 
-		// Change the ref prefix and rerender — should reset to 0 synchronously
-		// (no useEffect cascade needed)
+		// Simulate typing — ref changes, parent re-renders (via filterTick in production)
 		ref.current = '/cl';
 		rerender();
 		expect(result.current.selectedIndex).toBe(0);
 	});
 
-	it('reads from ref (not reactive state) to avoid re-render cascades', () => {
+	it('re-filters when notifyInputChanged is called after ref update', () => {
+		const ref = {current: '/'};
+		const {result} = renderHook(() => useCommandSuggestions(ref, true));
+		expect(result.current.filteredCommands.length).toBe(3);
+
+		// Simulate typing '/q' — ref updated + notifyInputChanged (as AppShell does)
+		ref.current = '/q';
+		act(() => result.current.notifyInputChanged());
+		expect(result.current.filteredCommands.map(c => c.name)).toEqual(['quit']);
+	});
+
+	it('notifyInputChanged is a no-op when not in command mode', () => {
+		const ref = {current: 'hello'};
+		const {result} = renderHook(() => useCommandSuggestions(ref, true));
+		// Not in command mode — notifyInputChanged should not trigger re-filter
+		expect(result.current.filteredCommands.length).toBe(0);
+		act(() => result.current.notifyInputChanged());
+		expect(result.current.filteredCommands.length).toBe(0);
+	});
+
+	it('rerender alone without notifyInputChanged still re-reads ref', () => {
 		const ref = {current: '/'};
 		const {result, rerender} = renderHook(() =>
 			useCommandSuggestions(ref, true),
 		);
 		expect(result.current.filteredCommands.length).toBe(3);
 
-		// Mutate ref and rerender — should pick up the new value
+		// Parent re-render (e.g. unrelated state change) also picks up ref
 		ref.current = '/q';
 		rerender();
 		expect(result.current.filteredCommands.map(c => c.name)).toEqual(['quit']);

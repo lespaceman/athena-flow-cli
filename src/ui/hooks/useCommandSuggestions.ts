@@ -1,4 +1,4 @@
-import {useState, useMemo, useRef} from 'react';
+import {useState, useMemo, useRef, useCallback} from 'react';
 import * as registry from '../../app/commands/registry';
 import type {Command} from '../../app/commands/types';
 
@@ -11,6 +11,8 @@ export type UseCommandSuggestionsResult = {
 	moveUp: () => void;
 	moveDown: () => void;
 	getSelectedCommand: () => Command | undefined;
+	/** Call from onChange to trigger suggestion re-filter (only fires in command mode) */
+	notifyInputChanged: () => void;
 };
 
 export function useCommandSuggestions(
@@ -18,6 +20,14 @@ export function useCommandSuggestions(
 	isActive: boolean,
 ): UseCommandSuggestionsResult {
 	const [selectedIndex, setSelectedIndex] = useState(0);
+	const [filterTick, setFilterTick] = useState(0);
+
+	const notifyInputChanged = useCallback(() => {
+		const v = inputValueRef.current;
+		if (v.startsWith('/') && !v.includes(' ')) {
+			setFilterTick(t => t + 1);
+		}
+	}, [inputValueRef]);
 
 	const inputValue = inputValueRef.current;
 	const isCommandMode =
@@ -33,7 +43,8 @@ export function useCommandSuggestions(
 				[cmd.name, ...(cmd.aliases ?? [])].some(n => n.startsWith(prefix)),
 			)
 			.slice(0, MAX_SUGGESTIONS);
-	}, [isCommandMode, prefix]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- filterTick triggers re-read of ref
+	}, [isCommandMode, prefix, filterTick]);
 
 	// Inline prefix tracking — resets selectedIndex synchronously during render
 	// instead of via useEffect (which would cause an extra render cycle)
@@ -66,5 +77,6 @@ export function useCommandSuggestions(
 		moveUp,
 		moveDown,
 		getSelectedCommand,
+		notifyInputChanged,
 	};
 }

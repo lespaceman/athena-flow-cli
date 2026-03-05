@@ -412,6 +412,17 @@ function AppContent({
 		inputMode === 'command',
 	);
 	getSelectedCommandRef.current = commandSuggestions.getSelectedCommand;
+	const {notifyInputChanged} = commandSuggestions;
+
+	// Wrap onChange to trigger suggestion re-filtering. The guard logic lives
+	// inside notifyInputChanged (only fires in command mode).
+	const handleInputChange = useCallback(
+		(value: string) => {
+			handleMainInputChange(value);
+			notifyInputChanged();
+		},
+		[handleMainInputChange, notifyInputChanged],
+	);
 
 	const {back: handleHistoryBack, forward: handleHistoryForward} = inputHistory;
 
@@ -829,7 +840,7 @@ function AppContent({
 						textColor={theme.text}
 						placeholderColor={inputPlaceholderColor}
 						isActive={focusMode === 'input' && !dialogActive}
-						onChange={handleMainInputChange}
+						onChange={handleInputChange}
 						onSubmit={handleInputSubmit}
 						onHistoryBack={handleHistoryBack}
 						onHistoryForward={handleHistoryForward}
