@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.5](https://github.com/lespaceman/athena-flow/compare/athena-flow-cli-v0.3.4...athena-flow-cli-v0.3.5) (2026-03-05)
+
+
+### Bug Fixes
+
+* clarify suggestion alignment comment ([8da88c6](https://github.com/lespaceman/athena-flow/commit/8da88c610ae048718d30fd5897ea82078e1cd7ad))
+* clarify suggestion alignment comment for maintainability ([1cc2470](https://github.com/lespaceman/athena-flow/commit/1cc24703ac7bee3dd8c3d3320fe3f0ed6ba77361))
+
 ## [0.3.4](https://github.com/lespaceman/athena-flow/compare/athena-flow-cli-v0.3.3...athena-flow-cli-v0.3.4) (2026-03-05)
 
 
