@@ -50,7 +50,9 @@ export function buildTodoHeaderLine(
 ): string {
 	const isWorking = todo.appMode === 'working';
 	const idleGlyph = todo.ascii ? '*' : '\u25CF';
-	const rawLeadGlyph = isWorking ? todo.spinnerFrame : idleGlyph;
+	const rawLeadGlyph = isWorking
+		? (todo.spinnerFrame || idleGlyph)
+		: idleGlyph;
 	const leadColor = isWorking ? theme.status.warning : theme.status.success;
 	const leadGlyph = chalk.hex(leadColor)(rawLeadGlyph);
 	const statusWord = isWorking ? 'WORKING' : 'IDLE';

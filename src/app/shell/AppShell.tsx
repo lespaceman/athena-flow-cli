@@ -625,7 +625,10 @@ function AppContent({
 	const hasColor = !process.env['NO_COLOR'];
 	const useAscii = !!ascii;
 	const spinnerFrame = useSpinner(
-		appMode.type === 'working' && todoPanel.todoVisible && !pagerActive,
+		appMode.type === 'working' &&
+		todoPanel.todoVisible &&
+		!pagerActive &&
+		filteredEntries.length < 500,
 	);
 
 	const todoColors = useMemo(
