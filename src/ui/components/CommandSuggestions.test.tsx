@@ -1,5 +1,5 @@
 import React from 'react';
-import {describe, it, expect, beforeEach, afterEach} from 'vitest';
+import {describe, it, expect} from 'vitest';
 import {render} from 'ink-testing-library';
 import CommandSuggestions from './CommandSuggestions';
 import {type Command} from '../../app/commands/types';
@@ -11,6 +11,11 @@ const makeCommand = (name: string, description: string): Command => ({
 	execute: () => {},
 });
 
+const defaultProps = {
+	innerWidth: 80,
+	wrapLine: (line: string) => `│${line}│`,
+};
+
 describe('CommandSuggestions', () => {
 	const commands: Command[] = [
 		makeCommand('help', 'Show available commands'),
@@ -20,14 +25,18 @@ describe('CommandSuggestions', () => {
 
 	it('returns null when commands list is empty', () => {
 		const {lastFrame} = render(
-			<CommandSuggestions commands={[]} selectedIndex={0} />,
+			<CommandSuggestions commands={[]} selectedIndex={0} {...defaultProps} />,
 		);
 		expect(lastFrame()).toBe('');
 	});
 
 	it('renders all command names with / prefix', () => {
 		const {lastFrame} = render(
-			<CommandSuggestions commands={commands} selectedIndex={0} />,
+			<CommandSuggestions
+				commands={commands}
+				selectedIndex={0}
+				{...defaultProps}
+			/>,
 		);
 		const frame = lastFrame() ?? '';
 		expect(frame).toContain('/help');
@@ -37,7 +46,11 @@ describe('CommandSuggestions', () => {
 
 	it('renders command descriptions', () => {
 		const {lastFrame} = render(
-			<CommandSuggestions commands={commands} selectedIndex={0} />,
+			<CommandSuggestions
+				commands={commands}
+				selectedIndex={0}
+				{...defaultProps}
+			/>,
 		);
 		const frame = lastFrame() ?? '';
 		expect(frame).toContain('Show available commands');
@@ -47,7 +60,11 @@ describe('CommandSuggestions', () => {
 
 	it('shows > indicator on selected item', () => {
 		const {lastFrame} = render(
-			<CommandSuggestions commands={commands} selectedIndex={1} />,
+			<CommandSuggestions
+				commands={commands}
+				selectedIndex={1}
+				{...defaultProps}
+			/>,
 		);
 		const frame = lastFrame() ?? '';
 		const lines = frame.split('\n');
@@ -63,7 +80,11 @@ describe('CommandSuggestions', () => {
 
 	it('highlights selected item differently from unselected', () => {
 		const {lastFrame} = render(
-			<CommandSuggestions commands={commands} selectedIndex={0} />,
+			<CommandSuggestions
+				commands={commands}
+				selectedIndex={0}
+				{...defaultProps}
+			/>,
 		);
 		const frame = lastFrame() ?? '';
 		// Selected item (help) should have > indicator
@@ -80,7 +101,11 @@ describe('CommandSuggestions', () => {
 
 		it('aligns descriptions to same column regardless of name length', () => {
 			const {lastFrame} = render(
-				<CommandSuggestions commands={mixedCommands} selectedIndex={0} />,
+				<CommandSuggestions
+					commands={mixedCommands}
+					selectedIndex={0}
+					{...defaultProps}
+				/>,
 			);
 			const frame = lastFrame() ?? '';
 			const lines = frame.split('\n').filter(l => l.includes('/'));
@@ -94,52 +119,52 @@ describe('CommandSuggestions', () => {
 	});
 
 	describe('description truncation', () => {
-		let originalColumns: number | undefined;
-
-		beforeEach(() => {
-			originalColumns = process.stdout.columns;
-		});
-
-		afterEach(() => {
-			Object.defineProperty(process.stdout, 'columns', {
-				value: originalColumns,
-				writable: true,
-				configurable: true,
-			});
-		});
-
-		it('truncates long descriptions with ellipsis in narrow terminals', () => {
-			Object.defineProperty(process.stdout, 'columns', {
-				value: 40,
-				writable: true,
-				configurable: true,
-			});
-
+		it('truncates long descriptions in narrow width', () => {
 			const longDesc =
 				'This is a very long description that should be truncated';
 			const cmds: Command[] = [makeCommand('test', longDesc)];
 			const {lastFrame} = render(
-				<CommandSuggestions commands={cmds} selectedIndex={0} />,
+				<CommandSuggestions
+					commands={cmds}
+					selectedIndex={0}
+					innerWidth={30}
+					wrapLine={defaultProps.wrapLine}
+				/>,
 			);
 			const frame = lastFrame() ?? '';
-			expect(frame).toContain('\u2026');
 			expect(frame).not.toContain(longDesc);
 		});
 
 		it('does not truncate short descriptions', () => {
-			Object.defineProperty(process.stdout, 'columns', {
-				value: 120,
-				writable: true,
-				configurable: true,
-			});
-
 			const cmds: Command[] = [makeCommand('test', 'Short desc')];
 			const {lastFrame} = render(
-				<CommandSuggestions commands={cmds} selectedIndex={0} />,
+				<CommandSuggestions
+					commands={cmds}
+					selectedIndex={0}
+					innerWidth={120}
+					wrapLine={defaultProps.wrapLine}
+				/>,
 			);
 			const frame = lastFrame() ?? '';
 			expect(frame).toContain('Short desc');
 			expect(frame).not.toContain('\u2026');
 		});
+	});
+
+	it('wraps each line with wrapLine callback', () => {
+		const {lastFrame} = render(
+			<CommandSuggestions
+				commands={[makeCommand('test', 'A command')]}
+				selectedIndex={0}
+				innerWidth={80}
+				wrapLine={(line: string) => `[${line}]`}
+			/>,
+		);
+		const frame = lastFrame() ?? '';
+		// Every line should be wrapped with [ and ]
+		for (const line of frame.split('\n').filter(Boolean)) {
+			expect(line.startsWith('[')).toBe(true);
+			expect(line.endsWith(']')).toBe(true);
+		}
 	});
 });

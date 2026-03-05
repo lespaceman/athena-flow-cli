@@ -9,7 +9,7 @@ export type FeedKeyboardCallbacks = {
 	yankAtCursor: () => void;
 	cycleFocus: () => void;
 	setFocusMode: (mode: 'feed' | 'input' | 'todo') => void;
-	setInputMode: (mode: 'normal' | 'search') => void;
+	setInputMode: (mode: 'normal' | 'search' | 'command') => void;
 	setInputValue: (value: string) => void;
 	setShowRunOverlay: (show: boolean) => void;
 	setSearchQuery: (query: string) => void;
@@ -49,8 +49,15 @@ export function useFeedKeyboard({
 
 				if (input === '/') {
 					callbacks.setFocusMode('input');
-					callbacks.setInputMode('search');
+					callbacks.setInputMode('command');
 					callbacks.setInputValue('/');
+					return;
+				}
+
+				if (input === ':') {
+					callbacks.setFocusMode('input');
+					callbacks.setInputMode('search');
+					callbacks.setInputValue(':');
 					return;
 				}
 

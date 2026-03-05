@@ -1,54 +1,48 @@
-import process from 'node:process';
-import {Box, Text} from 'ink';
+import {Text} from 'ink';
 import {type Command} from '../../app/commands/types';
 import {useTheme} from '../theme/index';
+import chalk from 'chalk';
+import {fit} from '../../shared/utils/format';
 
 type Props = {
 	commands: Command[];
 	selectedIndex: number;
+	innerWidth: number;
+	/** Wraps a plain-text line with frame border edges (e.g. │…│). */
+	wrapLine: (line: string) => string;
 };
 
-function truncate(text: string, maxLen: number): string {
-	if (maxLen <= 0) return '';
-	if (text.length <= maxLen) return text;
-	return text.slice(0, maxLen - 1) + '\u2026';
-}
-
-export default function CommandSuggestions({commands, selectedIndex}: Props) {
+export default function CommandSuggestions({
+	commands,
+	selectedIndex,
+	innerWidth,
+	wrapLine,
+}: Props) {
 	const theme = useTheme();
 	if (commands.length === 0) return null;
 
-	// Column widths for alignment across all rows
-	const PADDING = 4; // paddingX={2} on each side
-	const INDICATOR = 2; // "> " or "  "
-	const GAP = 2; // padEnd adds 2 extra chars after name
 	const nameColWidth = Math.max(...commands.map(cmd => cmd.name.length + 1));
-	const termWidth = process.stdout.columns || 80;
-	const maxDescLen = Math.max(
-		20,
-		termWidth - nameColWidth - PADDING - INDICATOR - GAP,
-	);
+	const INDICATOR = 2; // "> " or "  "
+	const GAP = 2;
+	const maxDescLen = Math.max(20, innerWidth - nameColWidth - INDICATOR - GAP);
 
 	return (
-		<Box flexDirection="column" paddingX={2}>
+		<>
 			{commands.map((cmd, i) => {
 				const isSelected = i === selectedIndex;
+				const indicator = isSelected ? chalk.hex(theme.accent)('> ') : '  ';
 				const name = `/${cmd.name}`.padEnd(nameColWidth + 2);
-				const desc = truncate(cmd.description, maxDescLen);
-
-				return (
-					<Box key={cmd.name}>
-						<Text color={theme.accent}>{isSelected ? '> ' : '  '}</Text>
-						<Text
-							color={isSelected ? theme.accent : theme.text}
-							bold={isSelected}
-						>
-							{name}
-						</Text>
-						<Text dimColor>{desc}</Text>
-					</Box>
-				);
+				const styledName = isSelected
+					? chalk.hex(theme.accent).bold(name)
+					: chalk.hex(theme.text)(name);
+				const desc =
+					cmd.description.length > maxDescLen
+						? cmd.description.slice(0, maxDescLen - 1) + '\u2026'
+						: cmd.description;
+				const styledDesc = chalk.dim(desc);
+				const line = fit(` ${indicator}${styledName}${styledDesc}`, innerWidth);
+				return <Text key={cmd.name}>{wrapLine(line)}</Text>;
 			})}
-		</Box>
+		</>
 	);
 }

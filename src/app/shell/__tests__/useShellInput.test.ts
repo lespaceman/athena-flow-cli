@@ -102,7 +102,7 @@ describe('useShellInput', () => {
 		});
 		const {result} = renderHook(() => useShellInput(opts));
 		act(() => {
-			result.current.handleInputSubmit('/baz');
+			result.current.handleInputSubmit(':baz');
 		});
 		expect(setSearchQuery).toHaveBeenCalledWith('baz');
 		expect(setFeedCursor).toHaveBeenCalledWith(1);
@@ -128,5 +128,30 @@ describe('useShellInput', () => {
 		});
 		// setInputMode should be called with functional updater
 		expect(setInputMode).toHaveBeenCalled();
+	});
+
+	it('does not expose inputValue state — only inputValueRef', () => {
+		const opts = makeOptions();
+		const {result} = renderHook(() => useShellInput(opts));
+		// inputValue as reactive state causes unnecessary re-renders;
+		// the ref is sufficient for consumers
+		expect(result.current).not.toHaveProperty('inputValue');
+		expect(result.current).toHaveProperty('inputValueRef');
+	});
+
+	it('command mode submit uses getSelectedCommand when no exact match', () => {
+		const submitSpy = vi.fn();
+		const getSelectedCommand = vi.fn().mockReturnValue({name: 'help'});
+		const opts = makeOptions({
+			inputMode: 'command',
+			submitPromptOrSlashCommand: submitSpy,
+			getSelectedCommand,
+		});
+		const {result} = renderHook(() => useShellInput(opts));
+		act(() => {
+			result.current.handleInputSubmit('/he');
+		});
+		expect(getSelectedCommand).toHaveBeenCalled();
+		expect(submitSpy).toHaveBeenCalledWith('/help');
 	});
 });

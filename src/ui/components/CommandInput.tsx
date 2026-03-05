@@ -1,3 +1,4 @@
+import process from 'node:process';
 import React, {useState, useMemo, useEffect, useCallback, useRef} from 'react';
 import {Box, Text, useInput} from 'ink';
 import {useTextInput} from '../hooks/useTextInput';
@@ -216,6 +217,8 @@ export default function CommandInput({
 				<CommandSuggestions
 					commands={filteredCommands}
 					selectedIndex={safeIndex}
+					innerWidth={process.stdout.columns || 80}
+					wrapLine={(line: string) => line}
 				/>
 			)}
 			<Box

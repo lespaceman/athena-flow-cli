@@ -5,8 +5,8 @@ import {
 } from './useInputLayout';
 
 describe('deriveInputPlaceholder', () => {
-	it('returns /search for search mode', () => {
-		expect(deriveInputPlaceholder('search', null)).toBe('/search');
+	it('returns :search for search mode', () => {
+		expect(deriveInputPlaceholder('search', null)).toBe(':search');
 	});
 
 	it('returns follow-up message on completed run', () => {
@@ -61,11 +61,7 @@ describe('deriveTextInputPlaceholder', () => {
 
 	it('returns permission message for permission dialog', () => {
 		expect(
-			deriveTextInputPlaceholder(
-				true,
-				'permission',
-				'Type a prompt to begin',
-			),
+			deriveTextInputPlaceholder(true, 'permission', 'Type a prompt to begin'),
 		).toBe('Respond to permission dialog...');
 	});
 

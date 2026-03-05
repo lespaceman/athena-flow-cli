@@ -15,6 +15,8 @@ import {HookProvider} from '../providers/RuntimeProvider';
 import {useHarnessProcess} from '../process/useHarnessProcess';
 import {useHeaderMetrics} from '../../ui/hooks/useHeaderMetrics';
 import {useTerminalTitle} from '../../ui/hooks/useTerminalTitle';
+import {useCommandSuggestions} from '../../ui/hooks/useCommandSuggestions';
+import CommandSuggestions from '../../ui/components/CommandSuggestions';
 import {useAppMode} from '../../ui/hooks/useAppMode';
 import {
 	type InputHistory,
@@ -379,6 +381,10 @@ function AppContent({
 		],
 	);
 
+	const getSelectedCommandRef = useRef<
+		() => import('../commands/types').Command | undefined
+	>(() => undefined);
+
 	const {
 		inputRows,
 		inputValueRef,
@@ -398,7 +404,14 @@ function AppContent({
 		setFeedCursorRef,
 		setTailFollowRef,
 		setSearchMatchPos,
+		getSelectedCommand: () => getSelectedCommandRef.current(),
 	});
+
+	const commandSuggestions = useCommandSuggestions(
+		inputValueRef,
+		inputMode === 'command',
+	);
+	getSelectedCommandRef.current = commandSuggestions.getSelectedCommand;
 
 	const {back: handleHistoryBack, forward: handleHistoryForward} = inputHistory;
 
@@ -526,6 +539,16 @@ function AppContent({
 			historyForward: inputHistory.forward,
 			getInputValue: stableGetInputValue,
 			setInputValue: stableSetInputValue,
+			inputMode,
+			commandSuggestions: {
+				visible: commandSuggestions.showSuggestions,
+				moveUp: commandSuggestions.moveUp,
+				moveDown: commandSuggestions.moveDown,
+				tab: () => {
+					const cmd = commandSuggestions.getSelectedCommand();
+					if (cmd) stableSetInputValue(`/${cmd.name} `);
+				},
+			},
 		},
 	});
 
@@ -726,10 +749,12 @@ function AppContent({
 	const runBadgeStyled = isHarnessRunning
 		? chalk.bgHex('#4a3a0c').hex('#fbbf24')(' RUN ')
 		: chalk.bgHex('#10321d').hex('#3fb950')(' IDLE ');
-	const searchBadgeStyled =
-		inputMode === 'search'
-			? chalk.bgHex('#1b2a3f').hex(theme.accent)(' SEARCH ')
-			: '';
+	let modeBadgeStyled = '';
+	if (inputMode === 'search') {
+		modeBadgeStyled = chalk.bgHex('#1b2a3f').hex(theme.accent)(' SEARCH ');
+	} else if (inputMode === 'command') {
+		modeBadgeStyled = chalk.bgHex('#2a1b3f').hex(theme.accent)(' CMD ');
+	}
 	const withBorderEdges = useCallback(
 		(line: string): string => {
 			if (line.length < 2) return line;
@@ -780,6 +805,14 @@ function AppContent({
 					<Text>{withBorderEdges(frameLine(''))}</Text>
 				</>
 			)}
+			{commandSuggestions.showSuggestions && (
+				<CommandSuggestions
+					commands={commandSuggestions.filteredCommands}
+					selectedIndex={commandSuggestions.selectedIndex}
+					innerWidth={innerWidth}
+					wrapLine={(line: string) => withBorderEdges(frameLine(line))}
+				/>
+			)}
 			<FrameRow
 				innerWidth={innerWidth}
 				ascii={useAscii}
@@ -804,7 +837,7 @@ function AppContent({
 					/>
 				</Box>
 				<Box width={badgeText.length} flexShrink={0}>
-					<Text>{runBadgeStyled + searchBadgeStyled}</Text>
+					<Text>{runBadgeStyled + modeBadgeStyled}</Text>
 				</Box>
 			</FrameRow>
 			<Text>{border(bottomBorder)}</Text>

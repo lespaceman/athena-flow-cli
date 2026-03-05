@@ -9,9 +9,9 @@ export function deriveInputPlaceholder(
 	ascii = false,
 ): string {
 	const dash = ascii ? '-' : '\u2014';
-	if (inputMode === 'search') return '/search';
-	if (lastRunStatus === 'completed')
-		return `Done ${dash} send a follow-up`;
+	if (inputMode === 'search') return ':search';
+	if (inputMode === 'command') return '/command';
+	if (lastRunStatus === 'completed') return `Done ${dash} send a follow-up`;
 	if (lastRunStatus === 'failed' || lastRunStatus === 'aborted')
 		return `Run failed ${dash} retry or adjust prompt`;
 	return 'Type a prompt to begin';
@@ -58,6 +58,7 @@ export function useInputLayout(opts: {
 		const modeBadges = [
 			runBadge,
 			...(inputMode === 'search' ? ['[SEARCH]'] : []),
+			...(inputMode === 'command' ? ['[CMD]'] : []),
 		];
 		const badgeText = modeBadges.join('');
 		const inputContentWidth = Math.max(

@@ -44,6 +44,26 @@ function expectLineContaining(
 	expect(line).toContain(marker);
 }
 
+async function waitForLineContainingMarker(
+	lastFrame: () => string | undefined,
+	text: string,
+	marker: string,
+	timeoutMs = 500,
+): Promise<void> {
+	const intervalMs = 25;
+	for (let waited = 0; waited <= timeoutMs; waited += intervalMs) {
+		const output = frame(lastFrame);
+		const line = output.split('\n').find(l => l.includes(text));
+		if (line?.includes(marker)) {
+			return;
+		}
+		await delay(intervalMs);
+	}
+	throw new Error(
+		`Timed out waiting for line containing "${text}" to include marker "${marker}"`,
+	);
+}
+
 beforeEach(() => {
 	registryModule.clear();
 	registryModule.register({
@@ -118,10 +138,10 @@ describe('CommandInput', () => {
 		const {lastFrame, stdin} = render(<CommandInput onSubmit={noop} />);
 
 		await typeAndWait(stdin, '/');
-		expectLineContaining(frame(lastFrame), '/help', '>');
+		await waitForLineContainingMarker(lastFrame, '/help', '>');
 
-		await typeAndWait(stdin, KEY.DOWN);
-		expectLineContaining(frame(lastFrame), '/clear', '>');
+		await typeAndWait(stdin, KEY.DOWN, 100);
+		await waitForLineContainingMarker(lastFrame, '/clear', '>');
 	});
 
 	it('wraps around when navigating past last suggestion', async () => {
