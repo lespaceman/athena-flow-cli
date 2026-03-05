@@ -15,8 +15,10 @@ import {HookProvider} from '../providers/RuntimeProvider';
 import {useHarnessProcess} from '../process/useHarnessProcess';
 import {useHeaderMetrics} from '../../ui/hooks/useHeaderMetrics';
 import {useTerminalTitle} from '../../ui/hooks/useTerminalTitle';
-import {useCommandSuggestions} from '../../ui/hooks/useCommandSuggestions';
-import CommandSuggestions from '../../ui/components/CommandSuggestions';
+import {
+	CommandSuggestionPanel,
+	type CommandSuggestionPanelHandle,
+} from '../../ui/components/CommandSuggestionPanel';
 import {useAppMode} from '../../ui/hooks/useAppMode';
 import {
 	type InputHistory,
@@ -407,21 +409,19 @@ function AppContent({
 		getSelectedCommand: () => getSelectedCommandRef.current(),
 	});
 
-	const commandSuggestions = useCommandSuggestions(
-		inputValueRef,
-		inputMode === 'command',
-	);
-	getSelectedCommandRef.current = commandSuggestions.getSelectedCommand;
-	const {notifyInputChanged} = commandSuggestions;
+	const suggestionPanelRef = useRef<CommandSuggestionPanelHandle>(null);
+	getSelectedCommandRef.current = () =>
+		suggestionPanelRef.current?.getSelectedCommand();
 
-	// Wrap onChange to trigger suggestion re-filtering. The guard logic lives
-	// inside notifyInputChanged (only fires in command mode).
+	// Wrap onChange to notify the suggestion panel (isolated re-render).
+	// The panel's notifyInputChanged only triggers a re-render of the panel
+	// component — not the entire AppContent tree.
 	const handleInputChange = useCallback(
 		(value: string) => {
 			handleMainInputChange(value);
-			notifyInputChanged();
+			suggestionPanelRef.current?.notifyInputChanged();
 		},
-		[handleMainInputChange, notifyInputChanged],
+		[handleMainInputChange],
 	);
 
 	const {back: handleHistoryBack, forward: handleHistoryForward} = inputHistory;
@@ -552,11 +552,11 @@ function AppContent({
 			setInputValue: stableSetInputValue,
 			inputMode,
 			commandSuggestions: {
-				visible: commandSuggestions.showSuggestions,
-				moveUp: commandSuggestions.moveUp,
-				moveDown: commandSuggestions.moveDown,
+				visible: suggestionPanelRef.current?.showSuggestions ?? false,
+				moveUp: () => suggestionPanelRef.current?.moveUp(),
+				moveDown: () => suggestionPanelRef.current?.moveDown(),
 				tab: () => {
-					const cmd = commandSuggestions.getSelectedCommand();
+					const cmd = suggestionPanelRef.current?.getSelectedCommand();
 					if (cmd) stableSetInputValue(`/${cmd.name} `);
 				},
 			},
@@ -776,6 +776,12 @@ function AppContent({
 		[border],
 	);
 
+	// Stable callback for CommandSuggestionPanel — composes frameLine + border edges.
+	const wrapFrameLine = useCallback(
+		(line: string) => withBorderEdges(frameLine(line)),
+		[withBorderEdges, frameLine],
+	);
+
 	if (pagerActive) {
 		return <Box />;
 	}
@@ -816,14 +822,13 @@ function AppContent({
 					<Text>{withBorderEdges(frameLine(''))}</Text>
 				</>
 			)}
-			{commandSuggestions.showSuggestions && (
-				<CommandSuggestions
-					commands={commandSuggestions.filteredCommands}
-					selectedIndex={commandSuggestions.selectedIndex}
-					innerWidth={innerWidth}
-					wrapLine={(line: string) => withBorderEdges(frameLine(line))}
-				/>
-			)}
+			<CommandSuggestionPanel
+				ref={suggestionPanelRef}
+				inputValueRef={inputValueRef}
+				isActive={inputMode === 'command'}
+				innerWidth={innerWidth}
+				wrapLine={wrapFrameLine}
+			/>
 			<FrameRow
 				innerWidth={innerWidth}
 				ascii={useAscii}
@@ -844,7 +849,7 @@ function AppContent({
 						onSubmit={handleInputSubmit}
 						onHistoryBack={handleHistoryBack}
 						onHistoryForward={handleHistoryForward}
-						suppressArrows={commandSuggestions.showSuggestions}
+						suppressArrows={inputMode === 'command'}
 						setValueRef={handleSetValueRef}
 					/>
 				</Box>
