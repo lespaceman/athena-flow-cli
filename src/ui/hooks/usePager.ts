@@ -126,6 +126,15 @@ export function usePager({filteredEntriesRef, feedCursor}: UsePagerOptions): {
 		paintPager();
 	}, [pagerActive, paintPager]);
 
+	// While pager is active, AppShell still re-renders as feed events arrive.
+	// Ink can repaint an empty frame over the alternate-screen content, so
+	// repaint the pager after every active render to keep the detail view visible.
+	useEffect(() => {
+		if (!pagerActive) return;
+		if (pagerLinesRef.current.length === 0) return;
+		paintPager();
+	});
+
 	useEffect(() => {
 		pagerActiveRef.current = pagerActive;
 		if (!pagerActive) {

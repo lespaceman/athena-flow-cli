@@ -250,4 +250,29 @@ describe('usePager', () => {
 		});
 		expect(result.current.pagerActive).toBe(false);
 	});
+
+	it('repaints pager on rerender while active', () => {
+		const entries = [
+			makeEntry({expandable: true, feedEvent: {type: 'tool_use'} as never}),
+		];
+		const ref = {current: entries};
+		const {result, rerender} = renderHook(
+			({cursor}: {cursor: number}) =>
+				usePager({filteredEntriesRef: ref, feedCursor: cursor}),
+			{initialProps: {cursor: 0}},
+		);
+
+		act(() => {
+			result.current.handleExpandForPager();
+		});
+		expect(result.current.pagerActive).toBe(true);
+
+		stdoutWriteSpy.mockClear();
+		rerender({cursor: 1});
+
+		const writes = stdoutWriteSpy.mock.calls
+			.map(call => call[0])
+			.filter((value): value is string => typeof value === 'string');
+		expect(writes.some(write => write.includes('\x1B[2J\x1B[H'))).toBe(true);
+	});
 });
