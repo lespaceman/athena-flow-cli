@@ -18,10 +18,11 @@ export function buildTodoDisplayItems(
 	return items.map(item => {
 		const hasElapsed =
 			item.startedAtMs !== undefined &&
-			(item.status === 'doing' || item.status === 'done' || item.status === 'failed');
+			(item.status === 'doing' ||
+				item.status === 'done' ||
+				item.status === 'failed');
 		const endMs =
-			item.completedAtMs ??
-			(isWorking ? nowMs : (pausedAtMs ?? nowMs));
+			item.completedAtMs ?? (isWorking ? nowMs : (pausedAtMs ?? nowMs));
 		const elapsed = hasElapsed
 			? formatElapsed(Math.max(0, endMs - item.startedAtMs!))
 			: undefined;
@@ -38,7 +39,10 @@ export function useTodoDisplayItems({
 }: UseTodoDisplayItemsOptions): TodoPanelItem[] {
 	const [nowMs, setNowMs] = useState(() => Date.now());
 	const hasDoingItems = useMemo(
-		() => items.some(item => item.status === 'doing' && item.startedAtMs !== undefined),
+		() =>
+			items.some(
+				item => item.status === 'doing' && item.startedAtMs !== undefined,
+			),
 		[items],
 	);
 

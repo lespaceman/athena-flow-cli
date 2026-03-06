@@ -66,7 +66,10 @@ export function useLayout({
 		: 0;
 	const halfSplitTodoRows = Math.floor(rowsForTodoAndFeed / 2);
 	const baseTodoRows = Math.min(todoRowsTarget, halfSplitTodoRows);
-	const baseFeedRowsAtHalfSplit = Math.max(1, rowsForTodoAndFeed - baseTodoRows);
+	const baseFeedRowsAtHalfSplit = Math.max(
+		1,
+		rowsForTodoAndFeed - baseTodoRows,
+	);
 	const minFeedRowsNeeded =
 		feedEntryCount <= 0 ? 1 : Math.min(rowsForTodoAndFeed, feedEntryCount + 2);
 	const feedSlack = Math.max(0, baseFeedRowsAtHalfSplit - minFeedRowsNeeded);

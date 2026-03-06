@@ -800,7 +800,6 @@ function AppContent({
 					spinnerActive={
 						appMode.type === 'working' &&
 						todoPanel.todoVisible &&
-						!pagerActive &&
 						filteredEntries.length < 500
 					}
 				/>
@@ -829,9 +828,7 @@ function AppContent({
 					frameLine={frameLine}
 					isWorking={appMode.type === 'working'}
 					pausedAtMs={todoPanel.pausedAtMs}
-					todoTickActive={
-						actualTodoRows > 0 && todoPanel.todoVisible && !pagerActive
-					}
+					todoTickActive={actualTodoRows > 0 && todoPanel.todoVisible}
 				/>
 			</MaybeProfiler>
 			<MaybeProfiler
@@ -1043,7 +1040,9 @@ const TodoHeaderSection = React.memo(function TodoHeaderSection({
 	return (
 		<>
 			{todoHeaderLine !== null && (
-				<Text key="todo-header">{withBorderEdges(frameLine(todoHeaderLine))}</Text>
+				<Text key="todo-header">
+					{withBorderEdges(frameLine(todoHeaderLine))}
+				</Text>
 			)}
 		</>
 	);

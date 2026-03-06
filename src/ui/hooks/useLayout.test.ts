@@ -252,7 +252,9 @@ describe('useLayout', () => {
 		);
 
 		expect(result.current.actualTodoRows).toBe(18);
-		expect(result.current.feedHeaderRows + result.current.feedContentRows).toBe(5);
+		expect(result.current.feedHeaderRows + result.current.feedContentRows).toBe(
+			5,
+		);
 	});
 
 	it('does not shrink todo rows later just because feed activity grows', () => {

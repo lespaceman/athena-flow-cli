@@ -1,7 +1,10 @@
 /** @vitest-environment jsdom */
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {act, renderHook} from '@testing-library/react';
-import {buildTodoDisplayItems, useTodoDisplayItems} from './useTodoDisplayItems';
+import {
+	buildTodoDisplayItems,
+	useTodoDisplayItems,
+} from './useTodoDisplayItems';
 import {type TodoPanelItem} from '../../core/feed/todoPanel';
 
 describe('buildTodoDisplayItems', () => {

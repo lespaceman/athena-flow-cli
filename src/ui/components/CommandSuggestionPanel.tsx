@@ -18,39 +18,40 @@ type Props = {
 	wrapLine: (line: string) => string;
 };
 
-const CommandSuggestionPanelImpl = forwardRef<CommandSuggestionPanelHandle, Props>(
-	function CommandSuggestionPanel(
-		{inputValueRef, isActive, innerWidth, wrapLine},
+const CommandSuggestionPanelImpl = forwardRef<
+	CommandSuggestionPanelHandle,
+	Props
+>(function CommandSuggestionPanel(
+	{inputValueRef, isActive, innerWidth, wrapLine},
+	ref,
+) {
+	const suggestions = useCommandSuggestions(inputValueRef, isActive);
+
+	useImperativeHandle(
 		ref,
-	) {
-		const suggestions = useCommandSuggestions(inputValueRef, isActive);
+		() => ({
+			moveUp: suggestions.moveUp,
+			moveDown: suggestions.moveDown,
+			getSelectedCommand: suggestions.getSelectedCommand,
+			notifyInputChanged: suggestions.notifyInputChanged,
+			get showSuggestions() {
+				return suggestions.showSuggestions;
+			},
+		}),
+		[suggestions],
+	);
 
-		useImperativeHandle(
-			ref,
-			() => ({
-				moveUp: suggestions.moveUp,
-				moveDown: suggestions.moveDown,
-				getSelectedCommand: suggestions.getSelectedCommand,
-				notifyInputChanged: suggestions.notifyInputChanged,
-				get showSuggestions() {
-					return suggestions.showSuggestions;
-				},
-			}),
-			[suggestions],
-		);
+	if (!suggestions.showSuggestions) return null;
 
-		if (!suggestions.showSuggestions) return null;
-
-		return (
-			<CommandSuggestions
-				commands={suggestions.filteredCommands}
-				selectedIndex={suggestions.selectedIndex}
-				innerWidth={innerWidth}
-				wrapLine={wrapLine}
-			/>
-		);
-	},
-);
+	return (
+		<CommandSuggestions
+			commands={suggestions.filteredCommands}
+			selectedIndex={suggestions.selectedIndex}
+			innerWidth={innerWidth}
+			wrapLine={wrapLine}
+		/>
+	);
+});
 
 CommandSuggestionPanelImpl.displayName = 'CommandSuggestionPanel';
 
