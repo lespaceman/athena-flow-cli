@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.7](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.6...cli-v0.3.7) (2026-03-06)
+
+
+### Bug Fixes
+
+* **ui:** harden todo panel state and layout ([a9cae9b](https://github.com/lespaceman/athena-flow-cli/commit/a9cae9b529f257a457d90d42e4a73f992509daca))
+
 ## [0.3.6](https://github.com/lespaceman/athena-flow/compare/cli-v0.3.5...cli-v0.3.6) (2026-03-05)
 
 
