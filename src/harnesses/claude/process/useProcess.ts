@@ -55,6 +55,17 @@ const NULL_TOKENS: TokenUsage = {
 	contextSize: null,
 };
 
+function tokenUsageEquals(a: TokenUsage, b: TokenUsage): boolean {
+	return (
+		a.input === b.input &&
+		a.output === b.output &&
+		a.cacheRead === b.cacheRead &&
+		a.cacheWrite === b.cacheWrite &&
+		a.total === b.total &&
+		a.contextSize === b.contextSize
+	);
+}
+
 /**
  * React hook to manage Claude headless process lifecycle.
  *
@@ -137,6 +148,10 @@ export function useClaudeProcess(
 					tokenUsageTimerRef.current = null;
 					const pending = pendingTokenUsageRef.current;
 					if (!pending || abortRef.current.signal.aborted) return;
+					if (tokenUsageEquals(tokenUsageRef.current, pending)) {
+						pendingTokenUsageRef.current = null;
+						return;
+					}
 					setTokenUsage(pending);
 					pendingTokenUsageRef.current = null;
 				}, intervalMs);
@@ -146,6 +161,7 @@ export function useClaudeProcess(
 			clearTokenUsageTimer();
 			pendingTokenUsageRef.current = null;
 			if (abortRef.current.signal.aborted) return;
+			if (tokenUsageEquals(tokenUsageRef.current, nextUsage)) return;
 			setTokenUsage(nextUsage);
 		},
 		[clearTokenUsageTimer],

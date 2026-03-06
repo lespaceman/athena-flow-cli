@@ -95,26 +95,34 @@ describe('Bug #7: todoListHeight accounts for worst-case scroll affordances', ()
 });
 
 describe('todo panel growth policy', () => {
-	it('caps todo rows at half of rows shared with feed', () => {
+	it('lets todo borrow slack from the feed when the feed would otherwise pad blank rows', () => {
 		const bodyHeight = 30;
 		const runOverlayRows = 0;
 		const rowsForTodoAndFeed = bodyHeight - runOverlayRows;
-		const maxTodoRows = Math.floor(rowsForTodoAndFeed / 2); // 15
+		const halfSplitTodoRows = Math.floor(rowsForTodoAndFeed / 2); // 15
 		const todoRowsTarget = 2 + 40; // many items
-		const todoRows = Math.min(todoRowsTarget, maxTodoRows);
+		const baseTodoRows = Math.min(todoRowsTarget, halfSplitTodoRows);
+		const baseFeedRows = rowsForTodoAndFeed - baseTodoRows; // 15
+		const minFeedRowsNeeded = 3 + 2; // 3 entries + header + divider
+		const feedSlack = Math.max(0, baseFeedRows - minFeedRowsNeeded); // 10
+		const todoRows = Math.min(todoRowsTarget, baseTodoRows + feedSlack);
 		const feedRows = rowsForTodoAndFeed - todoRows;
 
-		expect(todoRows).toBe(15);
-		expect(feedRows).toBe(15);
+		expect(todoRows).toBe(25);
+		expect(feedRows).toBe(5);
 	});
 
-	it('still enforces half split when run overlay is visible', () => {
+	it('keeps the half split when the feed actually needs its full share', () => {
 		const bodyHeight = 30;
 		const runOverlayRows = 6;
 		const rowsForTodoAndFeed = bodyHeight - runOverlayRows; // 24
-		const maxTodoRows = Math.floor(rowsForTodoAndFeed / 2); // 12
+		const halfSplitTodoRows = Math.floor(rowsForTodoAndFeed / 2); // 12
 		const todoRowsTarget = 2 + 40;
-		const todoRows = Math.min(todoRowsTarget, maxTodoRows);
+		const baseTodoRows = Math.min(todoRowsTarget, halfSplitTodoRows);
+		const baseFeedRows = rowsForTodoAndFeed - baseTodoRows; // 12
+		const minFeedRowsNeeded = rowsForTodoAndFeed; // many entries, no slack
+		const feedSlack = Math.max(0, baseFeedRows - minFeedRowsNeeded);
+		const todoRows = Math.min(todoRowsTarget, baseTodoRows + feedSlack);
 		const feedRows = rowsForTodoAndFeed - todoRows;
 
 		expect(todoRows).toBe(12);
@@ -132,6 +140,7 @@ describe('useLayout', () => {
 				showRunOverlay: true,
 				runSummaries: [],
 				todoPanel,
+				feedEntryCount: 0,
 				footerRows: 2,
 			}),
 		);
@@ -158,6 +167,7 @@ describe('useLayout', () => {
 				showRunOverlay: false,
 				runSummaries: [],
 				todoPanel,
+				feedEntryCount: 0,
 				footerRows: 2,
 			}),
 		);
@@ -182,6 +192,7 @@ describe('useLayout', () => {
 				showRunOverlay: false,
 				runSummaries: [],
 				todoPanel,
+				feedEntryCount: 0,
 				footerRows: 2,
 			}),
 		);
@@ -210,10 +221,111 @@ describe('useLayout', () => {
 				showRunOverlay: false,
 				runSummaries: [],
 				todoPanel,
+				feedEntryCount: 50,
 				footerRows: 2,
 			}),
 		);
 
 		expect(setTodoScroll).toHaveBeenCalledWith(5);
+	});
+
+	it('grows todo rows beyond half split when the feed has only a few entries', () => {
+		const todoPanel = makeTodoPanel({
+			visibleTodoItems: Array.from({length: 20}, (_, index) => ({
+				id: String(index),
+				text: `task-${index}`,
+				priority: 'P1' as const,
+				status: 'open' as const,
+			})),
+		});
+
+		const {result} = renderHook(() =>
+			useLayout({
+				terminalRows: 30,
+				terminalWidth: 100,
+				showRunOverlay: false,
+				runSummaries: [],
+				todoPanel,
+				feedEntryCount: 3,
+				footerRows: 2,
+			}),
+		);
+
+		expect(result.current.actualTodoRows).toBe(18);
+		expect(result.current.feedHeaderRows + result.current.feedContentRows).toBe(5);
+	});
+
+	it('does not shrink todo rows later just because feed activity grows', () => {
+		const todoPanel = makeTodoPanel({
+			visibleTodoItems: Array.from({length: 20}, (_, index) => ({
+				id: String(index),
+				text: `task-${index}`,
+				priority: 'P1' as const,
+				status: 'open' as const,
+			})),
+		});
+
+		const {result, rerender} = renderHook(
+			({feedEntryCount}: {feedEntryCount: number}) =>
+				useLayout({
+					terminalRows: 30,
+					terminalWidth: 100,
+					showRunOverlay: false,
+					runSummaries: [],
+					todoPanel,
+					feedEntryCount,
+					footerRows: 2,
+				}),
+			{
+				initialProps: {feedEntryCount: 3},
+			},
+		);
+
+		expect(result.current.actualTodoRows).toBe(18);
+
+		rerender({feedEntryCount: 50});
+
+		expect(result.current.actualTodoRows).toBe(18);
+	});
+
+	it('shrinks sticky todo rows when the todo list itself gets shorter', () => {
+		const longTodoPanel = makeTodoPanel({
+			visibleTodoItems: Array.from({length: 20}, (_, index) => ({
+				id: String(index),
+				text: `task-${index}`,
+				priority: 'P1' as const,
+				status: 'open' as const,
+			})),
+		});
+		const shortTodoPanel = makeTodoPanel({
+			visibleTodoItems: Array.from({length: 4}, (_, index) => ({
+				id: String(index),
+				text: `task-${index}`,
+				priority: 'P1' as const,
+				status: 'open' as const,
+			})),
+		});
+
+		const {result, rerender} = renderHook(
+			({todoPanel}: {todoPanel: UseTodoPanelResult}) =>
+				useLayout({
+					terminalRows: 30,
+					terminalWidth: 100,
+					showRunOverlay: false,
+					runSummaries: [],
+					todoPanel,
+					feedEntryCount: 3,
+					footerRows: 2,
+				}),
+			{
+				initialProps: {todoPanel: longTodoPanel},
+			},
+		);
+
+		expect(result.current.actualTodoRows).toBe(18);
+
+		rerender({todoPanel: shortTodoPanel});
+
+		expect(result.current.actualTodoRows).toBe(6);
 	});
 });

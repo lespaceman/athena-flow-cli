@@ -155,6 +155,49 @@ describe('useClaudeProcess', () => {
 		expect(parser.flush).toHaveBeenCalled();
 	});
 
+	it('does not publish token usage when the parsed values are unchanged', async () => {
+		const parser = {
+			feed: vi.fn(),
+			flush: vi.fn(),
+			reset: vi.fn(),
+			getUsage: vi.fn(() => ({
+				input: null,
+				output: null,
+				cacheRead: null,
+				cacheWrite: null,
+				total: null,
+				contextSize: null,
+			})),
+		};
+
+		const {result} = renderHook(() =>
+			useClaudeProcess(
+				'/test',
+				TEST_INSTANCE_ID,
+				undefined,
+				undefined,
+				false,
+				undefined,
+				{
+					tokenParserFactory: () => parser,
+					trackOutput: false,
+				},
+			),
+		);
+
+		const initialTokenUsage = result.current.tokenUsage;
+
+		await act(async () => {
+			await result.current.spawn('test');
+		});
+
+		act(() => {
+			capturedCallbacks.onStdout?.('{"type":"message"}\n');
+		});
+
+		expect(result.current.tokenUsage).toBe(initialTokenUsage);
+	});
+
 	it('should add stdout data to output', async () => {
 		const {result} = renderHook(() =>
 			useClaudeProcess('/test', TEST_INSTANCE_ID),

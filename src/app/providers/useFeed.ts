@@ -113,6 +113,13 @@ export function useFeed(
 
 	rulesRef.current = rules;
 	feedEventsRef.current = feedEvents;
+	sessionStoreRef.current = sessionStore;
+
+	useEffect(() => {
+		return () => {
+			sessionStoreRef.current = undefined;
+		};
+	}, []);
 
 	const resetSession = useCallback(() => {
 		// Reset mapper state — create fresh mapper

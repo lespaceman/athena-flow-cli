@@ -86,6 +86,30 @@ describe('buildBodyLines — tiny todo panel row budget', () => {
 	});
 });
 
+describe('buildBodyLines — stable overflow affordance rows', () => {
+	it('keeps a stable line budget when overflow exists at the top of the list', () => {
+		const items = Array.from({length: 8}, (_, i) => makeTodoItem(String(i)));
+		const result = buildTodoOnly(items, 6, 0);
+		const plain = result.map(line => stripAnsi(line));
+
+		expect(result).toHaveLength(6);
+		expect(plain[1]?.trim()).toBe('');
+		expect(plain[4]).toMatch(/\+\d+ more/);
+	});
+
+	it('keeps the same row count when scrolling into the middle of an overflowing list', () => {
+		const items = Array.from({length: 8}, (_, i) => makeTodoItem(String(i)));
+		const top = buildTodoOnly(items, 6, 0).map(line => stripAnsi(line));
+		const middle = buildTodoOnly(items, 6, 2).map(line => stripAnsi(line));
+
+		expect(top).toHaveLength(middle.length);
+		expect(top[1]?.trim()).toBe('');
+		expect(middle[1]).toMatch(/\+\d+ more/);
+		expect(top[4]).toMatch(/\+\d+ more/);
+		expect(middle[4]).toMatch(/\+\d+ more/);
+	});
+});
+
 describe('buildTodoHeaderLine', () => {
 	it('shows IDLE with dot glyph when not working', () => {
 		const line = buildTodoHeaderLine(

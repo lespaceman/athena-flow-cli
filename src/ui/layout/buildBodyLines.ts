@@ -89,6 +89,7 @@ export function buildBodyLines({
 	theme,
 }: BuildBodyLinesOptions): string[] {
 	const bodyLines: string[] = [];
+	const blankLine = fitAnsi('', innerWidth);
 
 	const {actualTodoRows, todoPanel: tp, focusMode: todoFocus} = todo;
 	const {actualRunOverlayRows, runSummaries, runFilter} = runOverlay;
@@ -108,47 +109,57 @@ export function buildBodyLines({
 		if (actualTodoRows > 1) {
 			const itemSlots = Math.max(0, actualTodoRows - 2); // minus header and divider
 			const totalItems = items.length;
-			const hasScrollUp = tScroll > 0;
-
-			// Two-pass affordance calculation: deduct scroll-up first,
-			// then check scroll-down against the reduced slot count.
-			let renderSlots = itemSlots;
-			if (hasScrollUp) renderSlots--;
-			const hasScrollDown = tScroll + renderSlots < totalItems;
-			if (hasScrollDown) renderSlots--;
-			renderSlots = Math.max(0, renderSlots);
-			// Ensure we never try to render more items than actually exist
-			// from tScroll onward (scroll state can lag behind data).
 			const availableFromScroll = Math.max(0, totalItems - tScroll);
-			renderSlots = Math.min(renderSlots, availableFromScroll);
-			let showScrollUp = hasScrollUp;
-			let showScrollDown = hasScrollDown;
+			const overflow = totalItems > itemSlots;
+			const reserveStableAffordances = overflow && itemSlots >= 2;
+			let renderSlots = 0;
+			let showScrollUp = false;
+			let showScrollDown = false;
 
-			// Never emit more content rows than `itemSlots`.
-			while (
-				(showScrollUp ? 1 : 0) + (showScrollDown ? 1 : 0) + renderSlots >
-				itemSlots
-			) {
-				if (renderSlots > 0) {
-					renderSlots--;
-					continue;
-				}
-				if (showScrollDown) {
-					showScrollDown = false;
-					continue;
-				}
-				if (showScrollUp) {
-					showScrollUp = false;
-					continue;
-				}
-				break;
-			}
-
-			if (showScrollUp) {
+			if (reserveStableAffordances) {
+				renderSlots = Math.min(Math.max(0, itemSlots - 2), availableFromScroll);
+				showScrollUp = tScroll > 0;
+				showScrollDown = tScroll + renderSlots < totalItems;
 				const aboveCount = tScroll;
 				bodyLines.push(
-					fitAnsi(`${g.scrollUp}  +${aboveCount} more`, innerWidth),
+					showScrollUp
+						? fitAnsi(`${g.scrollUp}  +${aboveCount} more`, innerWidth)
+						: blankLine,
 				);
+			} else {
+				showScrollUp = tScroll > 0;
+				renderSlots = itemSlots;
+				if (showScrollUp) renderSlots--;
+				showScrollDown = tScroll + renderSlots < totalItems;
+				if (showScrollDown) renderSlots--;
+				renderSlots = Math.max(0, renderSlots);
+				renderSlots = Math.min(renderSlots, availableFromScroll);
+
+				while (
+					(showScrollUp ? 1 : 0) + (showScrollDown ? 1 : 0) + renderSlots >
+					itemSlots
+				) {
+					if (renderSlots > 0) {
+						renderSlots--;
+						continue;
+					}
+					if (showScrollDown) {
+						showScrollDown = false;
+						continue;
+					}
+					if (showScrollUp) {
+						showScrollUp = false;
+						continue;
+					}
+					break;
+				}
+
+				if (showScrollUp) {
+					const aboveCount = tScroll;
+					bodyLines.push(
+						fitAnsi(`${g.scrollUp}  +${aboveCount} more`, innerWidth),
+					);
+				}
 			}
 
 			for (let i = 0; i < renderSlots; i++) {
@@ -195,7 +206,14 @@ export function buildBodyLines({
 				bodyLines.push(fitAnsi(line, innerWidth));
 			}
 
-			if (showScrollDown) {
+			if (reserveStableAffordances) {
+				const moreCount = Math.max(0, totalItems - (tScroll + renderSlots));
+				bodyLines.push(
+					showScrollDown
+						? fitAnsi(`${g.scrollDown}  +${moreCount} more`, innerWidth)
+						: blankLine,
+				);
+			} else if (showScrollDown) {
 				const moreCount = totalItems - (tScroll + renderSlots);
 				bodyLines.push(
 					fitAnsi(`${g.scrollDown}  +${moreCount} more`, innerWidth),

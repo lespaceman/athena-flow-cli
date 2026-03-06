@@ -184,9 +184,9 @@ export function useTodoPanel({
 		setTodoCursor(prev => Math.min(prev, Math.max(0, sortedItems.length - 1)));
 	}, [sortedItems.length]);
 
-	// Auto-scroll to keep the most interesting item visible.
-	// Priority: doing item > first incomplete item > current position.
-	// Must also move cursor so useLayout's cursor-following doesn't override.
+	// Keep the cursor anchored on the most interesting item.
+	// Scroll position is owned by useLayout because it knows the actual
+	// rendered window height; duplicating that policy here causes churn.
 	useEffect(() => {
 		const activeIdx = sortedItems.findIndex(i => i.status === 'doing');
 		const targetIdx =
@@ -197,14 +197,6 @@ export function useTodoPanel({
 					);
 		if (targetIdx < 0) return;
 		setTodoCursor(targetIdx);
-		const lastMustSee = Math.min(targetIdx + 1, sortedItems.length - 1);
-		setTodoScroll(prev => {
-			const maxVisible = 3;
-			if (targetIdx < prev) return targetIdx;
-			if (lastMustSee >= prev + maxVisible)
-				return Math.max(0, lastMustSee - maxVisible + 1);
-			return prev;
-		});
 	}, [sortedItems]);
 
 	const addTodo = useCallback((priority: 'P0' | 'P1' | 'P2', text: string) => {

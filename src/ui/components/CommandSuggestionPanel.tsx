@@ -1,4 +1,4 @@
-import {forwardRef, useImperativeHandle} from 'react';
+import {forwardRef, memo, useImperativeHandle} from 'react';
 import {useCommandSuggestions} from '../hooks/useCommandSuggestions';
 import CommandSuggestions from './CommandSuggestions';
 import type {Command} from '../../app/commands/types';
@@ -18,37 +18,40 @@ type Props = {
 	wrapLine: (line: string) => string;
 };
 
-export const CommandSuggestionPanel = forwardRef<
-	CommandSuggestionPanelHandle,
-	Props
->(function CommandSuggestionPanel(
-	{inputValueRef, isActive, innerWidth, wrapLine},
-	ref,
-) {
-	const suggestions = useCommandSuggestions(inputValueRef, isActive);
-
-	useImperativeHandle(
+const CommandSuggestionPanelImpl = forwardRef<CommandSuggestionPanelHandle, Props>(
+	function CommandSuggestionPanel(
+		{inputValueRef, isActive, innerWidth, wrapLine},
 		ref,
-		() => ({
-			moveUp: suggestions.moveUp,
-			moveDown: suggestions.moveDown,
-			getSelectedCommand: suggestions.getSelectedCommand,
-			notifyInputChanged: suggestions.notifyInputChanged,
-			get showSuggestions() {
-				return suggestions.showSuggestions;
-			},
-		}),
-		[suggestions],
-	);
+	) {
+		const suggestions = useCommandSuggestions(inputValueRef, isActive);
 
-	if (!suggestions.showSuggestions) return null;
+		useImperativeHandle(
+			ref,
+			() => ({
+				moveUp: suggestions.moveUp,
+				moveDown: suggestions.moveDown,
+				getSelectedCommand: suggestions.getSelectedCommand,
+				notifyInputChanged: suggestions.notifyInputChanged,
+				get showSuggestions() {
+					return suggestions.showSuggestions;
+				},
+			}),
+			[suggestions],
+		);
 
-	return (
-		<CommandSuggestions
-			commands={suggestions.filteredCommands}
-			selectedIndex={suggestions.selectedIndex}
-			innerWidth={innerWidth}
-			wrapLine={wrapLine}
-		/>
-	);
-});
+		if (!suggestions.showSuggestions) return null;
+
+		return (
+			<CommandSuggestions
+				commands={suggestions.filteredCommands}
+				selectedIndex={suggestions.selectedIndex}
+				innerWidth={innerWidth}
+				wrapLine={wrapLine}
+			/>
+		);
+	},
+);
+
+CommandSuggestionPanelImpl.displayName = 'CommandSuggestionPanel';
+
+export const CommandSuggestionPanel = memo(CommandSuggestionPanelImpl);

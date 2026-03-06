@@ -164,7 +164,7 @@ describe('useTodoPanel', () => {
 	});
 
 	describe('auto-scroll', () => {
-		it('keeps active and next pending item within visible window', () => {
+		it('moves cursor to the active item', () => {
 			const tasks = makeTasks([
 				'completed',
 				'completed',
@@ -175,10 +175,11 @@ describe('useTodoPanel', () => {
 			]);
 			const {result} = renderHook(() => useTodoPanel({tasks, isWorking: true}));
 
-			expect(result.current.todoScroll).toBe(2);
+			expect(result.current.todoCursor).toBe(3);
+			expect(result.current.todoScroll).toBe(0);
 		});
 
-		it('scrolls to first incomplete item when no doing item exists', () => {
+		it('moves cursor to the first incomplete item when no doing item exists', () => {
 			const tasks = makeTasks([
 				'completed',
 				'completed',
@@ -192,7 +193,8 @@ describe('useTodoPanel', () => {
 				useTodoPanel({tasks, isWorking: false}),
 			);
 
-			expect(result.current.todoScroll).toBe(4);
+			expect(result.current.todoCursor).toBe(5);
+			expect(result.current.todoScroll).toBe(0);
 		});
 	});
 

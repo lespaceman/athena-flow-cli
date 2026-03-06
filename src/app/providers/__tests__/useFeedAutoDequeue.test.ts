@@ -2,6 +2,7 @@
 import {describe, it, expect, vi} from 'vitest';
 import {renderHook, act} from '@testing-library/react';
 import {useFeed} from '../useFeed';
+import type {SessionStore} from '../../../infra/sessions/store';
 import type {
 	Runtime,
 	RuntimeEvent,
@@ -188,5 +189,44 @@ describe('useFeed task extraction', () => {
 			{content: 'Create smoke suite', status: 'completed'},
 			{content: 'Capture logs', status: 'completed'},
 		]);
+	});
+});
+
+describe('useFeed session store lifecycle', () => {
+	it('ignores late recordTokens calls after unmount', () => {
+		const runtime = createMockRuntime();
+		const sessionStore = {
+			recordEvent: vi.fn(),
+			recordFeedEvents: vi.fn(),
+			restore: vi.fn(),
+			toBootstrap: vi.fn(),
+			getAthenaSession: vi.fn(),
+			updateLabel: vi.fn(),
+			recordTokens: vi.fn(),
+			getRestoredTokens: vi.fn(() => null),
+			close: vi.fn(),
+			isDegraded: false,
+			degradedReason: undefined,
+			markDegraded: vi.fn(),
+		} satisfies SessionStore;
+		const {result, unmount} = renderHook(() =>
+			useFeed(runtime, [], undefined, sessionStore),
+		);
+
+		const recordTokens = result.current.recordTokens;
+		unmount();
+
+		expect(() =>
+			recordTokens('adapter-1', {
+				input: 1,
+				output: 2,
+				cacheRead: 0,
+				cacheWrite: 0,
+				total: 3,
+				contextSize: 4,
+			}),
+		).not.toThrow();
+		expect(sessionStore.recordTokens).not.toHaveBeenCalled();
+		expect(sessionStore.markDegraded).not.toHaveBeenCalled();
 	});
 });

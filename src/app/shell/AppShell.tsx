@@ -174,6 +174,27 @@ function AppContent({
 	const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const messagesRef = useRef(messages);
 	messagesRef.current = messages;
+	const perfEnabled = isPerfEnabled();
+	const handleSectionProfilerRender = useCallback(
+		(
+			id: string,
+			phaseName: string,
+			actualDuration: number,
+			baseDuration: number,
+			startTime: number,
+			commitTime: number,
+		) => {
+			logReactCommit(
+				id,
+				phaseName,
+				actualDuration,
+				baseDuration,
+				startTime,
+				commitTime,
+			);
+		},
+		[],
+	);
 
 	const theme = useTheme();
 	const {
@@ -227,7 +248,7 @@ function AppContent({
 			onExitTokens,
 			trackOutput: false,
 			trackStreamingText: false,
-			tokenUpdateMs: 250,
+			tokenUpdateMs: 1000,
 		},
 	});
 	const {exit} = useApp();
@@ -470,6 +491,7 @@ function AppContent({
 		showRunOverlay,
 		runSummaries,
 		todoPanel,
+		feedEntryCount: filteredEntries.length,
 		footerRows,
 		inputRows,
 	});
@@ -825,108 +847,161 @@ function AppContent({
 
 	return (
 		<Box flexDirection="column" width={frameWidth}>
-			<Text>{border(topBorder)}</Text>
-			<Text>{withBorderEdges(frameLine(headerLine1))}</Text>
-			<Text>{border(sectionBorder)}</Text>
-			{todoHeaderLine !== null && (
-				<Text key="todo-header">
-					{withBorderEdges(frameLine(todoHeaderLine))}
-				</Text>
-			)}
-			{prefixBodyLines.map((line, index) => (
-				<Text key={`body-${index}`}>{withBorderEdges(frameLine(line))}</Text>
-			))}
-			<FeedGrid
-				feedHeaderRows={feedHeaderRows}
-				feedContentRows={feedContentRows}
-				feedViewportStart={feedNav.feedViewportStart}
-				filteredEntries={filteredEntries}
-				feedCursor={feedNav.feedCursor}
-				focusMode={focusMode}
-				searchMatchSet={searchMatchSet}
-				ascii={useAscii}
-				theme={theme}
-				innerWidth={innerWidth}
-				cols={feedCols}
-			/>
-			<Text>{border(sectionBorder)}</Text>
-			{frame.footerHelp !== null && (
-				<>
-					<Text>
-						{withBorderEdges(
-							frameLine(
-								toastMessage
-									? chalk.bold.green(toastMessage)
-									: fit(frame.footerHelp, innerWidth),
-							),
-						)}
-					</Text>
-					<Text>{withBorderEdges(frameLine(''))}</Text>
-				</>
-			)}
-			<CommandSuggestionPanel
-				ref={suggestionPanelRef}
-				inputValueRef={inputValueRef}
-				isActive={inputMode === 'command'}
-				innerWidth={innerWidth}
-				wrapLine={wrapFrameLine}
-			/>
-			<FrameRow
-				innerWidth={innerWidth}
-				ascii={useAscii}
-				borderColor={theme.border}
-				height={inputRows}
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.header-frame"
+				onRender={handleSectionProfilerRender}
 			>
-				<Box width={inputPrefix.length} flexShrink={0}>
-					<Text>{inputPromptStyled}</Text>
-				</Box>
-				<Box width={inputContentWidth} flexShrink={0}>
-					<MultiLineInput
-						width={inputContentWidth}
-						placeholder={textInputPlaceholder}
-						textColor={theme.text}
-						placeholderColor={inputPlaceholderColor}
-						isActive={focusMode === 'input' && !dialogActive}
-						onChange={handleInputChange}
-						onSubmit={handleInputSubmit}
-						onHistoryBack={handleHistoryBack}
-						onHistoryForward={handleHistoryForward}
-						suppressArrows={inputMode === 'command'}
-						setValueRef={handleSetValueRef}
-					/>
-				</Box>
-				<Box width={badgeText.length} flexShrink={0}>
-					<Text>{runBadgeStyled + modeBadgeStyled}</Text>
-				</Box>
-			</FrameRow>
-			<Text>{border(bottomBorder)}</Text>
-			{appMode.type === 'permission' && currentPermissionRequest && (
-				<ErrorBoundary
-					fallback={
-						<PermissionErrorFallback
-							onDeny={() => handlePermissionDecision('deny')}
-						/>
-					}
-				>
-					<PermissionDialog
-						request={currentPermissionRequest}
-						queuedCount={permissionQueueCount - 1}
-						onDecision={handlePermissionDecision}
-					/>
-				</ErrorBoundary>
-			)}
-			{appMode.type === 'question' && currentQuestionRequest && (
-				<ErrorBoundary
-					fallback={<QuestionErrorFallback onSkip={handleQuestionSkip} />}
-				>
-					<QuestionDialog
-						request={currentQuestionRequest}
-						queuedCount={questionQueueCount - 1}
-						onAnswer={handleQuestionAnswer}
-						onSkip={handleQuestionSkip}
-					/>
-				</ErrorBoundary>
-			)}
+				<>
+					<Text>{border(topBorder)}</Text>
+					<Text>{withBorderEdges(frameLine(headerLine1))}</Text>
+					<Text>{border(sectionBorder)}</Text>
+				</>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.todo-header"
+				onRender={handleSectionProfilerRender}
+			>
+				<>
+					{todoHeaderLine !== null && (
+						<Text key="todo-header">
+							{withBorderEdges(frameLine(todoHeaderLine))}
+						</Text>
+					)}
+				</>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.body-prefix"
+				onRender={handleSectionProfilerRender}
+			>
+				<>
+					{prefixBodyLines.map((line, index) => (
+						<Text key={`body-${index}`}>{withBorderEdges(frameLine(line))}</Text>
+					))}
+				</>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.feed"
+				onRender={handleSectionProfilerRender}
+			>
+				<FeedGrid
+					feedHeaderRows={feedHeaderRows}
+					feedContentRows={feedContentRows}
+					feedViewportStart={feedNav.feedViewportStart}
+					filteredEntries={filteredEntries}
+					feedCursor={feedNav.feedCursor}
+					focusMode={focusMode}
+					searchMatchSet={searchMatchSet}
+					ascii={useAscii}
+					theme={theme}
+					innerWidth={innerWidth}
+					cols={feedCols}
+				/>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.footer"
+				onRender={handleSectionProfilerRender}
+			>
+				<FooterSection
+					border={border}
+					sectionBorder={sectionBorder}
+					frameFooterHelp={frame.footerHelp}
+					toastMessage={toastMessage}
+					innerWidth={innerWidth}
+					frameLine={frameLine}
+					withBorderEdges={withBorderEdges}
+				/>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.command-suggestions"
+				onRender={handleSectionProfilerRender}
+			>
+				<CommandSuggestionPanel
+					ref={suggestionPanelRef}
+					inputValueRef={inputValueRef}
+					isActive={inputMode === 'command'}
+					innerWidth={innerWidth}
+					wrapLine={wrapFrameLine}
+				/>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.input"
+				onRender={handleSectionProfilerRender}
+			>
+				<InputSection
+					innerWidth={innerWidth}
+					useAscii={useAscii}
+					borderColor={theme.border}
+					inputRows={inputRows}
+					inputPrefix={inputPrefix}
+					inputPromptStyled={inputPromptStyled}
+					inputContentWidth={inputContentWidth}
+					textInputPlaceholder={textInputPlaceholder}
+					textColor={theme.text}
+					inputPlaceholderColor={inputPlaceholderColor}
+					isInputActive={focusMode === 'input' && !dialogActive}
+					handleInputChange={handleInputChange}
+					handleInputSubmit={handleInputSubmit}
+					handleHistoryBack={handleHistoryBack}
+					handleHistoryForward={handleHistoryForward}
+					suppressArrows={inputMode === 'command'}
+					handleSetValueRef={handleSetValueRef}
+					badgeText={badgeText}
+					runBadgeStyled={runBadgeStyled}
+					modeBadgeStyled={modeBadgeStyled}
+					border={border}
+					bottomBorder={bottomBorder}
+				/>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.permission-dialog"
+				onRender={handleSectionProfilerRender}
+			>
+				<>
+					{appMode.type === 'permission' && currentPermissionRequest && (
+						<ErrorBoundary
+							fallback={
+								<PermissionErrorFallback
+									onDeny={() => handlePermissionDecision('deny')}
+								/>
+							}
+						>
+							<PermissionDialog
+								request={currentPermissionRequest}
+								queuedCount={permissionQueueCount - 1}
+								onDecision={handlePermissionDecision}
+							/>
+						</ErrorBoundary>
+					)}
+				</>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.question-dialog"
+				onRender={handleSectionProfilerRender}
+			>
+				<>
+					{appMode.type === 'question' && currentQuestionRequest && (
+						<ErrorBoundary
+							fallback={<QuestionErrorFallback onSkip={handleQuestionSkip} />}
+						>
+							<QuestionDialog
+								request={currentQuestionRequest}
+								queuedCount={questionQueueCount - 1}
+								onAnswer={handleQuestionAnswer}
+								onSkip={handleQuestionSkip}
+							/>
+						</ErrorBoundary>
+					)}
+				</>
+			</MaybeProfiler>
 		</Box>
 	);
 }
@@ -949,6 +1024,126 @@ function MaybeProfiler({
 		</Profiler>
 	);
 }
+
+const FooterSection = React.memo(function FooterSection({
+	border,
+	sectionBorder,
+	frameFooterHelp,
+	toastMessage,
+	innerWidth,
+	frameLine,
+	withBorderEdges,
+}: {
+	border: (text: string) => string;
+	sectionBorder: string;
+	frameFooterHelp: string | null;
+	toastMessage: string | null;
+	innerWidth: number;
+	frameLine: (content: string) => string;
+	withBorderEdges: (line: string) => string;
+}) {
+	return (
+		<>
+			<Text>{border(sectionBorder)}</Text>
+			{frameFooterHelp !== null && (
+				<>
+					<Text>
+						{withBorderEdges(
+							frameLine(
+								toastMessage
+									? chalk.bold.green(toastMessage)
+									: fit(frameFooterHelp, innerWidth),
+							),
+						)}
+					</Text>
+					<Text>{withBorderEdges(frameLine(''))}</Text>
+				</>
+			)}
+		</>
+	);
+});
+
+const InputSection = React.memo(function InputSection({
+	innerWidth,
+	useAscii,
+	borderColor,
+	inputRows,
+	inputPrefix,
+	inputPromptStyled,
+	inputContentWidth,
+	textInputPlaceholder,
+	textColor,
+	inputPlaceholderColor,
+	isInputActive,
+	handleInputChange,
+	handleInputSubmit,
+	handleHistoryBack,
+	handleHistoryForward,
+	suppressArrows,
+	handleSetValueRef,
+	badgeText,
+	runBadgeStyled,
+	modeBadgeStyled,
+	border,
+	bottomBorder,
+}: {
+	innerWidth: number;
+	useAscii: boolean;
+	borderColor: string;
+	inputRows: number;
+	inputPrefix: string;
+	inputPromptStyled: string;
+	inputContentWidth: number;
+	textInputPlaceholder: string;
+	textColor: string;
+	inputPlaceholderColor: string;
+	isInputActive: boolean;
+	handleInputChange: (value: string) => void;
+	handleInputSubmit: (value: string) => void;
+	handleHistoryBack: (currentValue: string) => string | undefined;
+	handleHistoryForward: () => string | undefined;
+	suppressArrows: boolean;
+	handleSetValueRef: (setter: (value: string) => void) => void;
+	badgeText: string;
+	runBadgeStyled: string;
+	modeBadgeStyled: string;
+	border: (text: string) => string;
+	bottomBorder: string;
+}) {
+	return (
+		<>
+			<FrameRow
+				innerWidth={innerWidth}
+				ascii={useAscii}
+				borderColor={borderColor}
+				height={inputRows}
+			>
+				<Box width={inputPrefix.length} flexShrink={0}>
+					<Text>{inputPromptStyled}</Text>
+				</Box>
+				<Box width={inputContentWidth} flexShrink={0}>
+					<MultiLineInput
+						width={inputContentWidth}
+						placeholder={textInputPlaceholder}
+						textColor={textColor}
+						placeholderColor={inputPlaceholderColor}
+						isActive={isInputActive}
+						onChange={handleInputChange}
+						onSubmit={handleInputSubmit}
+						onHistoryBack={handleHistoryBack}
+						onHistoryForward={handleHistoryForward}
+						suppressArrows={suppressArrows}
+						setValueRef={handleSetValueRef}
+					/>
+				</Box>
+				<Box width={badgeText.length} flexShrink={0}>
+					<Text>{runBadgeStyled + modeBadgeStyled}</Text>
+				</Box>
+			</FrameRow>
+			<Text>{border(bottomBorder)}</Text>
+		</>
+	);
+});
 
 export default function App({
 	projectDir,

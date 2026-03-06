@@ -1,4 +1,4 @@
-import {useEffect} from 'react';
+import {useEffect, useRef} from 'react';
 import {type RunSummary} from '../../core/feed/timeline';
 import {type UseTodoPanelResult} from './useTodoPanel';
 
@@ -12,6 +12,7 @@ export type UseLayoutOptions = {
 	showRunOverlay: boolean;
 	runSummaries: RunSummary[];
 	todoPanel: UseTodoPanelResult;
+	feedEntryCount?: number;
 	footerRows: number;
 	/** Number of visual rows the input field occupies (default: 1) */
 	inputRows?: number;
@@ -36,9 +37,11 @@ export function useLayout({
 	showRunOverlay,
 	runSummaries,
 	todoPanel,
+	feedEntryCount = 0,
 	footerRows,
 	inputRows = 1,
 }: UseLayoutOptions): UseLayoutResult {
+	const stickyTodoRowsRef = useRef(0);
 	const frameWidth = Math.max(4, terminalWidth);
 	const innerWidth = frameWidth - 2;
 
@@ -61,8 +64,24 @@ export function useLayout({
 	const todoRowsTarget = todoPanel.todoVisible
 		? 2 + todoPanel.visibleTodoItems.length
 		: 0;
-	const maxTodoRows = Math.floor(rowsForTodoAndFeed / 2);
-	const todoRows = Math.min(todoRowsTarget, maxTodoRows);
+	const halfSplitTodoRows = Math.floor(rowsForTodoAndFeed / 2);
+	const baseTodoRows = Math.min(todoRowsTarget, halfSplitTodoRows);
+	const baseFeedRowsAtHalfSplit = Math.max(1, rowsForTodoAndFeed - baseTodoRows);
+	const minFeedRowsNeeded =
+		feedEntryCount <= 0 ? 1 : Math.min(rowsForTodoAndFeed, feedEntryCount + 2);
+	const feedSlack = Math.max(0, baseFeedRowsAtHalfSplit - minFeedRowsNeeded);
+	const desiredTodoRows = Math.min(todoRowsTarget, baseTodoRows + feedSlack);
+	const maxTodoRowsAvailable = Math.max(0, rowsForTodoAndFeed - 1);
+	const retainedTodoRows =
+		todoRowsTarget > 0
+			? Math.min(
+					stickyTodoRowsRef.current,
+					maxTodoRowsAvailable,
+					todoRowsTarget,
+				)
+			: 0;
+	const todoRows = Math.max(desiredTodoRows, retainedTodoRows);
+	stickyTodoRowsRef.current = todoRowsTarget > 0 ? todoRows : 0;
 	const baseFeedRows = Math.max(1, rowsForTodoAndFeed - todoRows);
 	const feedHeaderRows = baseFeedRows > 1 ? 1 : 0;
 	const baseFeedContentRows = Math.max(0, baseFeedRows - feedHeaderRows);
