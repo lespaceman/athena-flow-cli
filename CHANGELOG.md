@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.8](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.7...cli-v0.3.8) (2026-03-06)
+
+
+### Bug Fixes
+
+* trigger release for recent stabilization changes ([bf182e9](https://github.com/lespaceman/athena-flow-cli/commit/bf182e968ec3b728150376527327fe425f9610e4))
+
 ## [0.3.7](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.6...cli-v0.3.7) (2026-03-06)
 
 
