@@ -51,9 +51,10 @@ export function useLayout({
 			(inputRows - 1),
 	);
 
-	const runOverlayRowsTarget = showRunOverlay
-		? Math.min(RUN_OVERLAY_MAX_ROWS, 1 + Math.max(1, runSummaries.length))
-		: 0;
+	const runOverlayRowsTarget =
+		showRunOverlay && runSummaries.length > 0
+			? Math.min(RUN_OVERLAY_MAX_ROWS, 1 + runSummaries.length)
+			: 0;
 	const maxRunOverlayRows = Math.max(0, bodyHeight - 1);
 	const runOverlayRows = Math.min(runOverlayRowsTarget, maxRunOverlayRows);
 	const rowsForTodoAndFeed = Math.max(1, bodyHeight - runOverlayRows);
@@ -70,6 +71,7 @@ export function useLayout({
 
 	const setTodoScroll = todoPanel.setTodoScroll;
 	const todoCursor = todoPanel.todoCursor;
+	const todoScroll = todoPanel.todoScroll;
 	const visibleTodoItemsLength = todoPanel.visibleTodoItems.length;
 
 	// Todo scroll adjustment
@@ -80,18 +82,29 @@ export function useLayout({
 			: itemSlots;
 	useEffect(() => {
 		if (todoListHeight <= 0) {
-			setTodoScroll(0);
+			if (todoScroll !== 0) {
+				setTodoScroll(0);
+			}
 			return;
 		}
-		setTodoScroll(prev => {
-			if (todoCursor < prev) return todoCursor;
-			if (todoCursor >= prev + todoListHeight) {
-				return todoCursor - todoListHeight + 1;
-			}
-			const maxScroll = Math.max(0, visibleTodoItemsLength - todoListHeight);
-			return Math.min(prev, maxScroll);
-		});
-	}, [todoCursor, todoListHeight, visibleTodoItemsLength, setTodoScroll]);
+		let nextScroll = todoScroll;
+		if (todoCursor < nextScroll) {
+			nextScroll = todoCursor;
+		} else if (todoCursor >= nextScroll + todoListHeight) {
+			nextScroll = todoCursor - todoListHeight + 1;
+		}
+		const maxScroll = Math.max(0, visibleTodoItemsLength - todoListHeight);
+		nextScroll = Math.min(nextScroll, maxScroll);
+		if (nextScroll !== todoScroll) {
+			setTodoScroll(nextScroll);
+		}
+	}, [
+		todoCursor,
+		todoListHeight,
+		todoScroll,
+		visibleTodoItemsLength,
+		setTodoScroll,
+	]);
 
 	return {
 		frameWidth,

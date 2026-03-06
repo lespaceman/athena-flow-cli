@@ -1,4 +1,38 @@
-import {describe, it, expect} from 'vitest';
+/** @vitest-environment jsdom */
+import {describe, it, expect, vi} from 'vitest';
+import {renderHook} from '@testing-library/react';
+import {useLayout} from './useLayout';
+import {type UseTodoPanelResult} from './useTodoPanel';
+
+function makeTodoPanel(
+	overrides: Partial<UseTodoPanelResult> = {},
+): UseTodoPanelResult {
+	return {
+		todoVisible: true,
+		todoShowDone: true,
+		todoCursor: 0,
+		todoScroll: 0,
+		extraTodos: [],
+		todoStatusOverrides: {},
+		todoItems: [],
+		visibleTodoItems: [],
+		doneCount: 0,
+		doingCount: 0,
+		blockedCount: 0,
+		openCount: 0,
+		failedCount: 0,
+		remainingCount: 0,
+		setTodoVisible: vi.fn(),
+		setTodoShowDone: vi.fn(),
+		setTodoCursor: vi.fn(),
+		setTodoScroll: vi.fn(),
+		setExtraTodos: vi.fn(),
+		setTodoStatusOverrides: vi.fn(),
+		addTodo: vi.fn(),
+		toggleTodoStatus: vi.fn(),
+		...overrides,
+	};
+}
 
 describe('useLayout height constants', () => {
 	it('total rendered rows should equal terminalRows with dynamic footer', () => {
@@ -85,5 +119,101 @@ describe('todo panel growth policy', () => {
 
 		expect(todoRows).toBe(12);
 		expect(feedRows).toBe(12);
+	});
+});
+
+describe('useLayout', () => {
+	it('does not allocate run overlay rows when overlay is enabled but there are no runs', () => {
+		const todoPanel = makeTodoPanel();
+		const {result} = renderHook(() =>
+			useLayout({
+				terminalRows: 40,
+				terminalWidth: 120,
+				showRunOverlay: true,
+				runSummaries: [],
+				todoPanel,
+				footerRows: 2,
+			}),
+		);
+
+		expect(result.current.actualRunOverlayRows).toBe(0);
+	});
+
+	it('does not call setTodoScroll when the current scroll is already valid', () => {
+		const setTodoScroll = vi.fn();
+		const todoPanel = makeTodoPanel({
+			todoCursor: 1,
+			todoScroll: 0,
+			visibleTodoItems: [
+				{id: '1', text: 'a', priority: 'P1', status: 'open'},
+				{id: '2', text: 'b', priority: 'P1', status: 'doing'},
+			],
+			setTodoScroll,
+		});
+
+		renderHook(() =>
+			useLayout({
+				terminalRows: 30,
+				terminalWidth: 100,
+				showRunOverlay: false,
+				runSummaries: [],
+				todoPanel,
+				footerRows: 2,
+			}),
+		);
+
+		expect(setTodoScroll).not.toHaveBeenCalled();
+	});
+
+	it('clamps scroll back to zero when no todo item rows are available', () => {
+		const setTodoScroll = vi.fn();
+		const todoPanel = makeTodoPanel({
+			todoVisible: true,
+			todoCursor: 3,
+			todoScroll: 2,
+			visibleTodoItems: [{id: '1', text: 'a', priority: 'P1', status: 'open'}],
+			setTodoScroll,
+		});
+
+		renderHook(() =>
+			useLayout({
+				terminalRows: 6,
+				terminalWidth: 100,
+				showRunOverlay: false,
+				runSummaries: [],
+				todoPanel,
+				footerRows: 2,
+			}),
+		);
+
+		expect(setTodoScroll).toHaveBeenCalledWith(0);
+	});
+
+	it('scrolls down only when the cursor moves below the visible todo window', () => {
+		const setTodoScroll = vi.fn();
+		const todoPanel = makeTodoPanel({
+			todoCursor: 6,
+			todoScroll: 0,
+			visibleTodoItems: Array.from({length: 8}, (_, index) => ({
+				id: String(index),
+				text: `task-${index}`,
+				priority: 'P1' as const,
+				status: 'open' as const,
+			})),
+			setTodoScroll,
+		});
+
+		renderHook(() =>
+			useLayout({
+				terminalRows: 20,
+				terminalWidth: 100,
+				showRunOverlay: false,
+				runSummaries: [],
+				todoPanel,
+				footerRows: 2,
+			}),
+		);
+
+		expect(setTodoScroll).toHaveBeenCalledWith(5);
 	});
 });

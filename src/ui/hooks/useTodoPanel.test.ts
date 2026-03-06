@@ -195,4 +195,19 @@ describe('useTodoPanel', () => {
 			expect(result.current.todoScroll).toBe(4);
 		});
 	});
+
+	describe('toggleTodoStatus', () => {
+		it('ignores stale indexes that no longer resolve to a visible todo', () => {
+			const tasks = makeTasks(['pending']);
+			const {result} = renderHook(() =>
+				useTodoPanel({tasks, isWorking: false}),
+			);
+
+			expect(() => {
+				act(() => {
+					result.current.toggleTodoStatus(99);
+				});
+			}).not.toThrow();
+		});
+	});
 });

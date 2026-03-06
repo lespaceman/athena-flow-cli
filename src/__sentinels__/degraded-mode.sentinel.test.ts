@@ -16,15 +16,22 @@
  * catching throws and calling markDegraded. This test verifies the store's half
  * of the contract: throws on failure + markDegraded API behaves correctly.
  */
-import {describe, it, expect, afterEach} from 'vitest';
+import {describe, it, expect, afterEach, beforeEach, vi} from 'vitest';
 import {createSessionStore, type SessionStore} from '../infra/sessions/store';
 import {createFeedMapper} from '../core/feed/mapper';
 import {makeEvent, resetCounter} from './helpers';
 
 describe('Sentinel: degraded mode on persistence failure', () => {
 	let store: SessionStore;
+	let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+	beforeEach(() => {
+		// markDegraded intentionally logs; suppress expected stderr in test output.
+		consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+	});
 
 	afterEach(() => {
+		consoleErrorSpy.mockRestore();
 		resetCounter();
 	});
 

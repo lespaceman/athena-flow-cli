@@ -131,6 +131,76 @@ describe('buildTodoHeaderLine', () => {
 	});
 });
 
+describe('buildBodyLines — stale todoScroll exceeding items length', () => {
+	it('does not crash when tScroll + renderSlots exceeds items array bounds', () => {
+		// Reproduces the crash: todoScroll is stale (e.g. 3) but items shrunk to 2.
+		// buildBodyLines must not access items[3+] which would be undefined.
+		const items = Array.from({length: 2}, (_, i) => makeTodoItem(String(i)));
+		// tScroll=3 is beyond items.length — simulates stale scroll state
+		expect(() => buildTodoOnly(items, 6, 3)).not.toThrow();
+	});
+
+	it('does not crash when tScroll equals items length', () => {
+		const items = Array.from({length: 3}, (_, i) => makeTodoItem(String(i)));
+		expect(() => buildTodoOnly(items, 5, 3)).not.toThrow();
+	});
+
+	it('does not crash when visibleTodoItems contains sparse undefined entries', () => {
+		const items = [
+			makeTodoItem('0'),
+			undefined,
+			makeTodoItem('2'),
+		] as unknown as TodoPanelItem[];
+		expect(() => buildTodoOnly(items, 6, 0)).not.toThrow();
+	});
+
+	it('does not crash when a todo item is missing status', () => {
+		const items = [
+			{
+				id: 'broken',
+				text: 'task-broken',
+				priority: 'P1',
+			},
+		] as unknown as TodoPanelItem[];
+		expect(() => buildTodoOnly(items, 4, 0)).not.toThrow();
+	});
+});
+
+describe('buildBodyLines — stale runSummaries with over-allocated rows', () => {
+	it('does not crash when actualRunOverlayRows exceeds runSummaries length', () => {
+		// Simulates: layout allocated 4 overlay rows but runSummaries is empty
+		expect(() =>
+			buildBodyLines({
+				innerWidth: 80,
+				todo: {
+					actualTodoRows: 0,
+					todoPanel: {todoScroll: 0, todoCursor: 0, visibleTodoItems: []},
+					focusMode: 'feed',
+					ascii: true,
+					appMode: 'idle',
+					doneCount: 0,
+					totalCount: 0,
+					spinnerFrame: '*',
+				},
+				runOverlay: {
+					actualRunOverlayRows: 4,
+					runSummaries: [
+						{
+							runId: 'r1',
+							status: 'done',
+							title: 'Test run',
+							startedAt: Date.now(),
+							events: 0,
+						},
+					],
+					runFilter: 'all',
+				},
+				theme: defaultTheme,
+			}),
+		).not.toThrow();
+	});
+});
+
 describe('buildBodyLines — skipHeader', () => {
 	it('omits header line when skipHeader is true', () => {
 		const items = Array.from({length: 3}, (_, i) => makeTodoItem(String(i)));

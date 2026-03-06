@@ -1,6 +1,7 @@
 import {type RunSummary} from '../../core/feed/timeline';
 import {
 	type TodoPanelItem,
+	type TodoPanelStatus,
 	type TodoGlyphColors,
 	todoGlyphs,
 } from '../../core/feed/todoPanel';
@@ -38,6 +39,19 @@ export type BuildBodyLinesOptions = {
 	runOverlay: RunOverlayState;
 	theme: Theme;
 };
+
+function normalizeTodoStatus(status: unknown): TodoPanelStatus {
+	switch (status) {
+		case 'open':
+		case 'doing':
+		case 'blocked':
+		case 'done':
+		case 'failed':
+			return status;
+		default:
+			return 'open';
+	}
+}
 
 /**
  * Build just the todo panel header line (e.g. "● WORKING  2/5 tasks done").
@@ -80,11 +94,10 @@ export function buildBodyLines({
 	const {actualRunOverlayRows, runSummaries, runFilter} = runOverlay;
 
 	if (actualTodoRows > 0) {
-		const {
-			todoScroll: tScroll,
-			todoCursor: tCursor,
-			visibleTodoItems: items,
-		} = tp;
+		const {todoCursor: tCursor, visibleTodoItems: items} = tp;
+		// Clamp scroll to valid range — scroll state may lag behind data changes
+		// because React useEffect (which adjusts scroll) runs after render.
+		const tScroll = Math.min(tp.todoScroll, Math.max(0, items.length - 1));
 		const g = todoGlyphs(todo.ascii, todo.colors);
 
 		if (!todo.skipHeader) {
@@ -104,6 +117,10 @@ export function buildBodyLines({
 			const hasScrollDown = tScroll + renderSlots < totalItems;
 			if (hasScrollDown) renderSlots--;
 			renderSlots = Math.max(0, renderSlots);
+			// Ensure we never try to render more items than actually exist
+			// from tScroll onward (scroll state can lag behind data).
+			const availableFromScroll = Math.max(0, totalItems - tScroll);
+			renderSlots = Math.min(renderSlots, availableFromScroll);
 			let showScrollUp = hasScrollUp;
 			let showScrollDown = hasScrollDown;
 
@@ -135,10 +152,16 @@ export function buildBodyLines({
 			}
 
 			for (let i = 0; i < renderSlots; i++) {
-				const item = items[tScroll + i];
+				const item = items[tScroll + i] as TodoPanelItem | undefined;
+				if (!item) {
+					continue;
+				}
 				const isFocused = todoFocus === 'todo' && tCursor === tScroll + i;
 				const caret = isFocused ? g.caret : ' ';
-				const row = g.styledRow(item);
+				const row = g.styledRow({
+					...item,
+					status: normalizeTodoStatus(item.status),
+				});
 
 				const glyphStr = row.glyph;
 				const suffixStr = row.suffix;
@@ -152,7 +175,9 @@ export function buildBodyLines({
 					1,
 					innerWidth - fixedWidth - suffixWidth - elapsedWidth,
 				);
-				const title = row.text(fitAnsi(item.text, maxTitleWidth).trimEnd());
+				const title = row.text(
+					fitAnsi(typeof item.text === 'string' ? item.text : '', maxTitleWidth).trimEnd(),
+				);
 
 				let line = `${caret} ${glyphStr}  ${title}`;
 				if (suffixStr) line += ` ${suffixStr}`;
@@ -182,11 +207,11 @@ export function buildBodyLines({
 		}
 	}
 
-	if (actualRunOverlayRows > 0) {
+	if (actualRunOverlayRows > 0 && runSummaries.length > 0) {
 		bodyLines.push(fitAnsi('[RUNS]', innerWidth));
-		const listRows = actualRunOverlayRows - 1;
+		const listRows = Math.min(actualRunOverlayRows - 1, runSummaries.length);
 		const start = Math.max(0, runSummaries.length - listRows);
-		for (let i = 0; i < actualRunOverlayRows - 1; i++) {
+		for (let i = 0; i < listRows; i++) {
 			const summary = runSummaries[start + i];
 			const active =
 				runFilter !== 'all' && runFilter === summary.runId ? '*' : ' ';

@@ -65,6 +65,59 @@ function makePermissionEvent(requestId: string): RuntimeEvent {
 	};
 }
 
+function makeTodoWriteEvent(
+	requestId: string,
+	todos: Array<{content: string; status: 'pending' | 'in_progress' | 'completed'}>,
+): RuntimeEvent {
+	return {
+		id: requestId,
+		timestamp: Date.now(),
+		kind: 'tool.pre',
+		data: {
+			tool_name: 'TodoWrite',
+			tool_input: {todos},
+		},
+		hookName: 'PreToolUse',
+		sessionId: 'test-session',
+		toolName: 'TodoWrite',
+		context: {cwd: '/test', transcriptPath: '/test/transcript.jsonl'},
+		interaction: {expectsDecision: false},
+		payload: {
+			hook_event_name: 'PreToolUse',
+			session_id: 'test-session',
+			transcript_path: '/test/transcript.jsonl',
+			cwd: '/test',
+			tool_name: 'TodoWrite',
+			tool_input: {todos},
+		},
+	};
+}
+
+function makeBashEvent(requestId: string): RuntimeEvent {
+	return {
+		id: requestId,
+		timestamp: Date.now(),
+		kind: 'tool.pre',
+		data: {
+			tool_name: 'Bash',
+			tool_input: {command: 'echo hi'},
+		},
+		hookName: 'PreToolUse',
+		sessionId: 'test-session',
+		toolName: 'Bash',
+		context: {cwd: '/test', transcriptPath: '/test/transcript.jsonl'},
+		interaction: {expectsDecision: false},
+		payload: {
+			hook_event_name: 'PreToolUse',
+			session_id: 'test-session',
+			transcript_path: '/test/transcript.jsonl',
+			cwd: '/test',
+			tool_name: 'Bash',
+			tool_input: {command: 'echo hi'},
+		},
+	};
+}
+
 describe('useFeed permission auto-dequeue', () => {
 	it('dequeues permission when decision event arrives via onDecision', () => {
 		const runtime = createMockRuntime();
@@ -88,5 +141,49 @@ describe('useFeed permission auto-dequeue', () => {
 
 		// Queue should be empty now
 		expect(result.current.permissionQueueCount).toBe(0);
+	});
+});
+
+describe('useFeed task extraction', () => {
+	it('keeps the latest TodoWrite task list across unrelated events and updates completion state', () => {
+		const runtime = createMockRuntime();
+		const {result} = renderHook(() => useFeed(runtime));
+
+		act(() => {
+			runtime.emitEvent(
+				makeTodoWriteEvent('todo-1', [
+					{content: 'Create smoke suite', status: 'in_progress'},
+					{content: 'Capture logs', status: 'pending'},
+				]),
+			);
+		});
+
+		expect(result.current.tasks).toEqual([
+			{content: 'Create smoke suite', status: 'in_progress'},
+			{content: 'Capture logs', status: 'pending'},
+		]);
+
+		act(() => {
+			runtime.emitEvent(makeBashEvent('bash-1'));
+		});
+
+		expect(result.current.tasks).toEqual([
+			{content: 'Create smoke suite', status: 'in_progress'},
+			{content: 'Capture logs', status: 'pending'},
+		]);
+
+		act(() => {
+			runtime.emitEvent(
+				makeTodoWriteEvent('todo-2', [
+					{content: 'Create smoke suite', status: 'completed'},
+					{content: 'Capture logs', status: 'completed'},
+				]),
+			);
+		});
+
+		expect(result.current.tasks).toEqual([
+			{content: 'Create smoke suite', status: 'completed'},
+			{content: 'Capture logs', status: 'completed'},
+		]);
 	});
 });
