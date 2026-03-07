@@ -189,4 +189,42 @@ describe('useTodoPanel', () => {
 			}).not.toThrow();
 		});
 	});
+
+	describe('todo item cache', () => {
+		it('does not reuse cached items when linkedEventId changes', () => {
+			const {result} = renderHook(() =>
+				useTodoPanel({tasks: [], isWorking: false}),
+			);
+
+			act(() => {
+				result.current.setExtraTodos([
+					{
+						id: 'local-1',
+						text: 'Task 1',
+						priority: 'P1',
+						status: 'open',
+						owner: 'main',
+						linkedEventId: 'event-1',
+					},
+				]);
+			});
+
+			expect(result.current.todoItems[0]!.linkedEventId).toBe('event-1');
+
+			act(() => {
+				result.current.setExtraTodos([
+					{
+						id: 'local-1',
+						text: 'Task 1',
+						priority: 'P1',
+						status: 'open',
+						owner: 'main',
+						linkedEventId: 'event-2',
+					},
+				]);
+			});
+
+			expect(result.current.todoItems[0]!.linkedEventId).toBe('event-2');
+		});
+	});
 });

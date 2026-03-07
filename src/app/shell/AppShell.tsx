@@ -30,7 +30,6 @@ import {useFeedKeyboard} from '../../ui/hooks/useFeedKeyboard';
 import {useTodoKeyboard} from '../../ui/hooks/useTodoKeyboard';
 import {useSpinner} from '../../ui/hooks/useSpinner';
 import {
-	hasTickingElapsedItems,
 	useTodoDisplayItems,
 } from '../../ui/hooks/useTodoDisplayItems';
 import {useTimeline} from '../../ui/hooks/useTimeline';
@@ -500,7 +499,6 @@ function AppContent({
 		feedContentRows,
 		actualTodoRows,
 		actualRunOverlayRows,
-		todoListHeight,
 	} = layout;
 	// FeedGrid subtracts 1 from feedContentRows for the header divider line.
 	// The navigation viewport must match the actual visible data rows.
@@ -563,13 +561,11 @@ function AppContent({
 			if (prev === 'input') {
 				if (todoPanel.todoVisible && visibleTodoItemsRef.current.length > 0)
 					return 'todo';
-				feedNav.jumpToTail();
 				return 'feed';
 			}
-			feedNav.jumpToTail();
 			return 'feed';
 		});
-	}, [todoPanel.todoVisible, feedNav]);
+	}, [todoPanel.todoVisible]);
 
 	const handlePermissionDecision = useCallback(
 		(decision: PermissionDecision) => {
@@ -662,7 +658,6 @@ function AppContent({
 			setSearchQuery,
 			setSearchMatchPos,
 			setFeedCursor: feedNav.setFeedCursor,
-			setTailFollow: feedNav.setTailFollow,
 		},
 	});
 
@@ -677,7 +672,6 @@ function AppContent({
 			setInputValue: stableSetInputValue,
 			setTodoCursor: todoPanel.setTodoCursor,
 			setFeedCursor: feedNav.setFeedCursor,
-			setTailFollow: feedNav.setTailFollow,
 			toggleTodoStatus: todoPanel.toggleTodoStatus,
 			cycleFocus,
 		},
@@ -847,22 +841,6 @@ function AppContent({
 				.map(idx => idx - staticHighWaterMark),
 		);
 	}, [liveFeedScrollback, searchMatchSet, staticHighWaterMark]);
-	const visibleTodoItemsWithElapsed = useMemo(
-		() =>
-			todoListHeight > 0
-				? todoPanel.visibleTodoItems.slice(
-						todoPanel.todoScroll,
-						todoPanel.todoScroll + todoListHeight,
-					)
-				: [],
-		[todoListHeight, todoPanel.todoScroll, todoPanel.visibleTodoItems],
-	);
-	const todoBodyElapsedTickActive =
-		focusMode === 'todo' &&
-		todoPanel.todoVisible &&
-		todoListHeight > 0 &&
-		hasTickingElapsedItems(visibleTodoItemsWithElapsed);
-
 	if (pagerActive) {
 		return <Box />;
 	}
@@ -943,8 +921,7 @@ function AppContent({
 						frameLine={frameLine}
 						isWorking={appMode.type === 'working'}
 						pausedAtMs={todoPanel.pausedAtMs}
-						todoTickActive={todoBodyElapsedTickActive}
-						todoTickMs={focusMode === 'todo' ? 1000 : 5000}
+						todoTickActive={false}
 					/>
 				</MaybeProfiler>
 				<MaybeProfiler
@@ -1185,7 +1162,6 @@ const TodoBodySection = React.memo(function TodoBodySection({
 	isWorking,
 	pausedAtMs,
 	todoTickActive,
-	todoTickMs,
 }: {
 	innerWidth: number;
 	actualTodoRows: number;
@@ -1214,14 +1190,12 @@ const TodoBodySection = React.memo(function TodoBodySection({
 	isWorking: boolean;
 	pausedAtMs: number | null;
 	todoTickActive: boolean;
-	todoTickMs: number;
 }) {
 	const displayTodoItems = useTodoDisplayItems({
 		items: visibleTodoItems,
 		isWorking,
 		pausedAtMs,
 		active: todoTickActive,
-		tickMs: todoTickMs,
 	});
 	const prefixBodyLines = useMemo(
 		() =>

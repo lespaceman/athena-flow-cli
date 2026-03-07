@@ -10,7 +10,6 @@ export type TodoKeyboardCallbacks = {
 	setInputValue: (value: string) => void;
 	setTodoCursor: React.Dispatch<React.SetStateAction<number>>;
 	setFeedCursor: (cursor: number) => void;
-	setTailFollow: (follow: boolean) => void;
 	toggleTodoStatus: (index: number) => void;
 	cycleFocus: () => void;
 };
@@ -78,7 +77,6 @@ export function useTodoKeyboard({
 					);
 					if (idx >= 0) {
 						callbacks.setFeedCursor(idx);
-						callbacks.setTailFollow(false);
 						callbacks.setFocusMode('feed');
 					}
 					return;

@@ -57,14 +57,17 @@ export function useTodoPanel({
 	const startedAtRef = useRef<Map<string, number>>(new Map());
 	const completedAtRef = useRef<Map<string, number>>(new Map());
 	const pausedAtRef = useRef<number | null>(null);
+	const todoItemsCacheRef = useRef<TodoPanelItem[] | null>(null);
 
-	const todoItems = ((): TodoPanelItem[] => {
+	const nextTodoItems = (() => {
 		const fromTasks = tasks.map((task, index) => ({
 			id: `task-${index}-${task.content.replace(/[^a-zA-Z0-9]/g, '').slice(0, 16)}`,
 			text: task.content,
 			priority: 'P1' as const,
 			status: toTodoStatus(task.status),
 			owner: 'main',
+			linkedEventId: undefined,
+			localOnly: undefined,
 		}));
 		const merged = [...fromTasks, ...extraTodos].map(todo => ({
 			...todo,
@@ -127,6 +130,28 @@ export function useTodoPanel({
 			return {...todo, startedAtMs, completedAtMs, elapsed};
 		});
 	})();
+	const previousTodoItems = todoItemsCacheRef.current;
+	const todoItems =
+		previousTodoItems &&
+		previousTodoItems.length === nextTodoItems.length &&
+		previousTodoItems.every((item, index) => {
+			const next = nextTodoItems[index]!;
+			return (
+				item.id === next.id &&
+				item.text === next.text &&
+				item.priority === next.priority &&
+				item.status === next.status &&
+				item.linkedEventId === next.linkedEventId &&
+				item.owner === next.owner &&
+				item.localOnly === next.localOnly &&
+				item.startedAtMs === next.startedAtMs &&
+				item.completedAtMs === next.completedAtMs &&
+				item.elapsed === next.elapsed
+			);
+		})
+			? previousTodoItems
+			: nextTodoItems;
+	todoItemsCacheRef.current = todoItems;
 
 	const sortedItems = useMemo(() => {
 		return todoShowDone

@@ -239,4 +239,127 @@ describe('useStaticFeed', () => {
 		});
 		expect(result.current).toBe(3);
 	});
+
+	it('does not advance on stability-only rerenders while the viewport is stationary', () => {
+		const initialProps: UseStaticFeedOptions = {
+			filteredEntries: [stableToolEntry('e1'), unstableToolEntry('e2')],
+			feedViewportStart: 2,
+			tailFollow: true,
+		};
+		const {result, rerender} = renderHook(
+			(props: UseStaticFeedOptions) => useStaticFeed(props),
+			{initialProps},
+		);
+		expect(result.current).toBe(1);
+
+		rerender({
+			filteredEntries: [stableToolEntry('e1'), stableToolEntry('e2')],
+			feedViewportStart: 2,
+			tailFollow: true,
+		});
+
+		expect(result.current).toBe(1);
+	});
+
+	it('flushes newly stable rows once the viewport advances again', () => {
+		const initialProps: UseStaticFeedOptions = {
+			filteredEntries: [stableToolEntry('e1'), unstableToolEntry('e2')],
+			feedViewportStart: 2,
+			tailFollow: true,
+		};
+		const {result, rerender} = renderHook(
+			(props: UseStaticFeedOptions) => useStaticFeed(props),
+			{initialProps},
+		);
+		expect(result.current).toBe(1);
+
+		rerender({
+			filteredEntries: [
+				stableToolEntry('e1'),
+				stableToolEntry('e2'),
+				stableToolEntry('e3'),
+			],
+			feedViewportStart: 2,
+			tailFollow: true,
+		});
+		expect(result.current).toBe(1);
+
+		rerender({
+			filteredEntries: [
+				stableToolEntry('e1'),
+				stableToolEntry('e2'),
+				stableToolEntry('e3'),
+				stableToolEntry('e4'),
+			],
+			feedViewportStart: 3,
+			tailFollow: true,
+		});
+		expect(result.current).toBe(3);
+	});
+
+	it('batches static flushes for large feeds to avoid one-row churn', () => {
+		const largeEntries = Array.from({length: 80}, (_, index) =>
+			stableToolEntry(`e${index + 1}`),
+		);
+		const {result, rerender} = renderHook(
+			(props: UseStaticFeedOptions) => useStaticFeed(props),
+			{
+				initialProps: {
+					filteredEntries: largeEntries,
+					feedViewportStart: 10,
+					tailFollow: true,
+				},
+			},
+		);
+
+		expect(result.current).toBe(8);
+
+		rerender({
+			filteredEntries: largeEntries,
+			feedViewportStart: 11,
+			tailFollow: true,
+		});
+		expect(result.current).toBe(8);
+
+		rerender({
+			filteredEntries: largeEntries,
+			feedViewportStart: 14,
+			tailFollow: true,
+		});
+		expect(result.current).toBe(8);
+
+		rerender({
+			filteredEntries: largeEntries,
+			feedViewportStart: 16,
+			tailFollow: true,
+		});
+		expect(result.current).toBe(14);
+	});
+
+	it('clamps the high-water mark when the filtered feed shrinks', () => {
+		const {result, rerender} = renderHook(
+			(props: UseStaticFeedOptions) => useStaticFeed(props),
+			{
+				initialProps: {
+					filteredEntries: [
+						stableToolEntry('e1'),
+						stableToolEntry('e2'),
+						stableToolEntry('e3'),
+					],
+					feedViewportStart: 2,
+					tailFollow: true,
+				},
+			},
+		);
+
+		expect(result.current).toBe(2);
+
+		rerender({
+			filteredEntries: [stableToolEntry('e1')],
+			feedViewportStart: 0,
+			tailFollow: true,
+		});
+
+		expect(result.current).toBe(0);
+	});
 });

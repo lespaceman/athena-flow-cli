@@ -97,4 +97,52 @@ describe('useFeedNavigation', () => {
 		expect(result.current.feedCursor).toBe(3);
 		expect(result.current.feedViewportStart).toBe(2);
 	});
+
+	it('keeps the viewport anchored until the cursor leaves the visible window', () => {
+		const {result} = renderHook(() =>
+			useFeedNavigation({
+				filteredEntries: makeEntries(10),
+				feedContentRows: 4,
+			}),
+		);
+
+		act(() => {
+			result.current.jumpToTop();
+		});
+		expect(result.current.feedViewportStart).toBe(0);
+		expect(result.current.feedCursor).toBe(0);
+
+		act(() => {
+			result.current.moveFeedCursor(1);
+			result.current.moveFeedCursor(1);
+			result.current.moveFeedCursor(1);
+		});
+
+		expect(result.current.feedCursor).toBe(3);
+		expect(result.current.feedViewportStart).toBe(0);
+
+		act(() => {
+			result.current.moveFeedCursor(1);
+		});
+
+		expect(result.current.feedCursor).toBe(4);
+		expect(result.current.feedViewportStart).toBe(1);
+	});
+
+	it('treats explicit cursor jumps as leaving tail-follow mode', () => {
+		const {result} = renderHook(() =>
+			useFeedNavigation({
+				filteredEntries: makeEntries(8),
+				feedContentRows: 4,
+			}),
+		);
+
+		act(() => {
+			result.current.setFeedCursor(2);
+		});
+
+		expect(result.current.tailFollow).toBe(false);
+		expect(result.current.feedCursor).toBe(2);
+		expect(result.current.feedViewportStart).toBe(2);
+	});
 });

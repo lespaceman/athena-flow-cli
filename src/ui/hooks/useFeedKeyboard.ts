@@ -15,7 +15,6 @@ export type FeedKeyboardCallbacks = {
 	setSearchQuery: (query: string) => void;
 	setSearchMatchPos: React.Dispatch<React.SetStateAction<number>>;
 	setFeedCursor: (cursor: number) => void;
-	setTailFollow: (follow: boolean) => void;
 };
 
 export type FeedKeyboardOptions = {
@@ -103,7 +102,6 @@ export function useFeedKeyboard({
 						const next = (prev + direction + count) % count;
 						const target = searchMatches[next]!;
 						callbacks.setFeedCursor(target);
-						callbacks.setTailFollow(false);
 						return next;
 					});
 					return;
