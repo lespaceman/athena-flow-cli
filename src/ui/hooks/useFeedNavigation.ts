@@ -1,4 +1,4 @@
-import {useState, useCallback, useEffect, useMemo, useRef} from 'react';
+import {useState, useCallback, useMemo, useRef} from 'react';
 import {type TimelineEntry} from '../../core/feed/timeline';
 
 export type UseFeedNavigationOptions = {
@@ -19,53 +19,127 @@ export type UseFeedNavigationResult = {
 	setTailFollow: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
+type NavigationState = {
+	feedCursor: number;
+	tailFollow: boolean;
+};
+
+function clampFeedCursor(
+	cursor: number,
+	maxCursor: number,
+	staticFloor: number,
+): number {
+	return Math.max(staticFloor, Math.min(cursor, maxCursor));
+}
+
 export function useFeedNavigation({
 	filteredEntries,
 	feedContentRows,
 	staticFloor = 0,
 }: UseFeedNavigationOptions): UseFeedNavigationResult {
-	const [feedCursor, setFeedCursor] = useState(0);
-	const [tailFollow, setTailFollow] = useState(true);
-
-	const filteredEntriesRef = useRef(filteredEntries);
-	filteredEntriesRef.current = filteredEntries;
-
-	// Clamp cursor when entries shrink or staticFloor advances
-	useEffect(() => {
-		setFeedCursor(prev =>
-			Math.max(
-				staticFloor,
-				Math.min(prev, Math.max(0, filteredEntries.length - 1)),
-			),
-		);
-	}, [filteredEntries.length, staticFloor]);
-
-	// Tail-follow: snap cursor to end
-	useEffect(() => {
-		if (!tailFollow) return;
-		setFeedCursor(Math.max(0, filteredEntries.length - 1));
-	}, [filteredEntries.length, tailFollow]);
-
+	const [navigation, setNavigation] = useState<NavigationState>({
+		feedCursor: 0,
+		tailFollow: true,
+	});
+	const maxCursor = Math.max(staticFloor, filteredEntries.length - 1);
+	const maxCursorRef = useRef(maxCursor);
+	maxCursorRef.current = maxCursor;
 	const staticFloorRef = useRef(staticFloor);
 	staticFloorRef.current = staticFloor;
 
+	const resolveCursor = useCallback(
+		(state: NavigationState): number =>
+			state.tailFollow
+				? maxCursorRef.current
+				: clampFeedCursor(
+						state.feedCursor,
+						maxCursorRef.current,
+						staticFloorRef.current,
+					),
+		[],
+	);
+
+	const feedCursor = resolveCursor(navigation);
+	const tailFollow = navigation.tailFollow;
+
 	const moveFeedCursor = useCallback((delta: number) => {
-		setFeedCursor(prev => {
-			const max = Math.max(0, filteredEntriesRef.current.length - 1);
-			return Math.max(staticFloorRef.current, Math.min(prev + delta, max));
+		setNavigation(prev => {
+			const nextCursor = clampFeedCursor(
+				resolveCursor(prev) + delta,
+				maxCursorRef.current,
+				staticFloorRef.current,
+			);
+			if (!prev.tailFollow && prev.feedCursor === nextCursor) {
+				return prev;
+			}
+			return {feedCursor: nextCursor, tailFollow: false};
 		});
-		setTailFollow(false);
-	}, []);
+	}, [resolveCursor]);
 
 	const jumpToTail = useCallback(() => {
-		setTailFollow(true);
-		setFeedCursor(Math.max(0, filteredEntriesRef.current.length - 1));
+		setNavigation(prev => {
+			const nextCursor = maxCursorRef.current;
+			if (prev.tailFollow && prev.feedCursor === nextCursor) {
+				return prev;
+			}
+			return {feedCursor: nextCursor, tailFollow: true};
+		});
 	}, []);
 
 	const jumpToTop = useCallback(() => {
-		setTailFollow(false);
-		setFeedCursor(staticFloorRef.current);
+		setNavigation(prev => {
+			const nextCursor = staticFloorRef.current;
+			if (!prev.tailFollow && prev.feedCursor === nextCursor) {
+				return prev;
+			}
+			return {feedCursor: nextCursor, tailFollow: false};
+		});
 	}, []);
+
+	const setFeedCursor = useCallback(
+		(
+			nextCursorOrUpdater: React.SetStateAction<number>,
+		): void => {
+			setNavigation(prev => {
+				const currentCursor = resolveCursor(prev);
+				const requestedCursor =
+					typeof nextCursorOrUpdater === 'function'
+						? nextCursorOrUpdater(currentCursor)
+						: nextCursorOrUpdater;
+				const nextCursor = clampFeedCursor(
+					requestedCursor,
+					maxCursorRef.current,
+					staticFloorRef.current,
+				);
+				if (prev.feedCursor === nextCursor) {
+					return prev;
+				}
+				return {...prev, feedCursor: nextCursor};
+			});
+		},
+		[resolveCursor],
+	);
+
+	const setTailFollow = useCallback(
+		(
+			nextTailFollowOrUpdater: React.SetStateAction<boolean>,
+		): void => {
+			setNavigation(prev => {
+				const resolvedTailFollow =
+					typeof nextTailFollowOrUpdater === 'function'
+						? nextTailFollowOrUpdater(prev.tailFollow)
+						: nextTailFollowOrUpdater;
+				if (resolvedTailFollow === prev.tailFollow) {
+					return prev;
+				}
+				return {
+					feedCursor: resolveCursor(prev),
+					tailFollow: resolvedTailFollow,
+				};
+			});
+		},
+		[resolveCursor],
+	);
 
 	const feedViewportStart = useMemo(() => {
 		const total = filteredEntries.length;

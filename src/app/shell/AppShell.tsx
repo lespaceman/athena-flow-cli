@@ -858,6 +858,7 @@ function AppContent({
 		[todoListHeight, todoPanel.todoScroll, todoPanel.visibleTodoItems],
 	);
 	const todoBodyElapsedTickActive =
+		focusMode === 'todo' &&
 		todoPanel.todoVisible &&
 		todoListHeight > 0 &&
 		hasTickingElapsedItems(visibleTodoItemsWithElapsed);
@@ -911,6 +912,7 @@ function AppContent({
 						spinnerActive={
 							actualTodoRows > 0 &&
 							appMode.type === 'working' &&
+							focusMode === 'todo' &&
 							todoPanel.todoVisible &&
 							todoPanel.todoItems.length > 0 &&
 							filteredEntries.length < 500

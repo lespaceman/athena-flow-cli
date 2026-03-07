@@ -24,6 +24,25 @@ describe('buildTodoDisplayItems', () => {
 
 		expect(result[0]!.elapsed).toBe('5s');
 	});
+
+	it('reuses the original array when elapsed text does not change', () => {
+		const items: TodoPanelItem[] = [
+			{
+				id: '1',
+				text: 'Task 1',
+				priority: 'P1',
+				status: 'done',
+				startedAtMs: 1000,
+				completedAtMs: 2000,
+				elapsed: '1s',
+			},
+		];
+
+		const result = buildTodoDisplayItems(items, 9000, false, 9000);
+
+		expect(result).toBe(items);
+		expect(result[0]).toBe(items[0]);
+	});
 });
 
 describe('hasTickingElapsedItems', () => {

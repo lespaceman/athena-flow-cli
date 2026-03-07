@@ -23,7 +23,8 @@ export function buildTodoDisplayItems(
 	isWorking: boolean,
 	pausedAtMs: number | null,
 ): TodoPanelItem[] {
-	return items.map(item => {
+	let changed = false;
+	const nextItems = items.map(item => {
 		const hasElapsed =
 			item.startedAtMs !== undefined &&
 			(item.status === 'doing' ||
@@ -35,8 +36,10 @@ export function buildTodoDisplayItems(
 			? formatElapsed(Math.max(0, endMs - item.startedAtMs!))
 			: undefined;
 		if (elapsed === item.elapsed) return item;
+		changed = true;
 		return {...item, elapsed};
 	});
+	return changed ? nextItems : items;
 }
 
 export function useTodoDisplayItems({
@@ -51,11 +54,6 @@ export function useTodoDisplayItems({
 
 	useEffect(() => {
 		if (!active || !isWorking || !hasDoingItems) return;
-		startPerfCycle('timer:todo-header', {
-			scope: 'todo.elapsed',
-			items: items.length,
-		});
-		setNowMs(Date.now());
 		const id = setInterval(() => {
 			startPerfCycle('timer:todo-header', {
 				scope: 'todo.elapsed',
