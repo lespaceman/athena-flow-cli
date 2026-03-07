@@ -32,23 +32,16 @@ import {useTodoDisplayItems} from '../../ui/hooks/useTodoDisplayItems';
 import {useTimeline} from '../../ui/hooks/useTimeline';
 import {useLayout} from '../../ui/hooks/useLayout';
 import {usePager} from '../../ui/hooks/usePager';
-import {useStaticFeed} from '../../ui/hooks/useStaticFeed';
 import {useFrameChrome} from '../../ui/hooks/useFrameChrome';
 import {
 	buildBodyLines,
 	buildTodoHeaderLine,
 } from '../../ui/layout/buildBodyLines';
-import {
-	FeedGrid,
-	shouldUseLiveFeedScrollback,
-} from '../../ui/components/FeedGrid';
-import {FeedScrollback} from '../../ui/components/FeedScrollback';
+import {FeedGrid} from '../../ui/components/FeedGrid';
 import {FrameRow} from '../../ui/components/FrameRow';
 import {MultiLineInput} from '../../ui/components/MultiLineInput';
 import {
-	stabilizeFeedColumns,
 	useFeedColumns,
-	type FeedColumns,
 } from '../../ui/hooks/useFeedColumns';
 import {buildHeaderModel} from '../../ui/header/model';
 import {renderHeaderLines} from '../../ui/header/renderLines';
@@ -596,17 +589,7 @@ function AppContent({
 		setTailFollow: (tailFollow: boolean) =>
 			dispatchUi({type: 'set_tail_follow', tailFollow}),
 	};
-	const liveFeedScrollback = shouldUseLiveFeedScrollback({
-		tailFollow: feedNav.tailFollow,
-		inputMode,
-		searchQuery,
-	});
-	const rawStaticHighWaterMark = useStaticFeed({
-		filteredEntries,
-		feedViewportStart: feedNav.feedViewportStart,
-		tailFollow: liveFeedScrollback,
-	});
-	const staticHighWaterMark = liveFeedScrollback ? rawStaticHighWaterMark : 0;
+	const staticHighWaterMark = 0;
 
 	const {
 		frame,
@@ -817,28 +800,7 @@ function AppContent({
 	]);
 
 	const computedFeedCols = useFeedColumns(filteredEntries, innerWidth);
-	const liveFeedColsRef = useRef<{
-		innerWidth: number;
-		cols: FeedColumns;
-	} | null>(null);
-	const feedCols = useMemo(() => {
-		if (!liveFeedScrollback) {
-			liveFeedColsRef.current = null;
-			return computedFeedCols;
-		}
-		const previous = liveFeedColsRef.current;
-		if (!previous || previous.innerWidth !== innerWidth) {
-			liveFeedColsRef.current = {innerWidth, cols: computedFeedCols};
-			return computedFeedCols;
-		}
-		const stabilized = stabilizeFeedColumns(
-			previous.cols,
-			computedFeedCols,
-			innerWidth,
-		);
-		liveFeedColsRef.current = {innerWidth, cols: stabilized};
-		return stabilized;
-	}, [computedFeedCols, innerWidth, liveFeedScrollback]);
+	const feedCols = computedFeedCols;
 
 	const {inputPrefix, badgeText, inputContentWidth, textInputPlaceholder} =
 		useInputLayout({
@@ -885,53 +847,12 @@ function AppContent({
 		(line: string) => withBorderEdges(frameLine(line)),
 		[withBorderEdges, frameLine],
 	);
-	const staticFeedEntries = useMemo(
-		() =>
-			liveFeedScrollback
-				? filteredEntries.slice(0, staticHighWaterMark)
-				: ([] as typeof filteredEntries),
-		[filteredEntries, liveFeedScrollback, staticHighWaterMark],
-	);
-	const displayedFeedEntries = useMemo(
-		() =>
-			liveFeedScrollback
-				? filteredEntries.slice(staticHighWaterMark)
-				: filteredEntries,
-		[filteredEntries, liveFeedScrollback, staticHighWaterMark],
-	);
-	const displayedFeedCursor = liveFeedScrollback
-		? Math.max(0, feedNav.feedCursor - staticHighWaterMark)
-		: feedNav.feedCursor;
-	const displayedFeedViewportStart = liveFeedScrollback
-		? Math.max(0, feedNav.feedViewportStart - staticHighWaterMark)
-		: feedNav.feedViewportStart;
-	const displayedSearchMatchSet = useMemo(() => {
-		if (!liveFeedScrollback) return searchMatchSet;
-		return new Set(
-			[...searchMatchSet]
-				.filter(idx => idx >= staticHighWaterMark)
-				.map(idx => idx - staticHighWaterMark),
-		);
-	}, [liveFeedScrollback, searchMatchSet, staticHighWaterMark]);
 	if (pagerActive) {
 		return <Box />;
 	}
 
 	return (
-		<>
-			{liveFeedScrollback && staticFeedEntries.length > 0 && (
-				<FeedScrollback
-					entries={staticFeedEntries}
-					startIndex={0}
-					searchMatchSet={searchMatchSet}
-					ascii={useAscii}
-					theme={theme}
-					innerWidth={innerWidth}
-					cols={feedCols}
-					wrapLine={wrapFrameLine}
-				/>
-			)}
-			<Box flexDirection="column" width={frameWidth}>
+		<Box flexDirection="column" width={frameWidth}>
 				<MaybeProfiler
 					enabled={perfEnabled}
 					id="app.main.header-frame"
@@ -1004,11 +925,11 @@ function AppContent({
 					<FeedGrid
 						feedHeaderRows={feedHeaderRows}
 						feedContentRows={feedContentRows}
-						feedViewportStart={displayedFeedViewportStart}
-						filteredEntries={displayedFeedEntries}
-						feedCursor={displayedFeedCursor}
+						feedViewportStart={feedNav.feedViewportStart}
+						filteredEntries={filteredEntries}
+						feedCursor={feedNav.feedCursor}
 						focusMode={focusMode}
-						searchMatchSet={displayedSearchMatchSet}
+						searchMatchSet={searchMatchSet}
 						ascii={useAscii}
 						theme={theme}
 						innerWidth={innerWidth}
@@ -1117,7 +1038,6 @@ function AppContent({
 					</>
 				</MaybeProfiler>
 			</Box>
-		</>
 	);
 }
 
