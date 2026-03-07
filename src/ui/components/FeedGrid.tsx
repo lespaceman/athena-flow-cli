@@ -1,10 +1,10 @@
 import React from 'react';
-import {Text} from 'ink';
 import {type TimelineEntry} from '../../core/feed/timeline';
 import {type Theme} from '../theme/types';
 import {type FeedColumnWidths} from './FeedRow';
 import {buildFeedSurface} from './feedSurface';
 import {logFeedViewportDiff} from '../../shared/utils/perf';
+import {FeedSurfaceView} from './FeedSurface';
 
 type Props = {
 	feedHeaderRows: number;
@@ -78,7 +78,6 @@ function FeedGridImpl({
 		],
 	);
 
-	const output = React.useMemo(() => surface.allLines.join('\n'), [surface]);
 	const {visibleContentRows} = surface;
 
 	// Build signature array for perf tracking — same logic as before.
@@ -165,7 +164,7 @@ function FeedGridImpl({
 		});
 	}, [visibleRowSignatures, feedViewportStart, feedCursor]);
 
-	return <Text>{output}</Text>;
+	return <FeedSurfaceView surface={surface} />;
 }
 
 export const FeedGrid = React.memo(FeedGridImpl);
