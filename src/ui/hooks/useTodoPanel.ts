@@ -1,4 +1,4 @@
-import {useState, useCallback, useEffect, useMemo, useRef} from 'react';
+import {useState, useCallback, useMemo, useRef} from 'react';
 import {
 	type TodoPanelItem,
 	type TodoPanelStatus,
@@ -12,6 +12,14 @@ import {formatElapsed} from '../../shared/utils/formatElapsed';
 export type UseTodoPanelOptions = {
 	tasks: TodoItem[];
 	isWorking: boolean;
+	todoVisible: boolean;
+	todoShowDone: boolean;
+	todoCursor: number;
+	todoScroll: number;
+	setTodoVisible: React.Dispatch<React.SetStateAction<boolean>>;
+	setTodoShowDone: React.Dispatch<React.SetStateAction<boolean>>;
+	setTodoCursor: React.Dispatch<React.SetStateAction<number>>;
+	setTodoScroll: React.Dispatch<React.SetStateAction<number>>;
 };
 
 export type UseTodoPanelResult = {
@@ -30,6 +38,7 @@ export type UseTodoPanelResult = {
 	failedCount: number;
 	remainingCount: number;
 	pausedAtMs: number | null;
+	autoFocusIndex: number;
 	setTodoVisible: React.Dispatch<React.SetStateAction<boolean>>;
 	setTodoShowDone: React.Dispatch<React.SetStateAction<boolean>>;
 	setTodoCursor: React.Dispatch<React.SetStateAction<number>>;
@@ -45,11 +54,15 @@ export type UseTodoPanelResult = {
 export function useTodoPanel({
 	tasks,
 	isWorking,
+	todoVisible,
+	todoShowDone,
+	todoCursor,
+	todoScroll,
+	setTodoVisible,
+	setTodoShowDone,
+	setTodoCursor,
+	setTodoScroll,
 }: UseTodoPanelOptions): UseTodoPanelResult {
-	const [todoVisible, setTodoVisible] = useState(true);
-	const [todoShowDone, setTodoShowDone] = useState(true);
-	const [todoCursor, setTodoCursor] = useState(0);
-	const [todoScroll, setTodoScroll] = useState(0);
 	const [extraTodos, setExtraTodos] = useState<TodoPanelItem[]>([]);
 	const [todoStatusOverrides, setTodoStatusOverrides] = useState<
 		Record<string, TodoPanelStatus>
@@ -162,6 +175,14 @@ export function useTodoPanel({
 	const visibleTodoItemsRef = useRef(sortedItems);
 	visibleTodoItemsRef.current = sortedItems;
 
+	const autoFocusIndex = useMemo(() => {
+		const activeIdx = sortedItems.findIndex(i => i.status === 'doing');
+		if (activeIdx >= 0) return activeIdx;
+		return sortedItems.findIndex(
+			i => i.status !== 'done' && i.status !== 'failed',
+		);
+	}, [sortedItems]);
+
 	const {
 		doneCount,
 		doingCount,
@@ -204,40 +225,23 @@ export function useTodoPanel({
 		};
 	}, [todoItems]);
 
-	// Clamp cursor when items shrink
-	useEffect(() => {
-		setTodoCursor(prev => Math.min(prev, Math.max(0, sortedItems.length - 1)));
-	}, [sortedItems.length]);
-
-	// Keep the cursor anchored on the most interesting item.
-	// Scroll position is owned by useLayout because it knows the actual
-	// rendered window height; duplicating that policy here causes churn.
-	useEffect(() => {
-		const activeIdx = sortedItems.findIndex(i => i.status === 'doing');
-		const targetIdx =
-			activeIdx >= 0
-				? activeIdx
-				: sortedItems.findIndex(
-						i => i.status !== 'done' && i.status !== 'failed',
-					);
-		if (targetIdx < 0) return;
-		setTodoCursor(targetIdx);
-	}, [sortedItems]);
-
-	const addTodo = useCallback((priority: 'P0' | 'P1' | 'P2', text: string) => {
-		setExtraTodos(prev => [
-			...prev,
-			{
-				id: `local-${generateId()}`,
-				text,
-				priority,
-				status: 'open',
-				owner: 'main',
-				localOnly: true,
-			},
-		]);
-		setTodoVisible(true);
-	}, []);
+	const addTodo = useCallback(
+		(priority: 'P0' | 'P1' | 'P2', text: string) => {
+			setExtraTodos(prev => [
+				...prev,
+				{
+					id: `local-${generateId()}`,
+					text,
+					priority,
+					status: 'open',
+					owner: 'main',
+					localOnly: true,
+				},
+			]);
+			setTodoVisible(true);
+		},
+		[setTodoVisible],
+	);
 
 	const toggleTodoStatus = useCallback((index: number) => {
 		const selected = visibleTodoItemsRef.current[index] as
@@ -268,6 +272,7 @@ export function useTodoPanel({
 		failedCount,
 		remainingCount,
 		pausedAtMs: pausedAtRef.current,
+		autoFocusIndex,
 		setTodoVisible,
 		setTodoShowDone,
 		setTodoCursor,

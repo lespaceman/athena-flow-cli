@@ -29,11 +29,7 @@ describe('useTimeline', () => {
 		const first = makeEvent('notification', 1, {message: 'first'});
 		const initialEvents = [first];
 		const {result, rerender} = renderHook(
-			({
-				feedEvents,
-			}: {
-				feedEvents: FeedEvent[];
-			}) =>
+			({feedEvents}: {feedEvents: FeedEvent[]}) =>
 				useTimeline({
 					feedItems: mergeFeedItems([], feedEvents),
 					feedEvents,
@@ -66,11 +62,7 @@ describe('useTimeline', () => {
 		});
 		const initialEvents = [pre];
 		const {result, rerender} = renderHook(
-			({
-				feedEvents,
-			}: {
-				feedEvents: FeedEvent[];
-			}) =>
+			({feedEvents}: {feedEvents: FeedEvent[]}) =>
 				useTimeline({
 					feedItems: mergeFeedItems([], feedEvents),
 					feedEvents,

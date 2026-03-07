@@ -26,13 +26,11 @@ function makeOptions(
 	return {
 		inputMode: 'normal' as const,
 		setInputMode: vi.fn(),
-		setFocusMode: vi.fn(),
 		setSearchQuery: vi.fn(),
+		closeInput: vi.fn(),
+		submitSearchQuery: vi.fn(),
 		submitPromptOrSlashCommand: vi.fn(),
 		filteredEntriesRef: {current: []},
-		setFeedCursorRef: {current: vi.fn()},
-		setTailFollowRef: {current: vi.fn()},
-		setSearchMatchPos: vi.fn(),
 		...overrides,
 	};
 }
@@ -46,20 +44,17 @@ describe('useShellInput', () => {
 
 	it('empty submit resets state without routing', () => {
 		const submitSpy = vi.fn();
-		const setInputMode = vi.fn();
-		const setFocusMode = vi.fn();
+		const closeInput = vi.fn();
 		const opts = makeOptions({
 			submitPromptOrSlashCommand: submitSpy,
-			setInputMode,
-			setFocusMode,
+			closeInput,
 		});
 		const {result} = renderHook(() => useShellInput(opts));
 		act(() => {
 			result.current.handleInputSubmit('   ');
 		});
 		expect(submitSpy).not.toHaveBeenCalled();
-		expect(setInputMode).toHaveBeenCalledWith('normal');
-		expect(setFocusMode).toHaveBeenCalledWith('feed');
+		expect(closeInput).toHaveBeenCalled();
 	});
 
 	it('slash command routes to submitPromptOrSlashCommand', () => {
@@ -83,56 +78,39 @@ describe('useShellInput', () => {
 	});
 
 	it('search query routes to setSearchQuery and feedNav', () => {
-		const setSearchQuery = vi.fn();
-		const setFeedCursor = vi.fn();
-		const setTailFollow = vi.fn();
-		const setSearchMatchPos = vi.fn();
+		const submitSearchQuery = vi.fn();
 		const entries = [
 			{searchText: 'foo bar', id: 'e1'},
 			{searchText: 'baz qux', id: 'e2'},
 		] as never[];
 		const opts = makeOptions({
 			inputMode: 'search',
-			setSearchQuery,
-			setFeedCursorRef: {current: setFeedCursor},
-			setTailFollowRef: {current: setTailFollow},
+			submitSearchQuery,
 			filteredEntriesRef: {current: entries},
-			setSearchMatchPos,
 		});
 		const {result} = renderHook(() => useShellInput(opts));
 		act(() => {
 			result.current.handleInputSubmit(':baz');
 		});
-		expect(setSearchQuery).toHaveBeenCalledWith('baz');
-		expect(setFeedCursor).toHaveBeenCalledWith(1);
-		expect(setTailFollow).toHaveBeenCalledWith(false);
-		expect(setSearchMatchPos).toHaveBeenCalledWith(0);
+		expect(submitSearchQuery).toHaveBeenCalledWith('baz', 1);
 	});
 
 	it('search scans the full feed rather than starting at a static floor', () => {
-		const setSearchQuery = vi.fn();
-		const setFeedCursor = vi.fn();
-		const setTailFollow = vi.fn();
-		const setSearchMatchPos = vi.fn();
+		const submitSearchQuery = vi.fn();
 		const entries = [
 			{searchText: 'match me first', id: 'e1'},
 			{searchText: 'later item', id: 'e2'},
 		] as never[];
 		const opts = makeOptions({
 			inputMode: 'search',
-			setSearchQuery,
-			setFeedCursorRef: {current: setFeedCursor},
-			setTailFollowRef: {current: setTailFollow},
+			submitSearchQuery,
 			filteredEntriesRef: {current: entries},
-			setSearchMatchPos,
 		});
 		const {result} = renderHook(() => useShellInput(opts));
 		act(() => {
 			result.current.handleInputSubmit(':match');
 		});
-		expect(setFeedCursor).toHaveBeenCalledWith(0);
-		expect(setTailFollow).toHaveBeenCalledWith(false);
-		expect(setSearchMatchPos).toHaveBeenCalledWith(0);
+		expect(submitSearchQuery).toHaveBeenCalledWith('match', 0);
 	});
 
 	it('handleMainInputChange updates inputValueRef', () => {

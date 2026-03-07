@@ -8,13 +8,12 @@ export type FeedKeyboardCallbacks = {
 	expandAtCursor: () => void;
 	yankAtCursor: () => void;
 	cycleFocus: () => void;
-	setFocusMode: (mode: 'feed' | 'input' | 'todo') => void;
-	setInputMode: (mode: 'normal' | 'search' | 'command') => void;
+	openCommandInput: () => void;
+	openSearchInput: () => void;
 	setInputValue: (value: string) => void;
-	setShowRunOverlay: (show: boolean) => void;
-	setSearchQuery: (query: string) => void;
-	setSearchMatchPos: React.Dispatch<React.SetStateAction<number>>;
-	setFeedCursor: (cursor: number) => void;
+	hideRunOverlay: () => void;
+	stepSearchMatch: (direction: 1 | -1, matches: number[]) => void;
+	clearSearchAndJumpTail: () => void;
 };
 
 export type FeedKeyboardOptions = {
@@ -36,7 +35,7 @@ export function useFeedKeyboard({
 			try {
 				// Escape
 				if (key.escape) {
-					callbacks.setShowRunOverlay(false);
+					callbacks.hideRunOverlay();
 					return;
 				}
 
@@ -47,15 +46,13 @@ export function useFeedKeyboard({
 				}
 
 				if (input === '/') {
-					callbacks.setFocusMode('input');
-					callbacks.setInputMode('command');
+					callbacks.openCommandInput();
 					callbacks.setInputValue('/');
 					return;
 				}
 
 				if (input === ':') {
-					callbacks.setFocusMode('input');
-					callbacks.setInputMode('search');
+					callbacks.openSearchInput();
 					callbacks.setInputValue(':');
 					return;
 				}
@@ -96,21 +93,12 @@ export function useFeedKeyboard({
 				}
 
 				if ((input === 'n' || input === 'N') && searchMatches.length > 0) {
-					const direction = input === 'n' ? 1 : -1;
-					callbacks.setSearchMatchPos(prev => {
-						const count = searchMatches.length;
-						const next = (prev + direction + count) % count;
-						const target = searchMatches[next]!;
-						callbacks.setFeedCursor(target);
-						return next;
-					});
+					callbacks.stepSearchMatch(input === 'n' ? 1 : -1, searchMatches);
 					return;
 				}
 
 				if (key.ctrl && input === 'l') {
-					callbacks.setSearchQuery('');
-					callbacks.setShowRunOverlay(false);
-					callbacks.jumpToTail();
+					callbacks.clearSearchAndJumpTail();
 					return;
 				}
 			} finally {

@@ -22,6 +22,8 @@ function makeTodoPanel(
 		openCount: 0,
 		failedCount: 0,
 		remainingCount: 0,
+		pausedAtMs: null,
+		autoFocusIndex: -1,
 		setTodoVisible: vi.fn(),
 		setTodoShowDone: vi.fn(),
 		setTodoCursor: vi.fn(),
@@ -148,73 +150,17 @@ describe('useLayout', () => {
 		expect(result.current.actualRunOverlayRows).toBe(0);
 	});
 
-	it('does not call setTodoScroll when the current scroll is already valid', () => {
-		const setTodoScroll = vi.fn();
+	it('computes todoListHeight for a constrained scrolling list', () => {
 		const todoPanel = makeTodoPanel({
-			todoCursor: 1,
-			todoScroll: 0,
-			visibleTodoItems: [
-				{id: '1', text: 'a', priority: 'P1', status: 'open'},
-				{id: '2', text: 'b', priority: 'P1', status: 'doing'},
-			],
-			setTodoScroll,
-		});
-
-		renderHook(() =>
-			useLayout({
-				terminalRows: 30,
-				terminalWidth: 100,
-				showRunOverlay: false,
-				runSummaries: [],
-				todoPanel,
-				feedEntryCount: 0,
-				footerRows: 2,
-			}),
-		);
-
-		expect(setTodoScroll).not.toHaveBeenCalled();
-	});
-
-	it('clamps scroll back to zero when no todo item rows are available', () => {
-		const setTodoScroll = vi.fn();
-		const todoPanel = makeTodoPanel({
-			todoVisible: true,
-			todoCursor: 3,
-			todoScroll: 2,
-			visibleTodoItems: [{id: '1', text: 'a', priority: 'P1', status: 'open'}],
-			setTodoScroll,
-		});
-
-		renderHook(() =>
-			useLayout({
-				terminalRows: 6,
-				terminalWidth: 100,
-				showRunOverlay: false,
-				runSummaries: [],
-				todoPanel,
-				feedEntryCount: 0,
-				footerRows: 2,
-			}),
-		);
-
-		expect(setTodoScroll).toHaveBeenCalledWith(0);
-	});
-
-	it('scrolls down only when the cursor moves below the visible todo window', () => {
-		const setTodoScroll = vi.fn();
-		const todoPanel = makeTodoPanel({
-			todoCursor: 6,
-			todoScroll: 0,
 			visibleTodoItems: Array.from({length: 8}, (_, index) => ({
 				id: String(index),
 				text: `task-${index}`,
 				priority: 'P1' as const,
 				status: 'open' as const,
 			})),
-			setTodoScroll,
 		});
 
-		renderHook(() =>
+		const {result} = renderHook(() =>
 			useLayout({
 				terminalRows: 20,
 				terminalWidth: 100,
@@ -226,7 +172,7 @@ describe('useLayout', () => {
 			}),
 		);
 
-		expect(setTodoScroll).toHaveBeenCalledWith(5);
+		expect(result.current.todoListHeight).toBe(2);
 	});
 
 	it('grows todo rows beyond half split when the feed has only a few entries', () => {

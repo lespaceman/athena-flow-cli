@@ -1,6 +1,10 @@
-import {useEffect, useRef} from 'react';
+import {useRef} from 'react';
 import {type RunSummary} from '../../core/feed/timeline';
-import {type UseTodoPanelResult} from './useTodoPanel';
+
+type TodoLayoutInput = {
+	todoVisible: boolean;
+	visibleTodoItems: {length: number};
+};
 
 const HEADER_ROWS = 1;
 const FRAME_BORDER_ROWS = 4;
@@ -11,7 +15,7 @@ export type UseLayoutOptions = {
 	terminalWidth: number;
 	showRunOverlay: boolean;
 	runSummaries: RunSummary[];
-	todoPanel: UseTodoPanelResult;
+	todoPanel: TodoLayoutInput;
 	feedEntryCount?: number;
 	footerRows: number;
 	/** Number of visual rows the input field occupies (default: 1) */
@@ -91,42 +95,11 @@ export function useLayout({
 	const feedContentRows = baseFeedContentRows;
 	const pageStep = Math.max(1, Math.floor(Math.max(1, feedContentRows) / 2));
 
-	const setTodoScroll = todoPanel.setTodoScroll;
-	const todoCursor = todoPanel.todoCursor;
-	const todoScroll = todoPanel.todoScroll;
-	const visibleTodoItemsLength = todoPanel.visibleTodoItems.length;
-
-	// Todo scroll adjustment
 	const itemSlots = Math.max(0, todoRows - 2);
 	const todoListHeight =
 		todoPanel.visibleTodoItems.length > itemSlots
 			? Math.max(0, itemSlots - 2)
 			: itemSlots;
-	useEffect(() => {
-		if (todoListHeight <= 0) {
-			if (todoScroll !== 0) {
-				setTodoScroll(0);
-			}
-			return;
-		}
-		let nextScroll = todoScroll;
-		if (todoCursor < nextScroll) {
-			nextScroll = todoCursor;
-		} else if (todoCursor >= nextScroll + todoListHeight) {
-			nextScroll = todoCursor - todoListHeight + 1;
-		}
-		const maxScroll = Math.max(0, visibleTodoItemsLength - todoListHeight);
-		nextScroll = Math.min(nextScroll, maxScroll);
-		if (nextScroll !== todoScroll) {
-			setTodoScroll(nextScroll);
-		}
-	}, [
-		todoCursor,
-		todoListHeight,
-		todoScroll,
-		visibleTodoItemsLength,
-		setTodoScroll,
-	]);
 
 	return {
 		frameWidth,

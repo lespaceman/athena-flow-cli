@@ -1,4 +1,4 @@
-import {useMemo, useEffect, useRef, useState} from 'react';
+import {useMemo, useRef} from 'react';
 import {type FeedItem} from '../../core/feed/items';
 import {type FeedEvent} from '../../core/feed/types';
 import {
@@ -94,8 +94,6 @@ export type UseTimelineResult = {
 	filteredEntries: TimelineEntry[];
 	searchMatches: number[];
 	searchMatchSet: Set<number>;
-	searchMatchPos: number;
-	setSearchMatchPos: React.Dispatch<React.SetStateAction<number>>;
 };
 
 type TimelineBuildCache = {
@@ -486,7 +484,6 @@ export function useTimeline({
 	postByToolUseId,
 	verbose,
 }: UseTimelineOptions): UseTimelineResult {
-	const [searchMatchPos, setSearchMatchPos] = useState(0);
 	const buildCacheRef = useRef<TimelineBuildCache | null>(null);
 
 	const timelineEntries = useMemo((): TimelineEntry[] => {
@@ -620,19 +617,11 @@ export function useTimeline({
 
 	const searchMatchSet = useMemo(() => new Set(searchMatches), [searchMatches]);
 
-	useEffect(() => {
-		setSearchMatchPos(prev =>
-			Math.min(prev, Math.max(0, searchMatches.length - 1)),
-		);
-	}, [searchMatches.length]);
-
 	return {
 		timelineEntries,
 		runSummaries,
 		filteredEntries,
 		searchMatches,
 		searchMatchSet,
-		searchMatchPos,
-		setSearchMatchPos,
 	};
 }

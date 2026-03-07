@@ -24,14 +24,11 @@ import {
 	type InputHistory,
 	useInputHistory,
 } from '../../ui/hooks/useInputHistory';
-import {useFeedNavigation} from '../../ui/hooks/useFeedNavigation';
 import {useTodoPanel} from '../../ui/hooks/useTodoPanel';
 import {useFeedKeyboard} from '../../ui/hooks/useFeedKeyboard';
 import {useTodoKeyboard} from '../../ui/hooks/useTodoKeyboard';
 import {useSpinner} from '../../ui/hooks/useSpinner';
-import {
-	useTodoDisplayItems,
-} from '../../ui/hooks/useTodoDisplayItems';
+import {useTodoDisplayItems} from '../../ui/hooks/useTodoDisplayItems';
 import {useTimeline} from '../../ui/hooks/useTimeline';
 import {useLayout} from '../../ui/hooks/useLayout';
 import {usePager} from '../../ui/hooks/usePager';
@@ -81,12 +78,18 @@ import {extractYankContent} from '../../ui/utils/yankContent';
 import type {WorkflowConfig} from '../../core/workflows/types';
 import SetupWizard from '../../setup/SetupWizard';
 import {bootstrapRuntimeConfig} from '../bootstrap/bootstrapConfig';
-import type {FocusMode, InputMode} from './types';
 import {useRuntimeSelectors} from './useRuntimeSelectors';
 import {useSessionScope, useTimelineCurrentRun} from './useSessionScope';
 import {useShellInput} from './useShellInput';
 import {useInputLayout} from './useInputLayout';
 import {useGlobalKeyboard} from './useGlobalKeyboard';
+import {
+	initialSessionUiState,
+	reduceSessionUiState,
+	resolveSessionUiState,
+	type SessionUiAction,
+	type SessionUiContext,
+} from './sessionUiState';
 import {
 	isPerfEnabled,
 	logPerfEvent,
@@ -177,15 +180,15 @@ function AppContent({
 	inputHistory: InputHistory;
 }) {
 	const [messages, setMessages] = useState<MessageType[]>([]);
-	const [focusMode, setFocusMode] = useState<FocusMode>('feed');
-	const [inputMode, setInputMode] = useState<InputMode>('normal');
-	const [hintsForced, setHintsForced] = useState<boolean | null>(null);
-	const [showRunOverlay, setShowRunOverlay] = useState(false);
-	const [searchQuery, setSearchQuery] = useState('');
+	const [uiState, setUiState] = useState(initialSessionUiState);
 	const [toastMessage, setToastMessage] = useState<string | null>(null);
 	const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const messagesRef = useRef(messages);
 	messagesRef.current = messages;
+	const inputMode = uiState.inputMode;
+	const hintsForced = uiState.hintsForced;
+	const showRunOverlay = uiState.showRunOverlay;
+	const searchQuery = uiState.searchQuery;
 	const perfEnabled = isPerfEnabled();
 	usePerfRenderLog(perfEnabled, 'app.main.content.render');
 	const handleSectionProfilerRender = useCallback(
@@ -316,37 +319,80 @@ function AppContent({
 		postByToolUseId,
 		verbose,
 	});
-	const {
-		runSummaries,
-		filteredEntries,
-		searchMatches,
-		searchMatchSet,
-		searchMatchPos,
-		setSearchMatchPos,
-	} = timeline;
+	const {runSummaries, filteredEntries, searchMatches, searchMatchSet} =
+		timeline;
 
 	const todoPanel = useTodoPanel({
 		tasks,
 		isWorking: appMode.type === 'working',
+		todoVisible: uiState.todoVisible,
+		todoShowDone: uiState.todoShowDone,
+		todoCursor: uiState.todoCursor,
+		todoScroll: uiState.todoScroll,
+		setTodoVisible: value =>
+			setUiState(prev =>
+				reduceSessionUiState(
+					prev,
+					{
+						type: 'set_todo_visible',
+						visible:
+							typeof value === 'function' ? value(prev.todoVisible) : value,
+					},
+					uiContextRef.current,
+				),
+			),
+		setTodoShowDone: value =>
+			setUiState(prev =>
+				reduceSessionUiState(
+					prev,
+					{
+						type: 'set_todo_show_done',
+						showDone:
+							typeof value === 'function' ? value(prev.todoShowDone) : value,
+					},
+					uiContextRef.current,
+				),
+			),
+		setTodoCursor: value =>
+			setUiState(prev =>
+				reduceSessionUiState(
+					prev,
+					{
+						type: 'set_todo_cursor',
+						cursor:
+							typeof value === 'function' ? value(prev.todoCursor) : value,
+					},
+					uiContextRef.current,
+				),
+			),
+		setTodoScroll: value =>
+			setUiState(prev => ({
+				...prev,
+				todoScroll:
+					typeof value === 'function' ? value(prev.todoScroll) : value,
+			})),
 	});
-
-	useEffect(() => {
-		if (
-			focusMode === 'todo' &&
-			(!todoPanel.todoVisible || todoPanel.visibleTodoItems.length === 0)
-		) {
-			setFocusMode('feed');
-		}
-	}, [focusMode, todoPanel.todoVisible, todoPanel.visibleTodoItems.length]);
-
-	const setFeedCursorRef = useRef<(cursor: number) => void>(() => {});
-	const setTailFollowRef = useRef<(follow: boolean) => void>(() => {});
 
 	const frameWidth = safeTerminalWidth;
 	const innerWidth = frameWidth - 2;
 
 	const filteredEntriesRef = useRef(filteredEntries);
 	filteredEntriesRef.current = filteredEntries;
+	const uiContextRef = useRef<SessionUiContext>({
+		feedEntryCount: 0,
+		feedContentRows: 1,
+		searchMatchCount: 0,
+		todoVisibleCount: 0,
+		todoListHeight: 0,
+		todoFocusable: false,
+		todoAnchorIndex: -1,
+		staticFloor: 0,
+	});
+	const dispatchUi = useCallback((action: SessionUiAction) => {
+		setUiState(prev =>
+			reduceSessionUiState(prev, action, uiContextRef.current),
+		);
+	}, []);
 
 	const submitPromptOrSlashCommand = useCallback(
 		(value: string) => {
@@ -433,14 +479,14 @@ function AppContent({
 		handleSetValueRef,
 	} = useShellInput({
 		inputMode,
-		setInputMode,
-		setFocusMode,
-		setSearchQuery,
+		setInputMode: nextInputMode =>
+			dispatchUi({type: 'set_input_mode', inputMode: nextInputMode}),
+		setSearchQuery: query => dispatchUi({type: 'set_search_query', query}),
+		closeInput: () => dispatchUi({type: 'cancel_input'}),
+		submitSearchQuery: (query, firstMatchIndex) =>
+			dispatchUi({type: 'submit_search_query', query, firstMatchIndex}),
 		submitPromptOrSlashCommand,
 		filteredEntriesRef,
-		setFeedCursorRef,
-		setTailFollowRef,
-		setSearchMatchPos,
 		getSelectedCommand: () => getSelectedCommandRef.current(),
 	});
 
@@ -469,11 +515,11 @@ function AppContent({
 	const stableGetInputValue = useCallback(() => inputValueRef.current, []);
 	const provisionalFrameChrome = useFrameChrome({
 		innerWidth,
-		focusMode,
+		focusMode: uiState.focusMode,
 		inputMode,
 		searchQuery,
 		searchMatches,
-		searchMatchPos,
+		searchMatchPos: uiState.searchMatchPos,
 		isHarnessRunning,
 		dialogActive,
 		dialogType: appMode.type,
@@ -508,11 +554,48 @@ function AppContent({
 		feedContentRows - (showFeedHeaderDivider ? 1 : 0),
 	);
 	const pageStep = Math.max(1, Math.floor(visibleFeedContentRows / 2));
-	const feedNav = useFeedNavigation({
-		filteredEntries,
-		feedContentRows: visibleFeedContentRows,
-		staticFloor: 0,
-	});
+	const uiContext = useMemo(
+		(): SessionUiContext => ({
+			feedEntryCount: filteredEntries.length,
+			feedContentRows: visibleFeedContentRows,
+			searchMatchCount: searchMatches.length,
+			todoVisibleCount: todoPanel.visibleTodoItems.length,
+			todoListHeight: layout.todoListHeight,
+			todoFocusable:
+				uiState.todoVisible && todoPanel.visibleTodoItems.length > 0,
+			todoAnchorIndex: todoPanel.autoFocusIndex,
+			staticFloor: 0,
+		}),
+		[
+			filteredEntries.length,
+			visibleFeedContentRows,
+			searchMatches.length,
+			layout.todoListHeight,
+			uiState.todoVisible,
+			todoPanel.visibleTodoItems.length,
+			todoPanel.autoFocusIndex,
+		],
+	);
+	uiContextRef.current = uiContext;
+	const resolvedUiState = useMemo(
+		() => resolveSessionUiState(uiState, uiContext),
+		[uiState, uiContext],
+	);
+	const focusMode = resolvedUiState.focusMode;
+	const searchMatchPos = resolvedUiState.searchMatchPos;
+	const feedNav = {
+		feedCursor: resolvedUiState.feedCursor,
+		feedViewportStart: resolvedUiState.feedViewportStart,
+		tailFollow: resolvedUiState.tailFollow,
+		moveFeedCursor: (delta: number) =>
+			dispatchUi({type: 'move_feed_cursor', delta}),
+		jumpToTail: () => dispatchUi({type: 'jump_feed_tail'}),
+		jumpToTop: () => dispatchUi({type: 'jump_feed_top'}),
+		setFeedCursor: (cursor: number) =>
+			dispatchUi({type: 'set_feed_cursor', cursor}),
+		setTailFollow: (tailFollow: boolean) =>
+			dispatchUi({type: 'set_tail_follow', tailFollow}),
+	};
 	const liveFeedScrollback = shouldUseLiveFeedScrollback({
 		tailFollow: feedNav.tailFollow,
 		inputMode,
@@ -549,23 +632,10 @@ function AppContent({
 		runSummaries,
 		staticHighWaterMark,
 	});
-	setFeedCursorRef.current = feedNav.setFeedCursor;
-	setTailFollowRef.current = feedNav.setTailFollow;
-
-	const visibleTodoItemsRef = useRef(todoPanel.visibleTodoItems);
-	visibleTodoItemsRef.current = todoPanel.visibleTodoItems;
-
-	const cycleFocus = useCallback(() => {
-		setFocusMode(prev => {
-			if (prev === 'feed') return 'input';
-			if (prev === 'input') {
-				if (todoPanel.todoVisible && visibleTodoItemsRef.current.length > 0)
-					return 'todo';
-				return 'feed';
-			}
-			return 'feed';
-		});
-	}, [todoPanel.todoVisible]);
+	const cycleFocus = useCallback(
+		() => dispatchUi({type: 'cycle_focus'}),
+		[dispatchUi],
+	);
 
 	const handlePermissionDecision = useCallback(
 		(decision: PermissionDecision) => {
@@ -599,10 +669,9 @@ function AppContent({
 		callbacks: {
 			interrupt,
 			cycleFocus,
-			setFocusMode,
-			setInputMode,
-			setHintsForced,
-			setTodoVisible: todoPanel.setTodoVisible,
+			cancelInput: () => dispatchUi({type: 'cancel_input'}),
+			cycleHintsForced: () => dispatchUi({type: 'cycle_hints_forced'}),
+			toggleTodoVisible: () => dispatchUi({type: 'toggle_todo_visible'}),
 			historyBack: inputHistory.back,
 			historyForward: inputHistory.forward,
 			getInputValue: stableGetInputValue,
@@ -651,27 +720,30 @@ function AppContent({
 			expandAtCursor: handleExpandForPager,
 			yankAtCursor,
 			cycleFocus,
-			setFocusMode,
-			setInputMode,
+			openCommandInput: () => dispatchUi({type: 'open_command_input'}),
+			openSearchInput: () => dispatchUi({type: 'open_search_input'}),
 			setInputValue: stableSetInputValue,
-			setShowRunOverlay,
-			setSearchQuery,
-			setSearchMatchPos,
-			setFeedCursor: feedNav.setFeedCursor,
+			hideRunOverlay: () =>
+				dispatchUi({type: 'set_show_run_overlay', show: false}),
+			stepSearchMatch: (direction, matches) =>
+				dispatchUi({type: 'step_search_match', direction, matches}),
+			clearSearchAndJumpTail: () =>
+				dispatchUi({type: 'clear_search_and_jump_tail'}),
 		},
 	});
 
 	useTodoKeyboard({
 		isActive: focusMode === 'todo' && !dialogActive,
-		todoCursor: todoPanel.todoCursor,
+		todoCursor: resolvedUiState.todoCursor,
 		visibleTodoItems: todoPanel.visibleTodoItems,
 		filteredEntries,
 		callbacks: {
-			setFocusMode,
-			setInputMode,
+			focusFeed: () => dispatchUi({type: 'set_focus_mode', focusMode: 'feed'}),
+			openNormalInput: () => dispatchUi({type: 'open_normal_input'}),
 			setInputValue: stableSetInputValue,
-			setTodoCursor: todoPanel.setTodoCursor,
-			setFeedCursor: feedNav.setFeedCursor,
+			moveTodoCursor: delta => dispatchUi({type: 'move_todo_cursor', delta}),
+			revealFeedCursor: cursor =>
+				dispatchUi({type: 'reveal_feed_entry', cursor}),
 			toggleTodoStatus: todoPanel.toggleTodoStatus,
 			cycleFocus,
 		},
@@ -905,8 +977,8 @@ function AppContent({
 					<TodoBodySection
 						innerWidth={innerWidth}
 						actualTodoRows={actualTodoRows}
-						todoScroll={todoPanel.todoScroll}
-						todoCursor={todoPanel.todoCursor}
+						todoScroll={resolvedUiState.todoScroll}
+						todoCursor={resolvedUiState.todoCursor}
 						visibleTodoItems={todoPanel.visibleTodoItems}
 						focusMode={focusMode}
 						useAscii={useAscii}

@@ -3,7 +3,7 @@ import {computeInputRows} from '../../shared/utils/format';
 import {parseInput} from '../commands/parser';
 import {type TimelineEntry} from '../../core/feed/timeline';
 import type {Command} from '../commands/types';
-import type {FocusMode, InputMode} from './types';
+import type {InputMode} from './types';
 import {getTimelineEntrySearchText} from '../../ui/hooks/useTimeline';
 
 function deriveInputMode(value: string): InputMode {
@@ -28,14 +28,12 @@ function findFirstSearchMatch(
 
 export type UseShellInputOptions = {
 	inputMode: InputMode;
-	setInputMode: React.Dispatch<React.SetStateAction<InputMode>>;
-	setFocusMode: (mode: FocusMode) => void;
+	setInputMode: (mode: InputMode) => void;
 	setSearchQuery: (query: string) => void;
+	closeInput: () => void;
+	submitSearchQuery: (query: string, firstMatchIndex: number | null) => void;
 	submitPromptOrSlashCommand: (value: string) => void;
 	filteredEntriesRef: React.RefObject<TimelineEntry[]>;
-	setFeedCursorRef: React.MutableRefObject<(cursor: number) => void>;
-	setTailFollowRef: React.MutableRefObject<(follow: boolean) => void>;
-	setSearchMatchPos: React.Dispatch<React.SetStateAction<number>>;
 	getSelectedCommand?: () => Command | undefined;
 };
 
@@ -52,13 +50,11 @@ export type UseShellInputResult = {
 export function useShellInput({
 	inputMode,
 	setInputMode,
-	setFocusMode,
 	setSearchQuery,
+	closeInput,
+	submitSearchQuery,
 	submitPromptOrSlashCommand,
 	filteredEntriesRef,
-	setFeedCursorRef,
-	setTailFollowRef,
-	setSearchMatchPos,
 	getSelectedCommand,
 }: UseShellInputOptions): UseShellInputResult {
 	const setInputValueRef = useRef<(value: string) => void>(() => {});
@@ -68,7 +64,7 @@ export function useShellInput({
 	const syncInputModeFromValue = useCallback(
 		(value: string) => {
 			const nextMode = deriveInputMode(value);
-			setInputMode(prev => (prev === nextMode ? prev : nextMode));
+			setInputMode(nextMode);
 			if (value.length === 0) {
 				setSearchQuery('');
 			}
@@ -106,40 +102,29 @@ export function useShellInput({
 					}
 				} else if (inputMode === 'search') {
 					const query = trimmed.replace(/^:/, '').trim();
-					setSearchQuery(query);
-					if (query.length > 0) {
-						const firstIdx = findFirstSearchMatch(
-							filteredEntriesRef.current,
-							query,
-							0,
-						);
-						if (firstIdx >= 0) {
-							setFeedCursorRef.current(firstIdx);
-							setTailFollowRef.current(false);
-							setSearchMatchPos(0);
-						}
-					}
+					const firstIdx =
+						query.length > 0
+							? findFirstSearchMatch(filteredEntriesRef.current, query, 0)
+							: -1;
+					submitSearchQuery(query, firstIdx >= 0 ? firstIdx : null);
 				} else {
 					submitPromptOrSlashCommand(trimmed);
 				}
 			}
 
 			setInputValueRef.current('');
-			setInputMode('normal');
-			setFocusMode('feed');
+			if (inputMode !== 'search') {
+				closeInput();
+			}
 			setInputRows(1);
 		},
 		[
 			inputMode,
 			submitPromptOrSlashCommand,
 			getSelectedCommand,
-			setInputMode,
-			setFocusMode,
-			setSearchQuery,
+			closeInput,
+			submitSearchQuery,
 			filteredEntriesRef,
-			setFeedCursorRef,
-			setTailFollowRef,
-			setSearchMatchPos,
 		],
 	);
 

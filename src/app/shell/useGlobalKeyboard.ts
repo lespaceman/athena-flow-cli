@@ -14,10 +14,9 @@ type CommandSuggestionCallbacks = {
 type GlobalKeyboardCallbacks = {
 	interrupt: () => void;
 	cycleFocus: () => void;
-	setFocusMode: (mode: FocusMode) => void;
-	setInputMode: (mode: InputMode) => void;
-	setHintsForced: React.Dispatch<React.SetStateAction<boolean | null>>;
-	setTodoVisible: (fn: (prev: boolean) => boolean) => void;
+	cancelInput: () => void;
+	cycleHintsForced: () => void;
+	toggleTodoVisible: () => void;
 	historyBack: (current: string) => string | undefined;
 	historyForward: () => string | undefined;
 	getInputValue: () => string;
@@ -67,14 +66,11 @@ export function useGlobalKeyboard({
 					return;
 				}
 				if (key.ctrl && input === 't') {
-					callbacks.setTodoVisible(v => !v);
-					if (focusMode === 'todo') callbacks.setFocusMode('feed');
+					callbacks.toggleTodoVisible();
 					return;
 				}
 				if (key.ctrl && input === '/') {
-					callbacks.setHintsForced(prev =>
-						prev === null ? true : prev ? false : null,
-					);
+					callbacks.cycleHintsForced();
 					return;
 				}
 				if (focusMode === 'input') {
@@ -96,8 +92,7 @@ export function useGlobalKeyboard({
 					}
 
 					if (key.escape) {
-						callbacks.setFocusMode('feed');
-						callbacks.setInputMode('normal');
+						callbacks.cancelInput();
 						return;
 					}
 					if (key.tab) {

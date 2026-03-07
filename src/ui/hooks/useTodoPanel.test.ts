@@ -23,12 +23,28 @@ function makeTasks(statuses: TodoItem['status'][]): TodoItem[] {
 
 type HookProps = {tasks: TodoItem[]; isWorking: boolean};
 
+function makeOptions({tasks, isWorking}: HookProps) {
+	return {
+		tasks,
+		isWorking,
+		todoVisible: true,
+		todoShowDone: true,
+		todoCursor: 0,
+		todoScroll: 0,
+		setTodoVisible: vi.fn(),
+		setTodoShowDone: vi.fn(),
+		setTodoCursor: vi.fn(),
+		setTodoScroll: vi.fn(),
+	} as const;
+}
+
 describe('useTodoPanel', () => {
 	describe('elapsed times', () => {
 		it('doing items produce elapsed after tick', () => {
 			const tasks = makeTasks(['in_progress']);
 			const {result, rerender} = renderHook(
-				({tasks, isWorking}: HookProps) => useTodoPanel({tasks, isWorking}),
+				({tasks, isWorking}: HookProps) =>
+					useTodoPanel(makeOptions({tasks, isWorking})),
 				{initialProps: {tasks, isWorking: true}},
 			);
 
@@ -45,7 +61,8 @@ describe('useTodoPanel', () => {
 		it('completed items freeze their elapsed time', () => {
 			const tasks = makeTasks(['in_progress']);
 			const {result, rerender} = renderHook(
-				({tasks, isWorking}: HookProps) => useTodoPanel({tasks, isWorking}),
+				({tasks, isWorking}: HookProps) =>
+					useTodoPanel(makeOptions({tasks, isWorking})),
 				{initialProps: {tasks, isWorking: true}},
 			);
 
@@ -70,7 +87,8 @@ describe('useTodoPanel', () => {
 		it('re-opened items clear completedAt and resume counting', () => {
 			const tasks = makeTasks(['in_progress']);
 			const {result, rerender} = renderHook(
-				({tasks, isWorking}: HookProps) => useTodoPanel({tasks, isWorking}),
+				({tasks, isWorking}: HookProps) =>
+					useTodoPanel(makeOptions({tasks, isWorking})),
 				{initialProps: {tasks, isWorking: true}},
 			);
 
@@ -93,7 +111,8 @@ describe('useTodoPanel', () => {
 		it('elapsed freezes when idle (not working)', () => {
 			const tasks = makeTasks(['in_progress']);
 			const {result, rerender} = renderHook(
-				({tasks, isWorking}: HookProps) => useTodoPanel({tasks, isWorking}),
+				({tasks, isWorking}: HookProps) =>
+					useTodoPanel(makeOptions({tasks, isWorking})),
 				{initialProps: {tasks, isWorking: true}},
 			);
 
@@ -128,7 +147,8 @@ describe('useTodoPanel', () => {
 		it('captures pausedAtMs when work becomes idle', () => {
 			const tasks = makeTasks(['in_progress']);
 			const {result, rerender} = renderHook(
-				({tasks, isWorking}: HookProps) => useTodoPanel({tasks, isWorking}),
+				({tasks, isWorking}: HookProps) =>
+					useTodoPanel(makeOptions({tasks, isWorking})),
 				{initialProps: {tasks, isWorking: true}},
 			);
 
@@ -140,8 +160,8 @@ describe('useTodoPanel', () => {
 		});
 	});
 
-	describe('auto-scroll', () => {
-		it('moves cursor to the active item', () => {
+	describe('auto focus metadata', () => {
+		it('points autoFocusIndex at the active item', () => {
 			const tasks = makeTasks([
 				'completed',
 				'completed',
@@ -150,13 +170,14 @@ describe('useTodoPanel', () => {
 				'pending',
 				'pending',
 			]);
-			const {result} = renderHook(() => useTodoPanel({tasks, isWorking: true}));
+			const {result} = renderHook(() =>
+				useTodoPanel(makeOptions({tasks, isWorking: true})),
+			);
 
-			expect(result.current.todoCursor).toBe(3);
-			expect(result.current.todoScroll).toBe(0);
+			expect(result.current.autoFocusIndex).toBe(3);
 		});
 
-		it('moves cursor to the first incomplete item when no doing item exists', () => {
+		it('falls back to the first incomplete item when no doing item exists', () => {
 			const tasks = makeTasks([
 				'completed',
 				'completed',
@@ -167,11 +188,10 @@ describe('useTodoPanel', () => {
 				'pending',
 			]);
 			const {result} = renderHook(() =>
-				useTodoPanel({tasks, isWorking: false}),
+				useTodoPanel(makeOptions({tasks, isWorking: false})),
 			);
 
-			expect(result.current.todoCursor).toBe(5);
-			expect(result.current.todoScroll).toBe(0);
+			expect(result.current.autoFocusIndex).toBe(5);
 		});
 	});
 
@@ -179,7 +199,7 @@ describe('useTodoPanel', () => {
 		it('ignores stale indexes that no longer resolve to a visible todo', () => {
 			const tasks = makeTasks(['pending']);
 			const {result} = renderHook(() =>
-				useTodoPanel({tasks, isWorking: false}),
+				useTodoPanel(makeOptions({tasks, isWorking: false})),
 			);
 
 			expect(() => {
@@ -193,7 +213,7 @@ describe('useTodoPanel', () => {
 	describe('todo item cache', () => {
 		it('does not reuse cached items when linkedEventId changes', () => {
 			const {result} = renderHook(() =>
-				useTodoPanel({tasks: [], isWorking: false}),
+				useTodoPanel(makeOptions({tasks: [], isWorking: false})),
 			);
 
 			act(() => {
