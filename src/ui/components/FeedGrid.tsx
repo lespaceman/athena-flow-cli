@@ -23,21 +23,6 @@ type Props = {
 	cols: FeedColumnWidths;
 };
 
-type FeedGridRowProps = {
-	entry: TimelineEntry;
-	idx: number;
-	feedCursor: number;
-	focusMode: string;
-	matched: boolean;
-	ascii: boolean;
-	theme: Theme;
-	innerWidth: number;
-	cols: FeedColumnWidths;
-	verticalGlyph: string;
-	borderColor: string;
-	stripeBg?: string;
-};
-
 export function shouldUseLiveFeedScrollback({
 	tailFollow,
 	inputMode,
@@ -52,78 +37,42 @@ export function shouldUseLiveFeedScrollback({
 	);
 }
 
-function FeedGridRowImpl({
-	entry,
-	idx,
-	feedCursor,
-	focusMode,
-	matched,
-	ascii,
-	theme,
-	innerWidth,
-	cols,
-	verticalGlyph,
-	borderColor,
-	stripeBg,
-}: FeedGridRowProps) {
-	const line = React.useMemo(() => {
-		const isDuplicateActor = entry.duplicateActor;
-		const isFocused = focusMode === 'feed' && idx === feedCursor;
-		const isStriped = idx % 2 === 1;
-		const border = chalk.hex(borderColor);
-		const rowBg =
-			!isFocused && isStriped && stripeBg
-				? chalk.bgHex(stripeBg)
-				: (text: string) => text;
-		const content = rowBg(
-			formatFeedRowLine({
-				entry,
-				cols,
-				focused: isFocused,
-				expanded: false,
-				matched,
-				isDuplicateActor,
-				ascii,
-				theme,
-				innerWidth,
-			}),
-		);
-		return `${border(verticalGlyph)}${content}${border(verticalGlyph)}`;
-	}, [
-		entry,
-		idx,
-		feedCursor,
-		focusMode,
-		matched,
-		ascii,
-		theme,
-		innerWidth,
-		cols,
-		verticalGlyph,
-		borderColor,
-		stripeBg,
-	]);
-
-	return <Text>{line}</Text>;
-}
-
-const FeedGridRow = React.memo(FeedGridRowImpl, (prev, next) => {
-	const prevFocused = prev.focusMode === 'feed' && prev.idx === prev.feedCursor;
-	const nextFocused = next.focusMode === 'feed' && next.idx === next.feedCursor;
-	return (
-		prev.entry === next.entry &&
-		prev.idx === next.idx &&
-		prevFocused === nextFocused &&
-		prev.matched === next.matched &&
-		prev.ascii === next.ascii &&
-		prev.theme === next.theme &&
-		prev.innerWidth === next.innerWidth &&
-		prev.cols === next.cols &&
-		prev.verticalGlyph === next.verticalGlyph &&
-		prev.borderColor === next.borderColor &&
-		prev.stripeBg === next.stripeBg
+function formatRow(
+	entry: TimelineEntry,
+	idx: number,
+	feedCursor: number,
+	focusMode: string,
+	matched: boolean,
+	ascii: boolean,
+	theme: Theme,
+	innerWidth: number,
+	cols: FeedColumnWidths,
+	verticalGlyph: string,
+	borderColor: string,
+	stripeBg: string | undefined,
+): string {
+	const isFocused = focusMode === 'feed' && idx === feedCursor;
+	const isStriped = idx % 2 === 1;
+	const border = chalk.hex(borderColor);
+	const rowBg =
+		!isFocused && isStriped && stripeBg
+			? chalk.bgHex(stripeBg)
+			: (text: string) => text;
+	const content = rowBg(
+		formatFeedRowLine({
+			entry,
+			cols,
+			focused: isFocused,
+			expanded: false,
+			matched,
+			isDuplicateActor: entry.duplicateActor,
+			ascii,
+			theme,
+			innerWidth,
+		}),
 	);
-});
+	return `${border(verticalGlyph)}${content}${border(verticalGlyph)}`;
+}
 
 function FeedGridImpl({
 	feedHeaderRows,
@@ -138,17 +87,13 @@ function FeedGridImpl({
 	innerWidth,
 	cols,
 }: Props) {
-	const rows: React.ReactNode[] = [];
 	const fr = frameGlyphs(ascii);
-	const blankLine = spaces(innerWidth);
 	const borderColor = theme.border;
-	const border = chalk.hex(borderColor);
-	const frameLine = (content: string): string =>
-		`${border(fr.vertical)}${content}${border(fr.vertical)}`;
 	const stripeBg = theme.feed.stripeBackground ?? undefined;
-	const dividerLine = chalk.hex(theme.border)(fr.horizontal.repeat(innerWidth));
 	const showHeaderDivider = feedHeaderRows > 0 && feedContentRows > 1;
 	const visibleContentRows = feedContentRows - (showHeaderDivider ? 1 : 0);
+
+	// Build signature array for perf tracking — same logic as before.
 	const visibleRowSignatures = React.useMemo(() => {
 		const signatures: string[] = [];
 		if (visibleContentRows <= 0) return signatures;
@@ -179,6 +124,7 @@ function FeedGridImpl({
 		feedCursor,
 		searchMatchSet,
 	]);
+
 	const prevViewportRef = React.useRef<{
 		signatures: string[];
 		feedViewportStart: number;
@@ -231,74 +177,91 @@ function FeedGridImpl({
 		});
 	}, [visibleRowSignatures, feedViewportStart, feedCursor]);
 
-	// Header row
-	if (feedHeaderRows > 0) {
-		rows.push(
-			<Text key="feed-header">
-				{frameLine(formatFeedHeaderLine(cols, theme, innerWidth))}
-			</Text>,
-		);
-		if (showHeaderDivider) {
-			rows.push(
-				<Text key="feed-header-divider">{frameLine(dividerLine)}</Text>,
-			);
-		}
-	}
+	// Pre-compute ALL rows as strings, then join into a single <Text> node.
+	// This reduces the Ink element count from N+2 to 1, dramatically cutting
+	// Ink's yoga layout + diff overhead which scales with node count.
+	const output = React.useMemo(() => {
+		const border = chalk.hex(borderColor);
+		const vGlyph = fr.vertical;
+		const fl = (content: string): string =>
+			`${border(vGlyph)}${content}${border(vGlyph)}`;
+		const blank = spaces(innerWidth);
+		const lines: string[] = [];
 
-	if (visibleContentRows <= 0) return <>{rows}</>;
-
-	if (filteredEntries.length === 0) {
-		rows.push(
-			<Text key="feed-empty">
-				{frameLine(fitAnsi('(no feed events)', innerWidth))}
-			</Text>,
-		);
-		for (let i = 1; i < visibleContentRows; i++) {
-			rows.push(<Text key={`feed-pad-${i}`}>{frameLine(blankLine)}</Text>);
-		}
-		return <>{rows}</>;
-	}
-
-	let feedLinesEmitted = 0;
-	let entryOffset = 0;
-
-	while (feedLinesEmitted < visibleContentRows) {
-		const idx = feedViewportStart + entryOffset;
-		if (idx >= filteredEntries.length) {
-			// Pad remaining rows
-			while (feedLinesEmitted < visibleContentRows) {
-				rows.push(
-					<Text key={`feed-pad-${feedLinesEmitted}`}>
-						{frameLine(blankLine)}
-					</Text>,
+		// Header row
+		if (feedHeaderRows > 0) {
+			lines.push(fl(formatFeedHeaderLine(cols, theme, innerWidth)));
+			if (showHeaderDivider) {
+				lines.push(
+					fl(chalk.hex(borderColor)(fr.horizontal.repeat(innerWidth))),
 				);
-				feedLinesEmitted++;
 			}
-			break;
 		}
-		const entry = filteredEntries[idx]!;
-		rows.push(
-			<FeedGridRow
-				key={`feed-row-${entry.id}`}
-				entry={entry}
-				idx={idx}
-				feedCursor={feedCursor}
-				focusMode={focusMode}
-				matched={searchMatchSet.has(idx)}
-				ascii={ascii}
-				theme={theme}
-				innerWidth={innerWidth}
-				cols={cols}
-				verticalGlyph={fr.vertical}
-				borderColor={borderColor}
-				stripeBg={stripeBg}
-			/>,
-		);
-		feedLinesEmitted++;
-		entryOffset++;
-	}
 
-	return <>{rows}</>;
+		if (visibleContentRows <= 0) return lines.join('\n');
+
+		if (filteredEntries.length === 0) {
+			lines.push(fl(fitAnsi('(no feed events)', innerWidth)));
+			for (let i = 1; i < visibleContentRows; i++) {
+				lines.push(fl(blank));
+			}
+			return lines.join('\n');
+		}
+
+		let feedLinesEmitted = 0;
+		let entryOffset = 0;
+
+		while (feedLinesEmitted < visibleContentRows) {
+			const idx = feedViewportStart + entryOffset;
+			if (idx >= filteredEntries.length) {
+				while (feedLinesEmitted < visibleContentRows) {
+					lines.push(fl(blank));
+					feedLinesEmitted++;
+				}
+				break;
+			}
+			const entry = filteredEntries[idx]!;
+			lines.push(
+				formatRow(
+					entry,
+					idx,
+					feedCursor,
+					focusMode,
+					searchMatchSet.has(idx),
+					ascii,
+					theme,
+					innerWidth,
+					cols,
+					vGlyph,
+					borderColor,
+					stripeBg,
+				),
+			);
+			feedLinesEmitted++;
+			entryOffset++;
+		}
+
+		return lines.join('\n');
+	}, [
+		feedHeaderRows,
+		visibleContentRows,
+		showHeaderDivider,
+		feedViewportStart,
+		filteredEntries,
+		feedCursor,
+		focusMode,
+		searchMatchSet,
+		ascii,
+		theme,
+		innerWidth,
+		cols,
+		fr.vertical,
+		fr.horizontal,
+		borderColor,
+		stripeBg,
+	]);
+
+	return <Text>{output}</Text>;
 }
 
 export const FeedGrid = React.memo(FeedGridImpl);

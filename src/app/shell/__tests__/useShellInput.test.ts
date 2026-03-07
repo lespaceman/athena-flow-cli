@@ -142,7 +142,7 @@ describe('useShellInput', () => {
 		expect(result.current).toHaveProperty('inputValueRef');
 	});
 
-	it('does not expose filterTick — suggestion state belongs in useCommandSuggestions to avoid flickering', () => {
+	it('does not expose suggestion-local state used only by the input renderer', () => {
 		const opts = makeOptions();
 		const {result} = renderHook(() => useShellInput(opts));
 		expect(result.current).not.toHaveProperty('filterTick');

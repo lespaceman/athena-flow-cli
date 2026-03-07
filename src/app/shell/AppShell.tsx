@@ -16,9 +16,9 @@ import {useHarnessProcess} from '../process/useHarnessProcess';
 import {useHeaderMetrics} from '../../ui/hooks/useHeaderMetrics';
 import {useTerminalTitle} from '../../ui/hooks/useTerminalTitle';
 import {
-	CommandSuggestionPanel,
-	type CommandSuggestionPanelHandle,
-} from '../../ui/components/CommandSuggestionPanel';
+	ShellInput,
+	type ShellInputHandle,
+} from '../../ui/components/ShellInput';
 import {useAppMode} from '../../ui/hooks/useAppMode';
 import {
 	type InputHistory,
@@ -38,11 +38,7 @@ import {
 	buildTodoHeaderLine,
 } from '../../ui/layout/buildBodyLines';
 import {FeedGrid} from '../../ui/components/FeedGrid';
-import {FrameRow} from '../../ui/components/FrameRow';
-import {MultiLineInput} from '../../ui/components/MultiLineInput';
-import {
-	useFeedColumns,
-} from '../../ui/hooks/useFeedColumns';
+import {useFeedColumns} from '../../ui/hooks/useFeedColumns';
 import {buildHeaderModel} from '../../ui/header/model';
 import {renderHeaderLines} from '../../ui/header/renderLines';
 import type {Message as MessageType} from '../../shared/types/common';
@@ -483,20 +479,9 @@ function AppContent({
 		getSelectedCommand: () => getSelectedCommandRef.current(),
 	});
 
-	const suggestionPanelRef = useRef<CommandSuggestionPanelHandle>(null);
+	const shellInputRef = useRef<ShellInputHandle>(null);
 	getSelectedCommandRef.current = () =>
-		suggestionPanelRef.current?.getSelectedCommand();
-
-	// Wrap onChange to notify the suggestion panel (isolated re-render).
-	// The panel's notifyInputChanged only triggers a re-render of the panel
-	// component — not the entire AppContent tree.
-	const handleInputChange = useCallback(
-		(value: string) => {
-			handleMainInputChange(value);
-			suggestionPanelRef.current?.notifyInputChanged();
-		},
-		[handleMainInputChange],
-	);
+		shellInputRef.current?.getSelectedCommand();
 
 	const {back: handleHistoryBack, forward: handleHistoryForward} = inputHistory;
 
@@ -506,22 +491,10 @@ function AppContent({
 	);
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	const stableGetInputValue = useCallback(() => inputValueRef.current, []);
-	const provisionalFrameChrome = useFrameChrome({
-		innerWidth,
-		focusMode: uiState.focusMode,
-		inputMode,
-		searchQuery,
-		searchMatches,
-		searchMatchPos: uiState.searchMatchPos,
-		isHarnessRunning,
-		dialogActive,
-		dialogType: appMode.type,
-		hintsForced,
-		ascii: !!ascii,
-		accentColor: theme.inputPrompt,
-		runSummaries,
-		staticHighWaterMark: 0,
-	});
+	// Footer row budget for layout: hints row + gap row + input base row.
+	// buildFrameLines always produces non-null footerHelp when inputValue is
+	// empty (the provisional case), so this is a compile-time constant.
+	const provisionalFooterRows = 3;
 	const layout = useLayout({
 		terminalRows,
 		terminalWidth: safeTerminalWidth,
@@ -529,7 +502,7 @@ function AppContent({
 		runSummaries,
 		todoPanel,
 		feedEntryCount: filteredEntries.length,
-		footerRows: provisionalFrameChrome.footerRows,
+		footerRows: provisionalFooterRows,
 		inputRows,
 	});
 
@@ -661,11 +634,11 @@ function AppContent({
 			setInputValue: stableSetInputValue,
 			inputMode,
 			commandSuggestions: {
-				visible: () => suggestionPanelRef.current?.showSuggestions ?? false,
-				moveUp: () => suggestionPanelRef.current?.moveUp(),
-				moveDown: () => suggestionPanelRef.current?.moveDown(),
+				visible: () => shellInputRef.current?.showSuggestions ?? false,
+				moveUp: () => shellInputRef.current?.moveUp(),
+				moveDown: () => shellInputRef.current?.moveDown(),
 				tab: () => {
-					const cmd = suggestionPanelRef.current?.getSelectedCommand();
+					const cmd = shellInputRef.current?.getSelectedCommand();
 					if (cmd) stableSetInputValue(`/${cmd.name} `);
 				},
 			},
@@ -842,7 +815,7 @@ function AppContent({
 		[border],
 	);
 
-	// Stable callback for CommandSuggestionPanel — composes frameLine + border edges.
+	// Stable callback for shell input suggestion rows — composes frameLine + border edges.
 	const wrapFrameLine = useCallback(
 		(line: string) => withBorderEdges(frameLine(line)),
 		[withBorderEdges, frameLine],
@@ -853,191 +826,177 @@ function AppContent({
 
 	return (
 		<Box flexDirection="column" width={frameWidth}>
-				<MaybeProfiler
-					enabled={perfEnabled}
-					id="app.main.header-frame"
-					onRender={handleSectionProfilerRender}
-				>
-					<>
-						<Text>{border(topBorder)}</Text>
-						<Text>{withBorderEdges(frameLine(headerLine1))}</Text>
-						<Text>{border(sectionBorder)}</Text>
-					</>
-				</MaybeProfiler>
-				<MaybeProfiler
-					enabled={perfEnabled}
-					id="app.main.todo-header"
-					onRender={handleSectionProfilerRender}
-				>
-					<TodoHeaderSection
-						actualTodoRows={actualTodoRows}
-						innerWidth={innerWidth}
-						useAscii={useAscii}
-						appModeType={appMode.type}
-						todoColors={todoColors}
-						doneCount={todoPanel.doneCount}
-						totalCount={todoPanel.todoItems.length}
-						theme={theme}
-						withBorderEdges={withBorderEdges}
-						frameLine={frameLine}
-						spinnerActive={
-							actualTodoRows > 0 &&
-							appMode.type === 'working' &&
-							focusMode === 'todo' &&
-							todoPanel.todoVisible &&
-							todoPanel.todoItems.length > 0 &&
-							filteredEntries.length < 500
-						}
-					/>
-				</MaybeProfiler>
-				<MaybeProfiler
-					enabled={perfEnabled}
-					id="app.main.body-prefix"
-					onRender={handleSectionProfilerRender}
-				>
-					<TodoBodySection
-						innerWidth={innerWidth}
-						actualTodoRows={actualTodoRows}
-						todoScroll={resolvedUiState.todoScroll}
-						todoCursor={resolvedUiState.todoCursor}
-						visibleTodoItems={todoPanel.visibleTodoItems}
-						focusMode={focusMode}
-						useAscii={useAscii}
-						todoColors={todoColors}
-						appModeType={appMode.type}
-						doneCount={todoPanel.doneCount}
-						totalCount={todoPanel.todoItems.length}
-						actualRunOverlayRows={actualRunOverlayRows}
-						runSummaries={runSummaries}
-						theme={theme}
-						withBorderEdges={withBorderEdges}
-						frameLine={frameLine}
-						isWorking={appMode.type === 'working'}
-						pausedAtMs={todoPanel.pausedAtMs}
-						todoTickActive={false}
-					/>
-				</MaybeProfiler>
-				<MaybeProfiler
-					enabled={perfEnabled}
-					id="app.main.feed"
-					onRender={handleSectionProfilerRender}
-				>
-					<FeedGrid
-						feedHeaderRows={feedHeaderRows}
-						feedContentRows={feedContentRows}
-						feedViewportStart={feedNav.feedViewportStart}
-						filteredEntries={filteredEntries}
-						feedCursor={feedNav.feedCursor}
-						focusMode={focusMode}
-						searchMatchSet={searchMatchSet}
-						ascii={useAscii}
-						theme={theme}
-						innerWidth={innerWidth}
-						cols={feedCols}
-					/>
-				</MaybeProfiler>
-				<MaybeProfiler
-					enabled={perfEnabled}
-					id="app.main.footer"
-					onRender={handleSectionProfilerRender}
-				>
-					<FooterSection
-						border={border}
-						sectionBorder={sectionBorder}
-						frameFooterHelp={frame.footerHelp}
-						toastMessage={toastMessage}
-						innerWidth={innerWidth}
-						frameLine={frameLine}
-						withBorderEdges={withBorderEdges}
-					/>
-				</MaybeProfiler>
-				<MaybeProfiler
-					enabled={perfEnabled}
-					id="app.main.command-suggestions"
-					onRender={handleSectionProfilerRender}
-				>
-					<CommandSuggestionPanel
-						ref={suggestionPanelRef}
-						inputValueRef={inputValueRef}
-						isActive={inputMode === 'command'}
-						innerWidth={innerWidth}
-						wrapLine={wrapFrameLine}
-					/>
-				</MaybeProfiler>
-				<MaybeProfiler
-					enabled={perfEnabled}
-					id="app.main.input"
-					onRender={handleSectionProfilerRender}
-				>
-					<InputSection
-						innerWidth={innerWidth}
-						useAscii={useAscii}
-						borderColor={theme.border}
-						inputRows={inputRows}
-						inputPrefix={inputPrefix}
-						inputPromptStyled={inputPromptStyled}
-						inputContentWidth={inputContentWidth}
-						textInputPlaceholder={textInputPlaceholder}
-						textColor={theme.text}
-						inputPlaceholderColor={inputPlaceholderColor}
-						isInputActive={focusMode === 'input' && !dialogActive}
-						handleInputChange={handleInputChange}
-						handleInputSubmit={handleInputSubmit}
-						handleHistoryBack={handleHistoryBack}
-						handleHistoryForward={handleHistoryForward}
-						suppressArrows={inputMode === 'command'}
-						handleSetValueRef={handleSetValueRef}
-						badgeText={badgeText}
-						runBadgeStyled={runBadgeStyled}
-						modeBadgeStyled={modeBadgeStyled}
-						border={border}
-						bottomBorder={bottomBorder}
-					/>
-				</MaybeProfiler>
-				<MaybeProfiler
-					enabled={perfEnabled}
-					id="app.main.permission-dialog"
-					onRender={handleSectionProfilerRender}
-				>
-					<>
-						{appMode.type === 'permission' && currentPermissionRequest && (
-							<ErrorBoundary
-								fallback={
-									<PermissionErrorFallback
-										onDeny={() => handlePermissionDecision('deny')}
-									/>
-								}
-							>
-								<PermissionDialog
-									request={currentPermissionRequest}
-									queuedCount={permissionQueueCount - 1}
-									onDecision={handlePermissionDecision}
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.header-frame"
+				onRender={handleSectionProfilerRender}
+			>
+				<Text>{`${border(topBorder)}\n${withBorderEdges(frameLine(headerLine1))}\n${border(sectionBorder)}`}</Text>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.todo-header"
+				onRender={handleSectionProfilerRender}
+			>
+				<TodoHeaderSection
+					actualTodoRows={actualTodoRows}
+					innerWidth={innerWidth}
+					useAscii={useAscii}
+					appModeType={appMode.type}
+					todoColors={todoColors}
+					doneCount={todoPanel.doneCount}
+					totalCount={todoPanel.todoItems.length}
+					theme={theme}
+					withBorderEdges={withBorderEdges}
+					frameLine={frameLine}
+					spinnerActive={
+						actualTodoRows > 0 &&
+						appMode.type === 'working' &&
+						focusMode === 'todo' &&
+						todoPanel.todoVisible &&
+						todoPanel.todoItems.length > 0 &&
+						filteredEntries.length < 500
+					}
+				/>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.body-prefix"
+				onRender={handleSectionProfilerRender}
+			>
+				<TodoBodySection
+					innerWidth={innerWidth}
+					actualTodoRows={actualTodoRows}
+					todoScroll={resolvedUiState.todoScroll}
+					todoCursor={resolvedUiState.todoCursor}
+					visibleTodoItems={todoPanel.visibleTodoItems}
+					focusMode={focusMode}
+					useAscii={useAscii}
+					todoColors={todoColors}
+					appModeType={appMode.type}
+					doneCount={todoPanel.doneCount}
+					totalCount={todoPanel.todoItems.length}
+					actualRunOverlayRows={actualRunOverlayRows}
+					runSummaries={runSummaries}
+					theme={theme}
+					withBorderEdges={withBorderEdges}
+					frameLine={frameLine}
+					isWorking={appMode.type === 'working'}
+					pausedAtMs={todoPanel.pausedAtMs}
+					todoTickActive={false}
+				/>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.feed"
+				onRender={handleSectionProfilerRender}
+			>
+				<FeedGrid
+					feedHeaderRows={feedHeaderRows}
+					feedContentRows={feedContentRows}
+					feedViewportStart={feedNav.feedViewportStart}
+					filteredEntries={filteredEntries}
+					feedCursor={feedNav.feedCursor}
+					focusMode={focusMode}
+					searchMatchSet={searchMatchSet}
+					ascii={useAscii}
+					theme={theme}
+					innerWidth={innerWidth}
+					cols={feedCols}
+				/>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.footer"
+				onRender={handleSectionProfilerRender}
+			>
+				<FooterSection
+					border={border}
+					sectionBorder={sectionBorder}
+					frameFooterHelp={frame.footerHelp}
+					toastMessage={toastMessage}
+					innerWidth={innerWidth}
+					frameLine={frameLine}
+					withBorderEdges={withBorderEdges}
+				/>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.input"
+				onRender={handleSectionProfilerRender}
+			>
+				<InputSection
+					innerWidth={innerWidth}
+					useAscii={useAscii}
+					borderColor={theme.border}
+					inputRows={inputRows}
+					inputPrefix={inputPrefix}
+					inputPromptStyled={inputPromptStyled}
+					inputContentWidth={inputContentWidth}
+					textInputPlaceholder={textInputPlaceholder}
+					textColor={theme.text}
+					inputPlaceholderColor={inputPlaceholderColor}
+					isInputActive={focusMode === 'input' && !dialogActive}
+					handleInputChange={handleMainInputChange}
+					handleInputSubmit={handleInputSubmit}
+					handleHistoryBack={handleHistoryBack}
+					handleHistoryForward={handleHistoryForward}
+					suppressArrows={inputMode === 'command'}
+					handleSetValueRef={handleSetValueRef}
+					commandSuggestionsEnabled={inputMode === 'command'}
+					wrapSuggestionLine={wrapFrameLine}
+					inputRef={shellInputRef}
+					badgeText={badgeText}
+					runBadgeStyled={runBadgeStyled}
+					modeBadgeStyled={modeBadgeStyled}
+					border={border}
+					bottomBorder={bottomBorder}
+				/>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.permission-dialog"
+				onRender={handleSectionProfilerRender}
+			>
+				<>
+					{appMode.type === 'permission' && currentPermissionRequest && (
+						<ErrorBoundary
+							fallback={
+								<PermissionErrorFallback
+									onDeny={() => handlePermissionDecision('deny')}
 								/>
-							</ErrorBoundary>
-						)}
-					</>
-				</MaybeProfiler>
-				<MaybeProfiler
-					enabled={perfEnabled}
-					id="app.main.question-dialog"
-					onRender={handleSectionProfilerRender}
-				>
-					<>
-						{appMode.type === 'question' && currentQuestionRequest && (
-							<ErrorBoundary
-								fallback={<QuestionErrorFallback onSkip={handleQuestionSkip} />}
-							>
-								<QuestionDialog
-									request={currentQuestionRequest}
-									queuedCount={questionQueueCount - 1}
-									onAnswer={handleQuestionAnswer}
-									onSkip={handleQuestionSkip}
-								/>
-							</ErrorBoundary>
-						)}
-					</>
-				</MaybeProfiler>
-			</Box>
+							}
+						>
+							<PermissionDialog
+								request={currentPermissionRequest}
+								queuedCount={permissionQueueCount - 1}
+								onDecision={handlePermissionDecision}
+							/>
+						</ErrorBoundary>
+					)}
+				</>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.question-dialog"
+				onRender={handleSectionProfilerRender}
+			>
+				<>
+					{appMode.type === 'question' && currentQuestionRequest && (
+						<ErrorBoundary
+							fallback={<QuestionErrorFallback onSkip={handleQuestionSkip} />}
+						>
+							<QuestionDialog
+								request={currentQuestionRequest}
+								queuedCount={questionQueueCount - 1}
+								onAnswer={handleQuestionAnswer}
+								onSkip={handleQuestionSkip}
+							/>
+						</ErrorBoundary>
+					)}
+				</>
+			</MaybeProfiler>
+		</Box>
 	);
 }
 
@@ -1230,13 +1189,18 @@ const TodoBodySection = React.memo(function TodoBodySection({
 		],
 	);
 
-	return (
-		<>
-			{prefixBodyLines.map((line, index) => (
-				<Text key={`body-${index}`}>{withBorderEdges(frameLine(line))}</Text>
-			))}
-		</>
+	const output = useMemo(
+		() =>
+			prefixBodyLines.length > 0
+				? prefixBodyLines
+						.map(line => withBorderEdges(frameLine(line)))
+						.join('\n')
+				: null,
+		[prefixBodyLines, withBorderEdges, frameLine],
 	);
+
+	if (output === null) return null;
+	return <Text>{output}</Text>;
 });
 
 const FooterSection = React.memo(function FooterSection({
@@ -1256,25 +1220,32 @@ const FooterSection = React.memo(function FooterSection({
 	frameLine: (content: string) => string;
 	withBorderEdges: (line: string) => string;
 }) {
-	return (
-		<>
-			<Text>{border(sectionBorder)}</Text>
-			{frameFooterHelp !== null && (
-				<>
-					<Text>
-						{withBorderEdges(
-							frameLine(
-								toastMessage
-									? chalk.bold.green(toastMessage)
-									: fit(frameFooterHelp, innerWidth),
-							),
-						)}
-					</Text>
-					<Text>{withBorderEdges(frameLine(''))}</Text>
-				</>
-			)}
-		</>
-	);
+	const output = useMemo(() => {
+		const lines = [border(sectionBorder)];
+		if (frameFooterHelp !== null) {
+			lines.push(
+				withBorderEdges(
+					frameLine(
+						toastMessage
+							? chalk.bold.green(toastMessage)
+							: fit(frameFooterHelp, innerWidth),
+					),
+				),
+			);
+			lines.push(withBorderEdges(frameLine('')));
+		}
+		return lines.join('\n');
+	}, [
+		border,
+		sectionBorder,
+		frameFooterHelp,
+		toastMessage,
+		innerWidth,
+		frameLine,
+		withBorderEdges,
+	]);
+
+	return <Text>{output}</Text>;
 });
 
 const InputSection = React.memo(function InputSection({
@@ -1295,6 +1266,9 @@ const InputSection = React.memo(function InputSection({
 	handleHistoryForward,
 	suppressArrows,
 	handleSetValueRef,
+	commandSuggestionsEnabled,
+	wrapSuggestionLine,
+	inputRef,
 	badgeText,
 	runBadgeStyled,
 	modeBadgeStyled,
@@ -1318,6 +1292,9 @@ const InputSection = React.memo(function InputSection({
 	handleHistoryForward: () => string | undefined;
 	suppressArrows: boolean;
 	handleSetValueRef: (setter: (value: string) => void) => void;
+	commandSuggestionsEnabled: boolean;
+	wrapSuggestionLine: (line: string) => string;
+	inputRef: React.RefObject<ShellInputHandle | null>;
 	badgeText: string;
 	runBadgeStyled: string;
 	modeBadgeStyled: string;
@@ -1325,37 +1302,33 @@ const InputSection = React.memo(function InputSection({
 	bottomBorder: string;
 }) {
 	return (
-		<>
-			<FrameRow
-				innerWidth={innerWidth}
-				ascii={useAscii}
-				borderColor={borderColor}
-				height={inputRows}
-			>
-				<Box width={inputPrefix.length} flexShrink={0}>
-					<Text>{inputPromptStyled}</Text>
-				</Box>
-				<Box width={inputContentWidth} flexShrink={0}>
-					<MultiLineInput
-						width={inputContentWidth}
-						placeholder={textInputPlaceholder}
-						textColor={textColor}
-						placeholderColor={inputPlaceholderColor}
-						isActive={isInputActive}
-						onChange={handleInputChange}
-						onSubmit={handleInputSubmit}
-						onHistoryBack={handleHistoryBack}
-						onHistoryForward={handleHistoryForward}
-						suppressArrows={suppressArrows}
-						setValueRef={handleSetValueRef}
-					/>
-				</Box>
-				<Box width={badgeText.length} flexShrink={0}>
-					<Text>{runBadgeStyled + modeBadgeStyled}</Text>
-				</Box>
-			</FrameRow>
-			<Text>{border(bottomBorder)}</Text>
-		</>
+		<ShellInput
+			ref={inputRef}
+			innerWidth={innerWidth}
+			useAscii={useAscii}
+			borderColor={borderColor}
+			inputRows={inputRows}
+			inputPrefix={inputPrefix}
+			inputPromptStyled={inputPromptStyled}
+			inputContentWidth={inputContentWidth}
+			textInputPlaceholder={textInputPlaceholder}
+			textColor={textColor}
+			inputPlaceholderColor={inputPlaceholderColor}
+			isInputActive={isInputActive}
+			onChange={handleInputChange}
+			onSubmit={handleInputSubmit}
+			onHistoryBack={handleHistoryBack}
+			onHistoryForward={handleHistoryForward}
+			suppressArrows={suppressArrows}
+			setValueRef={handleSetValueRef}
+			commandSuggestionsEnabled={commandSuggestionsEnabled}
+			wrapSuggestionLine={wrapSuggestionLine}
+			badgeText={badgeText}
+			runBadgeStyled={runBadgeStyled}
+			modeBadgeStyled={modeBadgeStyled}
+			border={border}
+			bottomBorder={bottomBorder}
+		/>
 	);
 });
 
