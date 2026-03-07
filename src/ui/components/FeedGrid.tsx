@@ -3,7 +3,7 @@ import {Text} from 'ink';
 import {type TimelineEntry} from '../../core/feed/timeline';
 import {type Theme} from '../theme/types';
 import {type FeedColumnWidths} from './FeedRow';
-import {buildFeedSurface} from './feedSurface';
+import {buildFeedSurface} from './feedSurfaceModel';
 import {logFeedViewportDiff} from '../../shared/utils/perf';
 import {FeedSurfaceView, resolveFeedBackend} from './FeedSurface';
 import {type FeedSurfaceBackend} from '../../shared/utils/perf';

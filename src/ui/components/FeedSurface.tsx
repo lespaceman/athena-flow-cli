@@ -13,7 +13,7 @@
  */
 import React from 'react';
 import {Text} from 'ink';
-import {type FeedSurface as FeedSurfaceModel} from './feedSurface';
+import {type FeedSurface as FeedSurfaceModel} from './feedSurfaceModel';
 import {
 	logFeedSurfaceRender,
 	type FeedSurfaceBackend,

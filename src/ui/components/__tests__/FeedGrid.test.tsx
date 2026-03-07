@@ -13,7 +13,10 @@ import stripAnsi from 'strip-ansi';
 import {darkTheme} from '../../theme/themes';
 import type {TimelineEntry} from '../../../core/feed/timeline';
 import type {FeedColumnWidths} from '../FeedRow';
-import {buildFeedSurface, type BuildFeedSurfaceParams} from '../feedSurface';
+import {
+	buildFeedSurface,
+	type BuildFeedSurfaceParams,
+} from '../feedSurfaceModel';
 import {paintFeedSurface, type StdoutLike} from '../feedSurfacePainter';
 
 // ── Fixtures ───────────────────────────────────────────────────────

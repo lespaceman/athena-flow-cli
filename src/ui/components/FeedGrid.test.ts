@@ -1,7 +1,10 @@
 import {describe, expect, it, test} from 'vitest';
 import stripAnsi from 'strip-ansi';
 import {shouldUseLiveFeedScrollback} from './FeedGrid';
-import {buildFeedSurface, type BuildFeedSurfaceParams} from './feedSurface';
+import {
+	buildFeedSurface,
+	type BuildFeedSurfaceParams,
+} from './feedSurfaceModel';
 import {darkTheme} from '../theme/themes';
 import type {TimelineEntry} from '../../core/feed/timeline';
 import type {FeedColumnWidths} from './FeedRow';

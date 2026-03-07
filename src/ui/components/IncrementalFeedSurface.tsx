@@ -9,7 +9,7 @@
  * without producing any Ink output.
  */
 import React from 'react';
-import {type FeedSurface} from './feedSurface';
+import {type FeedSurface} from './feedSurfaceModel';
 import {paintFeedSurface} from './feedSurfacePainter';
 import {logFeedSurfaceRender} from '../../shared/utils/perf';
 
