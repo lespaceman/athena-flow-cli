@@ -67,6 +67,8 @@ The summary groups work by cycle and prints:
 - state derive / row format / React commit / Ink diff / stdout write ms
 - bytes written
 - visible rows changed
+- feed surface backend (`ink-full` or `incremental`)
+- feed lines visible / rendered / changed / cleared
 - budget miss at 16.7ms and 33.3ms
 
 4. Raw log: inspect specific events when you need detail:

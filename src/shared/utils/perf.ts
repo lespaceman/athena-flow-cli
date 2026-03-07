@@ -88,6 +88,8 @@ let lastInputCause: {
 	cycleId: string | null;
 } | null = null;
 
+export type FeedSurfaceBackend = 'ink-full' | 'incremental';
+
 type PerfCycle = {
 	id: string;
 	cause: string;
@@ -110,6 +112,11 @@ type PerfCycle = {
 	bytesWritten: number;
 	writes: number;
 	writeDurationMs: number;
+	feedSurfaceBackend?: FeedSurfaceBackend;
+	feedLinesVisible: number;
+	feedLinesRendered: number;
+	feedLinesChanged: number;
+	feedLinesCleared: number;
 };
 
 const openCycles = new Map<string, PerfCycle>();
@@ -311,6 +318,11 @@ function emitCycleSummary(cycle: PerfCycle, reason: PerfCycleReason): void {
 		bytes_written: cycle.bytesWritten,
 		writes: cycle.writes,
 		commits: cycle.commits,
+		feed_surface_backend: cycle.feedSurfaceBackend,
+		feed_lines_visible: cycle.feedLinesVisible,
+		feed_lines_rendered: cycle.feedLinesRendered,
+		feed_lines_changed: cycle.feedLinesChanged,
+		feed_lines_cleared: cycle.feedLinesCleared,
 		...cycle.fields,
 	});
 }
@@ -403,6 +415,11 @@ function beginCycle(
 		bytesWritten: 0,
 		writes: 0,
 		writeDurationMs: 0,
+		feedSurfaceBackend: undefined,
+		feedLinesVisible: 0,
+		feedLinesRendered: 0,
+		feedLinesChanged: 0,
+		feedLinesCleared: 0,
 		lastMeasuredAt: now,
 	};
 
@@ -732,6 +749,43 @@ export function logFeedViewportDiff({
 				rows_changed: rowsChanged,
 				viewport_shift: viewportShift,
 				focus_moved: focusMoved,
+			},
+			cycle,
+		),
+	);
+}
+
+export function logFeedSurfaceRender({
+	backend,
+	linesVisible,
+	linesRendered,
+	linesChanged,
+	linesCleared,
+}: {
+	backend: FeedSurfaceBackend;
+	linesVisible: number;
+	linesRendered: number;
+	linesChanged: number;
+	linesCleared: number;
+}): void {
+	if (!PERF_ENABLED) return;
+	const cycle = getActiveCycle();
+	if (!cycle) return;
+	cycle.feedSurfaceBackend = backend;
+	cycle.feedLinesVisible = Math.max(cycle.feedLinesVisible, linesVisible);
+	cycle.feedLinesRendered += linesRendered;
+	cycle.feedLinesChanged += linesChanged;
+	cycle.feedLinesCleared += linesCleared;
+	touchCycle(cycle);
+	writeEvent(
+		'feed.surface.render',
+		attachCycleFields(
+			{
+				backend,
+				lines_visible: linesVisible,
+				lines_rendered: linesRendered,
+				lines_changed: linesChanged,
+				lines_cleared: linesCleared,
 			},
 			cycle,
 		),
