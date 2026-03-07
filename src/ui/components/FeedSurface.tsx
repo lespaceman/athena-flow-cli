@@ -5,8 +5,8 @@
  * backends:
  *   - `ink-full`      – joins all lines and renders via a single <Text> node
  *                        (current parity path, default)
- *   - `incremental`   – stub that falls back to ink-full for now
- *                        (Task 3.1 will implement real incremental painting)
+ *   - `incremental`   – writes only changed lines directly to stdout via
+ *                        ANSI escape sequences, bypassing Ink's full-frame diff
  *
  * The backend is selected via the `ATHENA_FEED_BACKEND` env var, defaulting
  * to `ink-full` when the var is missing or unrecognised.
@@ -18,6 +18,7 @@ import {
 	logFeedSurfaceRender,
 	type FeedSurfaceBackend,
 } from '../../shared/utils/perf';
+import {IncrementalFeedSurface} from './IncrementalFeedSurface';
 
 // ── Backend resolution ─────────────────────────────────────────────
 
@@ -46,17 +47,57 @@ type Props = {
 	surface: FeedSurfaceModel;
 	/** Override the env-var backend for testing / prop-drilling. */
 	backend?: FeedSurfaceBackend;
+	/**
+	 * 1-based terminal row where the feed rectangle starts.
+	 * Required when backend is 'incremental'.
+	 */
+	feedStartRow?: number;
+	/**
+	 * Writable stream for the incremental painter. Defaults to process.stdout.
+	 */
+	stdout?: {write(data: string): boolean};
 };
 
 /**
  * Renders a FeedSurface model through the selected backend.
  *
- * Both backends currently produce identical output (ink-full path).
- * The incremental backend will diverge once Task 3.1 lands.
+ * - `ink-full`: renders all lines via Ink's <Text> (baseline path).
+ * - `incremental`: paints only changed lines directly to stdout.
  */
-function FeedSurfaceImpl({surface, backend: backendProp}: Props) {
+function FeedSurfaceImpl({
+	surface,
+	backend: backendProp,
+	feedStartRow,
+	stdout,
+}: Props) {
 	const backend = resolveFeedBackend(backendProp);
 
+	// ── Incremental backend: bypass Ink entirely ───────────────────
+	if (backend === 'incremental') {
+		return (
+			<IncrementalFeedSurface
+				surface={surface}
+				feedStartRow={feedStartRow ?? 1}
+				stdout={stdout}
+			/>
+		);
+	}
+
+	// ── ink-full backend: render through Ink's <Text> ─────────────
+	return <InkFullFeedSurface surface={surface} backend={backend} />;
+}
+
+/**
+ * The ink-full rendering path — joins all lines and renders via a single
+ * <Text> node. This is the baseline / parity path.
+ */
+function InkFullFeedSurface({
+	surface,
+	backend,
+}: {
+	surface: FeedSurfaceModel;
+	backend: FeedSurfaceBackend;
+}) {
 	const output = React.useMemo(() => surface.allLines.join('\n'), [surface]);
 
 	// Track previous line count so we can report changed/cleared lines.
@@ -82,8 +123,6 @@ function FeedSurfaceImpl({surface, backend: backendProp}: Props) {
 		});
 	}, [surface, backend]);
 
-	// Both backends render identically for now.
-	// The `incremental` path will diverge in Task 3.1.
 	return <Text>{output}</Text>;
 }
 
