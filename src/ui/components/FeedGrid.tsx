@@ -1,13 +1,12 @@
 import React from 'react';
 import {Text} from 'ink';
-import chalk from 'chalk';
 import {type TimelineEntry} from '../../core/feed/timeline';
 import {type Theme} from '../theme/types';
-import {frameGlyphs} from '../glyphs/index';
-import {fitAnsi, spaces} from '../../shared/utils/format';
-import {type FeedColumnWidths, formatFeedRowLine} from './FeedRow';
-import {formatFeedHeaderLine} from './FeedHeader';
+import {type FeedColumnWidths} from './FeedRow';
+import {buildFeedSurface} from './feedSurface';
 import {logFeedViewportDiff} from '../../shared/utils/perf';
+import {FeedSurfaceView, resolveFeedBackend} from './FeedSurface';
+import {type FeedSurfaceBackend} from '../../shared/utils/perf';
 
 type Props = {
 	feedHeaderRows: number;
@@ -21,6 +20,13 @@ type Props = {
 	theme: Theme;
 	innerWidth: number;
 	cols: FeedColumnWidths;
+	/**
+	 * 1-based terminal row where the feed region starts.
+	 * Required when using the incremental backend.
+	 */
+	feedStartRow?: number;
+	/** Override the feed rendering backend (defaults to env-var resolution). */
+	backend?: FeedSurfaceBackend;
 };
 
 export function shouldUseLiveFeedScrollback({
@@ -37,43 +43,6 @@ export function shouldUseLiveFeedScrollback({
 	);
 }
 
-function formatRow(
-	entry: TimelineEntry,
-	idx: number,
-	feedCursor: number,
-	focusMode: string,
-	matched: boolean,
-	ascii: boolean,
-	theme: Theme,
-	innerWidth: number,
-	cols: FeedColumnWidths,
-	verticalGlyph: string,
-	borderColor: string,
-	stripeBg: string | undefined,
-): string {
-	const isFocused = focusMode === 'feed' && idx === feedCursor;
-	const isStriped = idx % 2 === 1;
-	const border = chalk.hex(borderColor);
-	const rowBg =
-		!isFocused && isStriped && stripeBg
-			? chalk.bgHex(stripeBg)
-			: (text: string) => text;
-	const content = rowBg(
-		formatFeedRowLine({
-			entry,
-			cols,
-			focused: isFocused,
-			expanded: false,
-			matched,
-			isDuplicateActor: entry.duplicateActor,
-			ascii,
-			theme,
-			innerWidth,
-		}),
-	);
-	return `${border(verticalGlyph)}${content}${border(verticalGlyph)}`;
-}
-
 function FeedGridImpl({
 	feedHeaderRows,
 	feedContentRows,
@@ -86,12 +55,43 @@ function FeedGridImpl({
 	theme,
 	innerWidth,
 	cols,
+	feedStartRow,
+	backend: backendProp,
 }: Props) {
-	const fr = frameGlyphs(ascii);
-	const borderColor = theme.border;
-	const stripeBg = theme.feed.stripeBackground ?? undefined;
-	const showHeaderDivider = feedHeaderRows > 0 && feedContentRows > 1;
-	const visibleContentRows = feedContentRows - (showHeaderDivider ? 1 : 0);
+	const backend = resolveFeedBackend(backendProp);
+	const isIncremental = backend === 'incremental';
+	// Delegate all line rendering to the extracted surface model.
+	const surface = React.useMemo(
+		() =>
+			buildFeedSurface({
+				feedHeaderRows,
+				feedContentRows,
+				feedViewportStart,
+				filteredEntries,
+				feedCursor,
+				focusMode,
+				searchMatchSet,
+				ascii,
+				theme,
+				innerWidth,
+				cols,
+			}),
+		[
+			feedHeaderRows,
+			feedContentRows,
+			feedViewportStart,
+			filteredEntries,
+			feedCursor,
+			focusMode,
+			searchMatchSet,
+			ascii,
+			theme,
+			innerWidth,
+			cols,
+		],
+	);
+
+	const {visibleContentRows} = surface;
 
 	// Build signature array for perf tracking — same logic as before.
 	const visibleRowSignatures = React.useMemo(() => {
@@ -177,91 +177,34 @@ function FeedGridImpl({
 		});
 	}, [visibleRowSignatures, feedViewportStart, feedCursor]);
 
-	// Pre-compute ALL rows as strings, then join into a single <Text> node.
-	// This reduces the Ink element count from N+2 to 1, dramatically cutting
-	// Ink's yoga layout + diff overhead which scales with node count.
-	const output = React.useMemo(() => {
-		const border = chalk.hex(borderColor);
-		const vGlyph = fr.vertical;
-		const fl = (content: string): string =>
-			`${border(vGlyph)}${content}${border(vGlyph)}`;
-		const blank = spaces(innerWidth);
-		const lines: string[] = [];
+	// ── Incremental backend: render a placeholder to reserve space in Ink ──
+	// The IncrementalFeedSurface renders `null` in Ink's tree and paints
+	// directly to stdout.  Without a placeholder, Ink would collapse the
+	// feed region to 0 rows, shifting footer/input up and causing the
+	// incremental painter to overwrite them.
+	//
+	// The placeholder emits empty lines that occupy exactly the feed's
+	// allocated rows so Ink's layout stays correct.  The incremental
+	// painter writes over this space via ANSI cursor addressing.
+	if (isIncremental) {
+		const totalFeedRows = feedHeaderRows + feedContentRows;
+		// Build placeholder content — empty lines that Ink will render,
+		// reserving the vertical space without visible content.
+		const placeholderLines = '\n'.repeat(Math.max(0, totalFeedRows - 1));
+		return (
+			<>
+				<Text>{placeholderLines}</Text>
+				<FeedSurfaceView
+					surface={surface}
+					backend={backend}
+					feedStartRow={feedStartRow}
+				/>
+			</>
+		);
+	}
 
-		// Header row
-		if (feedHeaderRows > 0) {
-			lines.push(fl(formatFeedHeaderLine(cols, theme, innerWidth)));
-			if (showHeaderDivider) {
-				lines.push(
-					fl(chalk.hex(borderColor)(fr.horizontal.repeat(innerWidth))),
-				);
-			}
-		}
-
-		if (visibleContentRows <= 0) return lines.join('\n');
-
-		if (filteredEntries.length === 0) {
-			lines.push(fl(fitAnsi('(no feed events)', innerWidth)));
-			for (let i = 1; i < visibleContentRows; i++) {
-				lines.push(fl(blank));
-			}
-			return lines.join('\n');
-		}
-
-		let feedLinesEmitted = 0;
-		let entryOffset = 0;
-
-		while (feedLinesEmitted < visibleContentRows) {
-			const idx = feedViewportStart + entryOffset;
-			if (idx >= filteredEntries.length) {
-				while (feedLinesEmitted < visibleContentRows) {
-					lines.push(fl(blank));
-					feedLinesEmitted++;
-				}
-				break;
-			}
-			const entry = filteredEntries[idx]!;
-			lines.push(
-				formatRow(
-					entry,
-					idx,
-					feedCursor,
-					focusMode,
-					searchMatchSet.has(idx),
-					ascii,
-					theme,
-					innerWidth,
-					cols,
-					vGlyph,
-					borderColor,
-					stripeBg,
-				),
-			);
-			feedLinesEmitted++;
-			entryOffset++;
-		}
-
-		return lines.join('\n');
-	}, [
-		feedHeaderRows,
-		visibleContentRows,
-		showHeaderDivider,
-		feedViewportStart,
-		filteredEntries,
-		feedCursor,
-		focusMode,
-		searchMatchSet,
-		ascii,
-		theme,
-		innerWidth,
-		cols,
-		fr.vertical,
-		fr.horizontal,
-		borderColor,
-		stripeBg,
-	]);
-
-	return <Text>{output}</Text>;
+	// ── ink-full backend: normal rendering ──────────────────────────
+	return <FeedSurfaceView surface={surface} backend={backend} />;
 }
 
 export const FeedGrid = React.memo(FeedGridImpl);
