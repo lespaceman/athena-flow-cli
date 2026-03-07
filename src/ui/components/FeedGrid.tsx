@@ -1,10 +1,12 @@
 import React from 'react';
+import {Text} from 'ink';
 import {type TimelineEntry} from '../../core/feed/timeline';
 import {type Theme} from '../theme/types';
 import {type FeedColumnWidths} from './FeedRow';
 import {buildFeedSurface} from './feedSurface';
 import {logFeedViewportDiff} from '../../shared/utils/perf';
-import {FeedSurfaceView} from './FeedSurface';
+import {FeedSurfaceView, resolveFeedBackend} from './FeedSurface';
+import {type FeedSurfaceBackend} from '../../shared/utils/perf';
 
 type Props = {
 	feedHeaderRows: number;
@@ -18,6 +20,13 @@ type Props = {
 	theme: Theme;
 	innerWidth: number;
 	cols: FeedColumnWidths;
+	/**
+	 * 1-based terminal row where the feed region starts.
+	 * Required when using the incremental backend.
+	 */
+	feedStartRow?: number;
+	/** Override the feed rendering backend (defaults to env-var resolution). */
+	backend?: FeedSurfaceBackend;
 };
 
 export function shouldUseLiveFeedScrollback({
@@ -46,7 +55,11 @@ function FeedGridImpl({
 	theme,
 	innerWidth,
 	cols,
+	feedStartRow,
+	backend: backendProp,
 }: Props) {
+	const backend = resolveFeedBackend(backendProp);
+	const isIncremental = backend === 'incremental';
 	// Delegate all line rendering to the extracted surface model.
 	const surface = React.useMemo(
 		() =>
@@ -164,7 +177,34 @@ function FeedGridImpl({
 		});
 	}, [visibleRowSignatures, feedViewportStart, feedCursor]);
 
-	return <FeedSurfaceView surface={surface} />;
+	// ── Incremental backend: render a placeholder to reserve space in Ink ──
+	// The IncrementalFeedSurface renders `null` in Ink's tree and paints
+	// directly to stdout.  Without a placeholder, Ink would collapse the
+	// feed region to 0 rows, shifting footer/input up and causing the
+	// incremental painter to overwrite them.
+	//
+	// The placeholder emits empty lines that occupy exactly the feed's
+	// allocated rows so Ink's layout stays correct.  The incremental
+	// painter writes over this space via ANSI cursor addressing.
+	if (isIncremental) {
+		const totalFeedRows = feedHeaderRows + feedContentRows;
+		// Build placeholder content — empty lines that Ink will render,
+		// reserving the vertical space without visible content.
+		const placeholderLines = '\n'.repeat(Math.max(0, totalFeedRows - 1));
+		return (
+			<>
+				<Text>{placeholderLines}</Text>
+				<FeedSurfaceView
+					surface={surface}
+					backend={backend}
+					feedStartRow={feedStartRow}
+				/>
+			</>
+		);
+	}
+
+	// ── ink-full backend: normal rendering ──────────────────────────
+	return <FeedSurfaceView surface={surface} backend={backend} />;
 }
 
 export const FeedGrid = React.memo(FeedGridImpl);

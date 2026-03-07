@@ -38,6 +38,7 @@ import {
 	buildTodoHeaderLine,
 } from '../../ui/layout/buildBodyLines';
 import {FeedGrid} from '../../ui/components/FeedGrid';
+import {resolveFeedBackend} from '../../ui/components/FeedSurface';
 import {useFeedColumns} from '../../ui/hooks/useFeedColumns';
 import {buildHeaderModel} from '../../ui/header/model';
 import {renderHeaderLines} from '../../ui/header/renderLines';
@@ -512,6 +513,17 @@ function AppContent({
 		actualTodoRows,
 		actualRunOverlayRows,
 	} = layout;
+
+	// ── Feed backend & feedStartRow ────────────────────────────────
+	// Resolve once per render so all consumers agree on the backend.
+	const feedBackend = resolveFeedBackend();
+	// Rows above the feed region in Ink's render tree:
+	//   3  = header frame (topBorder + headerLine + sectionBorder)
+	//   +  actualTodoRows  (header line + body lines incl. divider)
+	//   +  actualRunOverlayRows
+	// feedStartRow is 1-based for ANSI cursor addressing.
+	const feedStartRow = 3 + actualTodoRows + actualRunOverlayRows + 1;
+
 	// FeedGrid subtracts 1 from feedContentRows for the header divider line.
 	// The navigation viewport must match the actual visible data rows.
 	const showFeedHeaderDivider = feedHeaderRows > 0 && feedContentRows > 1;
@@ -903,6 +915,8 @@ function AppContent({
 					theme={theme}
 					innerWidth={innerWidth}
 					cols={feedCols}
+					feedStartRow={feedStartRow}
+					backend={feedBackend}
 				/>
 			</MaybeProfiler>
 			<MaybeProfiler

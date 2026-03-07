@@ -37,6 +37,10 @@ function IncrementalFeedSurfaceImpl({
 	stdout = process.stdout,
 }: Props) {
 	const prevLinesRef = React.useRef<readonly string[]>([]);
+	const feedStartRowRef = React.useRef(feedStartRow);
+	const stdoutRef = React.useRef(stdout);
+	feedStartRowRef.current = feedStartRow;
+	stdoutRef.current = stdout;
 
 	// Use useEffect so painting happens after React commit, matching
 	// the timing of Ink's own stdout writes.
@@ -58,13 +62,18 @@ function IncrementalFeedSurfaceImpl({
 	}, [surface, feedStartRow, stdout]);
 
 	// Clear painted lines on unmount to avoid stale terminal artifacts.
+	// Uses refs so cleanup always has the latest feedStartRow/stdout.
 	React.useEffect(() => {
 		return () => {
 			if (prevLinesRef.current.length > 0) {
-				paintFeedSurface(prevLinesRef.current, [], feedStartRow, stdout);
+				paintFeedSurface(
+					prevLinesRef.current,
+					[],
+					feedStartRowRef.current,
+					stdoutRef.current,
+				);
 			}
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	// Render nothing into Ink — all output goes directly to stdout.
