@@ -29,19 +29,31 @@ import {useTodoPanel} from '../../ui/hooks/useTodoPanel';
 import {useFeedKeyboard} from '../../ui/hooks/useFeedKeyboard';
 import {useTodoKeyboard} from '../../ui/hooks/useTodoKeyboard';
 import {useSpinner} from '../../ui/hooks/useSpinner';
-import {useTodoDisplayItems} from '../../ui/hooks/useTodoDisplayItems';
+import {
+	hasTickingElapsedItems,
+	useTodoDisplayItems,
+} from '../../ui/hooks/useTodoDisplayItems';
 import {useTimeline} from '../../ui/hooks/useTimeline';
 import {useLayout} from '../../ui/hooks/useLayout';
 import {usePager} from '../../ui/hooks/usePager';
+import {useStaticFeed} from '../../ui/hooks/useStaticFeed';
 import {useFrameChrome} from '../../ui/hooks/useFrameChrome';
 import {
 	buildBodyLines,
 	buildTodoHeaderLine,
 } from '../../ui/layout/buildBodyLines';
-import {FeedGrid} from '../../ui/components/FeedGrid';
+import {
+	FeedGrid,
+	shouldUseLiveFeedScrollback,
+} from '../../ui/components/FeedGrid';
+import {FeedScrollback} from '../../ui/components/FeedScrollback';
 import {FrameRow} from '../../ui/components/FrameRow';
 import {MultiLineInput} from '../../ui/components/MultiLineInput';
-import {useFeedColumns} from '../../ui/hooks/useFeedColumns';
+import {
+	stabilizeFeedColumns,
+	useFeedColumns,
+	type FeedColumns,
+} from '../../ui/hooks/useFeedColumns';
 import {buildHeaderModel} from '../../ui/header/model';
 import {renderHeaderLines} from '../../ui/header/renderLines';
 import type {Message as MessageType} from '../../shared/types/common';
@@ -328,7 +340,6 @@ function AppContent({
 		}
 	}, [focusMode, todoPanel.todoVisible, todoPanel.visibleTodoItems.length]);
 
-	const staticHwmRef = useRef(0);
 	const setFeedCursorRef = useRef<(cursor: number) => void>(() => {});
 	const setTailFollowRef = useRef<(follow: boolean) => void>(() => {});
 
@@ -428,7 +439,6 @@ function AppContent({
 		setSearchQuery,
 		submitPromptOrSlashCommand,
 		filteredEntriesRef,
-		staticHwmRef,
 		setFeedCursorRef,
 		setTailFollowRef,
 		setSearchMatchPos,
@@ -458,12 +468,67 @@ function AppContent({
 	);
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	const stableGetInputValue = useCallback(() => inputValueRef.current, []);
-	const staticHighWaterMark = 0;
-	staticHwmRef.current = staticHighWaterMark;
+	const provisionalFrameChrome = useFrameChrome({
+		innerWidth,
+		focusMode,
+		inputMode,
+		searchQuery,
+		searchMatches,
+		searchMatchPos,
+		isHarnessRunning,
+		dialogActive,
+		dialogType: appMode.type,
+		hintsForced,
+		ascii: !!ascii,
+		accentColor: theme.inputPrompt,
+		runSummaries,
+		staticHighWaterMark: 0,
+	});
+	const layout = useLayout({
+		terminalRows,
+		terminalWidth: safeTerminalWidth,
+		showRunOverlay,
+		runSummaries,
+		todoPanel,
+		feedEntryCount: filteredEntries.length,
+		footerRows: provisionalFrameChrome.footerRows,
+		inputRows,
+	});
+
+	const {
+		feedHeaderRows,
+		feedContentRows,
+		actualTodoRows,
+		actualRunOverlayRows,
+		todoListHeight,
+	} = layout;
+	// FeedGrid subtracts 1 from feedContentRows for the header divider line.
+	// The navigation viewport must match the actual visible data rows.
+	const showFeedHeaderDivider = feedHeaderRows > 0 && feedContentRows > 1;
+	const visibleFeedContentRows = Math.max(
+		1,
+		feedContentRows - (showFeedHeaderDivider ? 1 : 0),
+	);
+	const pageStep = Math.max(1, Math.floor(visibleFeedContentRows / 2));
+	const feedNav = useFeedNavigation({
+		filteredEntries,
+		feedContentRows: visibleFeedContentRows,
+		staticFloor: 0,
+	});
+	const liveFeedScrollback = shouldUseLiveFeedScrollback({
+		tailFollow: feedNav.tailFollow,
+		inputMode,
+		searchQuery,
+	});
+	const rawStaticHighWaterMark = useStaticFeed({
+		filteredEntries,
+		feedViewportStart: feedNav.feedViewportStart,
+		tailFollow: liveFeedScrollback,
+	});
+	const staticHighWaterMark = liveFeedScrollback ? rawStaticHighWaterMark : 0;
 
 	const {
 		frame,
-		footerRows,
 		topBorder,
 		bottomBorder,
 		sectionBorder,
@@ -485,37 +550,6 @@ function AppContent({
 		accentColor: theme.inputPrompt,
 		runSummaries,
 		staticHighWaterMark,
-	});
-
-	const layout = useLayout({
-		terminalRows,
-		terminalWidth: safeTerminalWidth,
-		showRunOverlay,
-		runSummaries,
-		todoPanel,
-		feedEntryCount: filteredEntries.length,
-		footerRows,
-		inputRows,
-	});
-
-	const {
-		feedHeaderRows,
-		feedContentRows,
-		actualTodoRows,
-		actualRunOverlayRows,
-	} = layout;
-	// FeedGrid subtracts 1 from feedContentRows for the header divider line.
-	// The navigation viewport must match the actual visible data rows.
-	const showFeedHeaderDivider = feedHeaderRows > 0 && feedContentRows > 1;
-	const visibleFeedContentRows = Math.max(
-		1,
-		feedContentRows - (showFeedHeaderDivider ? 1 : 0),
-	);
-	const pageStep = Math.max(1, Math.floor(visibleFeedContentRows / 2));
-	const feedNav = useFeedNavigation({
-		filteredEntries,
-		feedContentRows: visibleFeedContentRows,
-		staticFloor: 0,
 	});
 	setFeedCursorRef.current = feedNav.setFeedCursor;
 	setTailFollowRef.current = feedNav.setTailFollow;
@@ -716,7 +750,29 @@ function AppContent({
 		theme,
 	]);
 
-	const feedCols = useFeedColumns(filteredEntries, innerWidth);
+	const computedFeedCols = useFeedColumns(filteredEntries, innerWidth);
+	const liveFeedColsRef = useRef<{
+		innerWidth: number;
+		cols: FeedColumns;
+	} | null>(null);
+	const feedCols = useMemo(() => {
+		if (!liveFeedScrollback) {
+			liveFeedColsRef.current = null;
+			return computedFeedCols;
+		}
+		const previous = liveFeedColsRef.current;
+		if (!previous || previous.innerWidth !== innerWidth) {
+			liveFeedColsRef.current = {innerWidth, cols: computedFeedCols};
+			return computedFeedCols;
+		}
+		const stabilized = stabilizeFeedColumns(
+			previous.cols,
+			computedFeedCols,
+			innerWidth,
+		);
+		liveFeedColsRef.current = {innerWidth, cols: stabilized};
+		return stabilized;
+	}, [computedFeedCols, innerWidth, liveFeedScrollback]);
 
 	const {inputPrefix, badgeText, inputContentWidth, textInputPlaceholder} =
 		useInputLayout({
@@ -763,195 +819,254 @@ function AppContent({
 		(line: string) => withBorderEdges(frameLine(line)),
 		[withBorderEdges, frameLine],
 	);
+	const staticFeedEntries = useMemo(
+		() =>
+			liveFeedScrollback
+				? filteredEntries.slice(0, staticHighWaterMark)
+				: ([] as typeof filteredEntries),
+		[filteredEntries, liveFeedScrollback, staticHighWaterMark],
+	);
+	const displayedFeedEntries = useMemo(
+		() =>
+			liveFeedScrollback
+				? filteredEntries.slice(staticHighWaterMark)
+				: filteredEntries,
+		[filteredEntries, liveFeedScrollback, staticHighWaterMark],
+	);
+	const displayedFeedCursor = liveFeedScrollback
+		? Math.max(0, feedNav.feedCursor - staticHighWaterMark)
+		: feedNav.feedCursor;
+	const displayedFeedViewportStart = liveFeedScrollback
+		? Math.max(0, feedNav.feedViewportStart - staticHighWaterMark)
+		: feedNav.feedViewportStart;
+	const displayedSearchMatchSet = useMemo(() => {
+		if (!liveFeedScrollback) return searchMatchSet;
+		return new Set(
+			[...searchMatchSet]
+				.filter(idx => idx >= staticHighWaterMark)
+				.map(idx => idx - staticHighWaterMark),
+		);
+	}, [liveFeedScrollback, searchMatchSet, staticHighWaterMark]);
+	const visibleTodoItemsWithElapsed = useMemo(
+		() =>
+			todoListHeight > 0
+				? todoPanel.visibleTodoItems.slice(
+						todoPanel.todoScroll,
+						todoPanel.todoScroll + todoListHeight,
+					)
+				: [],
+		[todoListHeight, todoPanel.todoScroll, todoPanel.visibleTodoItems],
+	);
+	const todoBodyElapsedTickActive =
+		todoPanel.todoVisible &&
+		todoListHeight > 0 &&
+		hasTickingElapsedItems(visibleTodoItemsWithElapsed);
 
 	if (pagerActive) {
 		return <Box />;
 	}
 
 	return (
-		<Box flexDirection="column" width={frameWidth}>
-			<MaybeProfiler
-				enabled={perfEnabled}
-				id="app.main.header-frame"
-				onRender={handleSectionProfilerRender}
-			>
-				<>
-					<Text>{border(topBorder)}</Text>
-					<Text>{withBorderEdges(frameLine(headerLine1))}</Text>
-					<Text>{border(sectionBorder)}</Text>
-				</>
-			</MaybeProfiler>
-			<MaybeProfiler
-				enabled={perfEnabled}
-				id="app.main.todo-header"
-				onRender={handleSectionProfilerRender}
-			>
-				<TodoHeaderSection
-					actualTodoRows={actualTodoRows}
-					innerWidth={innerWidth}
-					useAscii={useAscii}
-					appModeType={appMode.type}
-					todoColors={todoColors}
-					doneCount={todoPanel.doneCount}
-					totalCount={todoPanel.todoItems.length}
-					theme={theme}
-					withBorderEdges={withBorderEdges}
-					frameLine={frameLine}
-					spinnerActive={
-						appMode.type === 'working' &&
-						todoPanel.todoVisible &&
-						filteredEntries.length < 500
-					}
-				/>
-			</MaybeProfiler>
-			<MaybeProfiler
-				enabled={perfEnabled}
-				id="app.main.body-prefix"
-				onRender={handleSectionProfilerRender}
-			>
-				<TodoBodySection
-					innerWidth={innerWidth}
-					actualTodoRows={actualTodoRows}
-					todoScroll={todoPanel.todoScroll}
-					todoCursor={todoPanel.todoCursor}
-					visibleTodoItems={todoPanel.visibleTodoItems}
-					focusMode={focusMode}
-					useAscii={useAscii}
-					todoColors={todoColors}
-					appModeType={appMode.type}
-					doneCount={todoPanel.doneCount}
-					totalCount={todoPanel.todoItems.length}
-					actualRunOverlayRows={actualRunOverlayRows}
-					runSummaries={runSummaries}
-					theme={theme}
-					withBorderEdges={withBorderEdges}
-					frameLine={frameLine}
-					isWorking={appMode.type === 'working'}
-					pausedAtMs={todoPanel.pausedAtMs}
-					todoTickActive={actualTodoRows > 0 && todoPanel.todoVisible}
-				/>
-			</MaybeProfiler>
-			<MaybeProfiler
-				enabled={perfEnabled}
-				id="app.main.feed"
-				onRender={handleSectionProfilerRender}
-			>
-				<FeedGrid
-					feedHeaderRows={feedHeaderRows}
-					feedContentRows={feedContentRows}
-					feedViewportStart={feedNav.feedViewportStart}
-					filteredEntries={filteredEntries}
-					feedCursor={feedNav.feedCursor}
-					focusMode={focusMode}
+		<>
+			{liveFeedScrollback && staticFeedEntries.length > 0 && (
+				<FeedScrollback
+					entries={staticFeedEntries}
+					startIndex={0}
 					searchMatchSet={searchMatchSet}
 					ascii={useAscii}
 					theme={theme}
 					innerWidth={innerWidth}
 					cols={feedCols}
-				/>
-			</MaybeProfiler>
-			<MaybeProfiler
-				enabled={perfEnabled}
-				id="app.main.footer"
-				onRender={handleSectionProfilerRender}
-			>
-				<FooterSection
-					border={border}
-					sectionBorder={sectionBorder}
-					frameFooterHelp={frame.footerHelp}
-					toastMessage={toastMessage}
-					innerWidth={innerWidth}
-					frameLine={frameLine}
-					withBorderEdges={withBorderEdges}
-				/>
-			</MaybeProfiler>
-			<MaybeProfiler
-				enabled={perfEnabled}
-				id="app.main.command-suggestions"
-				onRender={handleSectionProfilerRender}
-			>
-				<CommandSuggestionPanel
-					ref={suggestionPanelRef}
-					inputValueRef={inputValueRef}
-					isActive={inputMode === 'command'}
-					innerWidth={innerWidth}
 					wrapLine={wrapFrameLine}
 				/>
-			</MaybeProfiler>
-			<MaybeProfiler
-				enabled={perfEnabled}
-				id="app.main.input"
-				onRender={handleSectionProfilerRender}
-			>
-				<InputSection
-					innerWidth={innerWidth}
-					useAscii={useAscii}
-					borderColor={theme.border}
-					inputRows={inputRows}
-					inputPrefix={inputPrefix}
-					inputPromptStyled={inputPromptStyled}
-					inputContentWidth={inputContentWidth}
-					textInputPlaceholder={textInputPlaceholder}
-					textColor={theme.text}
-					inputPlaceholderColor={inputPlaceholderColor}
-					isInputActive={focusMode === 'input' && !dialogActive}
-					handleInputChange={handleInputChange}
-					handleInputSubmit={handleInputSubmit}
-					handleHistoryBack={handleHistoryBack}
-					handleHistoryForward={handleHistoryForward}
-					suppressArrows={inputMode === 'command'}
-					handleSetValueRef={handleSetValueRef}
-					badgeText={badgeText}
-					runBadgeStyled={runBadgeStyled}
-					modeBadgeStyled={modeBadgeStyled}
-					border={border}
-					bottomBorder={bottomBorder}
-				/>
-			</MaybeProfiler>
-			<MaybeProfiler
-				enabled={perfEnabled}
-				id="app.main.permission-dialog"
-				onRender={handleSectionProfilerRender}
-			>
-				<>
-					{appMode.type === 'permission' && currentPermissionRequest && (
-						<ErrorBoundary
-							fallback={
-								<PermissionErrorFallback
-									onDeny={() => handlePermissionDecision('deny')}
+			)}
+			<Box flexDirection="column" width={frameWidth}>
+				<MaybeProfiler
+					enabled={perfEnabled}
+					id="app.main.header-frame"
+					onRender={handleSectionProfilerRender}
+				>
+					<>
+						<Text>{border(topBorder)}</Text>
+						<Text>{withBorderEdges(frameLine(headerLine1))}</Text>
+						<Text>{border(sectionBorder)}</Text>
+					</>
+				</MaybeProfiler>
+				<MaybeProfiler
+					enabled={perfEnabled}
+					id="app.main.todo-header"
+					onRender={handleSectionProfilerRender}
+				>
+					<TodoHeaderSection
+						actualTodoRows={actualTodoRows}
+						innerWidth={innerWidth}
+						useAscii={useAscii}
+						appModeType={appMode.type}
+						todoColors={todoColors}
+						doneCount={todoPanel.doneCount}
+						totalCount={todoPanel.todoItems.length}
+						theme={theme}
+						withBorderEdges={withBorderEdges}
+						frameLine={frameLine}
+						spinnerActive={
+							actualTodoRows > 0 &&
+							appMode.type === 'working' &&
+							todoPanel.todoVisible &&
+							todoPanel.todoItems.length > 0 &&
+							filteredEntries.length < 500
+						}
+					/>
+				</MaybeProfiler>
+				<MaybeProfiler
+					enabled={perfEnabled}
+					id="app.main.body-prefix"
+					onRender={handleSectionProfilerRender}
+				>
+					<TodoBodySection
+						innerWidth={innerWidth}
+						actualTodoRows={actualTodoRows}
+						todoScroll={todoPanel.todoScroll}
+						todoCursor={todoPanel.todoCursor}
+						visibleTodoItems={todoPanel.visibleTodoItems}
+						focusMode={focusMode}
+						useAscii={useAscii}
+						todoColors={todoColors}
+						appModeType={appMode.type}
+						doneCount={todoPanel.doneCount}
+						totalCount={todoPanel.todoItems.length}
+						actualRunOverlayRows={actualRunOverlayRows}
+						runSummaries={runSummaries}
+						theme={theme}
+						withBorderEdges={withBorderEdges}
+						frameLine={frameLine}
+						isWorking={appMode.type === 'working'}
+						pausedAtMs={todoPanel.pausedAtMs}
+						todoTickActive={todoBodyElapsedTickActive}
+						todoTickMs={focusMode === 'todo' ? 1000 : 5000}
+					/>
+				</MaybeProfiler>
+				<MaybeProfiler
+					enabled={perfEnabled}
+					id="app.main.feed"
+					onRender={handleSectionProfilerRender}
+				>
+					<FeedGrid
+						feedHeaderRows={feedHeaderRows}
+						feedContentRows={feedContentRows}
+						feedViewportStart={displayedFeedViewportStart}
+						filteredEntries={displayedFeedEntries}
+						feedCursor={displayedFeedCursor}
+						focusMode={focusMode}
+						searchMatchSet={displayedSearchMatchSet}
+						ascii={useAscii}
+						theme={theme}
+						innerWidth={innerWidth}
+						cols={feedCols}
+					/>
+				</MaybeProfiler>
+				<MaybeProfiler
+					enabled={perfEnabled}
+					id="app.main.footer"
+					onRender={handleSectionProfilerRender}
+				>
+					<FooterSection
+						border={border}
+						sectionBorder={sectionBorder}
+						frameFooterHelp={frame.footerHelp}
+						toastMessage={toastMessage}
+						innerWidth={innerWidth}
+						frameLine={frameLine}
+						withBorderEdges={withBorderEdges}
+					/>
+				</MaybeProfiler>
+				<MaybeProfiler
+					enabled={perfEnabled}
+					id="app.main.command-suggestions"
+					onRender={handleSectionProfilerRender}
+				>
+					<CommandSuggestionPanel
+						ref={suggestionPanelRef}
+						inputValueRef={inputValueRef}
+						isActive={inputMode === 'command'}
+						innerWidth={innerWidth}
+						wrapLine={wrapFrameLine}
+					/>
+				</MaybeProfiler>
+				<MaybeProfiler
+					enabled={perfEnabled}
+					id="app.main.input"
+					onRender={handleSectionProfilerRender}
+				>
+					<InputSection
+						innerWidth={innerWidth}
+						useAscii={useAscii}
+						borderColor={theme.border}
+						inputRows={inputRows}
+						inputPrefix={inputPrefix}
+						inputPromptStyled={inputPromptStyled}
+						inputContentWidth={inputContentWidth}
+						textInputPlaceholder={textInputPlaceholder}
+						textColor={theme.text}
+						inputPlaceholderColor={inputPlaceholderColor}
+						isInputActive={focusMode === 'input' && !dialogActive}
+						handleInputChange={handleInputChange}
+						handleInputSubmit={handleInputSubmit}
+						handleHistoryBack={handleHistoryBack}
+						handleHistoryForward={handleHistoryForward}
+						suppressArrows={inputMode === 'command'}
+						handleSetValueRef={handleSetValueRef}
+						badgeText={badgeText}
+						runBadgeStyled={runBadgeStyled}
+						modeBadgeStyled={modeBadgeStyled}
+						border={border}
+						bottomBorder={bottomBorder}
+					/>
+				</MaybeProfiler>
+				<MaybeProfiler
+					enabled={perfEnabled}
+					id="app.main.permission-dialog"
+					onRender={handleSectionProfilerRender}
+				>
+					<>
+						{appMode.type === 'permission' && currentPermissionRequest && (
+							<ErrorBoundary
+								fallback={
+									<PermissionErrorFallback
+										onDeny={() => handlePermissionDecision('deny')}
+									/>
+								}
+							>
+								<PermissionDialog
+									request={currentPermissionRequest}
+									queuedCount={permissionQueueCount - 1}
+									onDecision={handlePermissionDecision}
 								/>
-							}
-						>
-							<PermissionDialog
-								request={currentPermissionRequest}
-								queuedCount={permissionQueueCount - 1}
-								onDecision={handlePermissionDecision}
-							/>
-						</ErrorBoundary>
-					)}
-				</>
-			</MaybeProfiler>
-			<MaybeProfiler
-				enabled={perfEnabled}
-				id="app.main.question-dialog"
-				onRender={handleSectionProfilerRender}
-			>
-				<>
-					{appMode.type === 'question' && currentQuestionRequest && (
-						<ErrorBoundary
-							fallback={<QuestionErrorFallback onSkip={handleQuestionSkip} />}
-						>
-							<QuestionDialog
-								request={currentQuestionRequest}
-								queuedCount={questionQueueCount - 1}
-								onAnswer={handleQuestionAnswer}
-								onSkip={handleQuestionSkip}
-							/>
-						</ErrorBoundary>
-					)}
-				</>
-			</MaybeProfiler>
-		</Box>
+							</ErrorBoundary>
+						)}
+					</>
+				</MaybeProfiler>
+				<MaybeProfiler
+					enabled={perfEnabled}
+					id="app.main.question-dialog"
+					onRender={handleSectionProfilerRender}
+				>
+					<>
+						{appMode.type === 'question' && currentQuestionRequest && (
+							<ErrorBoundary
+								fallback={<QuestionErrorFallback onSkip={handleQuestionSkip} />}
+							>
+								<QuestionDialog
+									request={currentQuestionRequest}
+									queuedCount={questionQueueCount - 1}
+									onAnswer={handleQuestionAnswer}
+									onSkip={handleQuestionSkip}
+								/>
+							</ErrorBoundary>
+						)}
+					</>
+				</MaybeProfiler>
+			</Box>
+		</>
 	);
 }
 
@@ -1068,6 +1183,7 @@ const TodoBodySection = React.memo(function TodoBodySection({
 	isWorking,
 	pausedAtMs,
 	todoTickActive,
+	todoTickMs,
 }: {
 	innerWidth: number;
 	actualTodoRows: number;
@@ -1096,12 +1212,14 @@ const TodoBodySection = React.memo(function TodoBodySection({
 	isWorking: boolean;
 	pausedAtMs: number | null;
 	todoTickActive: boolean;
+	todoTickMs: number;
 }) {
 	const displayTodoItems = useTodoDisplayItems({
 		items: visibleTodoItems,
 		isWorking,
 		pausedAtMs,
 		active: todoTickActive,
+		tickMs: todoTickMs,
 	});
 	const prefixBodyLines = useMemo(
 		() =>

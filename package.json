@@ -42,6 +42,7 @@
 		"perf:cpu": "node scripts/perf-runner.mjs --mode=cpu --no-app-profile",
 		"perf:trace": "node scripts/perf-runner.mjs --mode=trace --no-app-profile",
 		"perf:heap": "node scripts/perf-runner.mjs --mode=heap --no-app-profile",
+		"perf:summary": "node scripts/perf-summary.mjs",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"lint:format": "git ls-files -z | xargs -0 prettier --check --ignore-unknown",

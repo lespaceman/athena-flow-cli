@@ -1,13 +1,17 @@
 import {useState, useEffect} from 'react';
+import {startPerfCycle} from '../../shared/utils/perf';
 
 const BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const SPINNER_INTERVAL_MS = 500;
+const DEFAULT_SPINNER_INTERVAL_MS = 1000;
 
 /**
  * Hook that returns an animated braille spinner character.
- * Cycles through frames at 500ms when active, returns '' when inactive.
+ * Cycles through frames when active, returns '' when inactive.
  */
-export function useSpinner(active: boolean): string {
+export function useSpinner(
+	active: boolean,
+	intervalMs = DEFAULT_SPINNER_INTERVAL_MS,
+): string {
 	const [frameIndex, setFrameIndex] = useState(0);
 
 	useEffect(() => {
@@ -17,11 +21,12 @@ export function useSpinner(active: boolean): string {
 		}
 
 		const timer = setInterval(() => {
+			startPerfCycle('timer:spinner', {scope: 'spinner'});
 			setFrameIndex(i => (i + 1) % BRAILLE_FRAMES.length);
-		}, SPINNER_INTERVAL_MS);
+		}, intervalMs);
 
 		return () => clearInterval(timer);
-	}, [active]);
+	}, [active, intervalMs]);
 
 	if (!active) return '';
 	return BRAILLE_FRAMES[frameIndex] ?? '⠋';

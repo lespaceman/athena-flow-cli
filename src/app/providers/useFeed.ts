@@ -28,6 +28,12 @@ import {
 	handleEvent,
 	type ControllerCallbacks,
 } from '../../core/controller/runtimeController';
+import {
+	getActivePerfCycleId,
+	logPerfEvent,
+	startPerfCycle,
+	startPerfStage,
+} from '../../shared/utils/perf';
 function generateId(): string {
 	return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -294,70 +300,117 @@ export function useFeed(
 		};
 
 		const unsub = runtime.onEvent((runtimeEvent: RuntimeEvent) => {
+			const parentCycleId = getActivePerfCycleId();
+			const cycleId = startPerfCycle(`feed:${runtimeEvent.kind}`, {
+				parent_cycle_id: parentCycleId ?? undefined,
+				runtime_event_id: runtimeEvent.id,
+				runtime_kind: runtimeEvent.kind,
+				hook_name: runtimeEvent.hookName,
+				tool_name: runtimeEvent.toolName,
+			});
+			logPerfEvent('feed.runtime_event', {
+				cycle_id: cycleId ?? undefined,
+				runtime_event_id: runtimeEvent.id,
+				runtime_kind: runtimeEvent.kind,
+				hook_name: runtimeEvent.hookName,
+				tool_name: runtimeEvent.toolName,
+			});
+			const doneCause = startPerfStage('cause.start', {
+				source: 'runtime.event',
+				runtime_kind: runtimeEvent.kind,
+			});
 			// Run controller for rule matching / queue management
-			const result = handleEvent(runtimeEvent, controllerCallbacks);
+			try {
+				const result = handleEvent(runtimeEvent, controllerCallbacks);
 
-			if (result.handled && result.decision) {
-				// Immediate decision (rule match) — send
-				runtime.sendDecision(runtimeEvent.id, result.decision);
-			}
-
-			// Map to feed events
-			const newFeedEvents = mapperRef.current.mapEvent(runtimeEvent);
-
-			// Persist runtime event + derived feed events
-			if (sessionStoreRef.current) {
-				try {
-					sessionStoreRef.current.recordEvent(runtimeEvent, newFeedEvents);
-				} catch (err) {
-					sessionStoreRef.current.markDegraded(
-						`recordEvent failed: ${err instanceof Error ? err.message : err}`,
-					);
+				if (result.handled && result.decision) {
+					// Immediate decision (rule match) — send
+					runtime.sendDecision(runtimeEvent.id, result.decision);
 				}
-			}
 
-			if (!abortRef.current.signal.aborted && newFeedEvents.length > 0) {
-				// Auto-dequeue permissions/questions from incoming events
-				for (const fe of newFeedEvents) {
-					if (fe.kind === 'permission.decision' && fe.cause?.hook_request_id) {
-						dequeuePermission(fe.cause.hook_request_id);
+				// Map to feed events
+				const newFeedEvents = mapperRef.current.mapEvent(runtimeEvent);
+
+				// Persist runtime event + derived feed events
+				if (sessionStoreRef.current) {
+					try {
+						sessionStoreRef.current.recordEvent(runtimeEvent, newFeedEvents);
+					} catch (err) {
+						sessionStoreRef.current.markDegraded(
+							`recordEvent failed: ${err instanceof Error ? err.message : err}`,
+						);
 					}
 				}
 
-				setFeedEvents(prev => {
-					const updated = [...prev, ...newFeedEvents];
-					return updated.length > MAX_EVENTS
-						? updated.slice(-MAX_EVENTS)
-						: updated;
-				});
+				if (!abortRef.current.signal.aborted && newFeedEvents.length > 0) {
+					// Auto-dequeue permissions/questions from incoming events
+					for (const fe of newFeedEvents) {
+						if (
+							fe.kind === 'permission.decision' &&
+							fe.cause?.hook_request_id
+						) {
+							dequeuePermission(fe.cause.hook_request_id);
+						}
+					}
+
+					setFeedEvents(prev => {
+						const updated = [...prev, ...newFeedEvents];
+						return updated.length > MAX_EVENTS
+							? updated.slice(-MAX_EVENTS)
+							: updated;
+					});
+				}
+			} finally {
+				doneCause();
 			}
 		});
 
 		const unsubDecision = runtime.onDecision(
 			(eventId: string, decision: RuntimeDecision) => {
-				if (abortRef.current.signal.aborted) return;
-				const feedEvent = mapperRef.current.mapDecision(eventId, decision);
-				if (feedEvent) {
-					// Persist decision event (feed-only, no runtime event)
-					if (sessionStoreRef.current) {
-						try {
-							sessionStoreRef.current.recordFeedEvents([feedEvent]);
-						} catch (err) {
-							sessionStoreRef.current.markDegraded(
-								`recordFeedEvents failed: ${err instanceof Error ? err.message : err}`,
-							);
+				const parentCycleId = getActivePerfCycleId();
+				const cycleId = startPerfCycle('feed:decision', {
+					parent_cycle_id: parentCycleId ?? undefined,
+					event_id: eventId,
+					decision_source: decision.source,
+					decision_intent: decision.intent?.kind,
+				});
+				logPerfEvent('feed.decision_event', {
+					cycle_id: cycleId ?? undefined,
+					event_id: eventId,
+					decision_source: decision.source,
+					decision_intent: decision.intent?.kind,
+				});
+				const doneCause = startPerfStage('cause.start', {
+					source: 'runtime.decision',
+					decision_source: decision.source,
+				});
+				try {
+					if (abortRef.current.signal.aborted) return;
+					const feedEvent = mapperRef.current.mapDecision(eventId, decision);
+					if (feedEvent) {
+						// Persist decision event (feed-only, no runtime event)
+						if (sessionStoreRef.current) {
+							try {
+								sessionStoreRef.current.recordFeedEvents([feedEvent]);
+							} catch (err) {
+								sessionStoreRef.current.markDegraded(
+									`recordFeedEvents failed: ${err instanceof Error ? err.message : err}`,
+								);
+							}
+						}
+
+						setFeedEvents(prev => [...prev, feedEvent]);
+
+						// Auto-dequeue permissions/questions when decision arrives
+						if (
+							feedEvent.kind === 'permission.decision' &&
+							feedEvent.cause?.hook_request_id
+						) {
+							dequeuePermission(feedEvent.cause.hook_request_id);
 						}
 					}
-
-					setFeedEvents(prev => [...prev, feedEvent]);
-
-					// Auto-dequeue permissions/questions when decision arrives
-					if (
-						feedEvent.kind === 'permission.decision' &&
-						feedEvent.cause?.hook_request_id
-					) {
-						dequeuePermission(feedEvent.cause.hook_request_id);
-					}
+				} finally {
+					doneCause();
 				}
 			},
 		);
@@ -373,32 +426,55 @@ export function useFeed(
 	}, [runtime, enqueuePermission, enqueueQuestion, dequeuePermission]);
 
 	// Derive items (content ordering)
-	const items = useMemo(
-		() => mergeFeedItems(messages, feedEvents),
-		[messages, feedEvents],
-	);
+	const items = useMemo(() => {
+		const done = startPerfStage('state.derive', {
+			op: 'mergeFeedItems',
+			messages: messages.length,
+			feed_events: feedEvents.length,
+		});
+		try {
+			return mergeFeedItems(messages, feedEvents);
+		} finally {
+			done();
+		}
+	}, [messages, feedEvents]);
 
 	// Extract tasks from latest TodoWrite
 	const tasks = useMemo((): TodoItem[] => {
-		const lastTodoWrite = feedEvents
-			.filter(
-				e =>
-					e.kind === 'tool.pre' &&
-					e.data.tool_name === 'TodoWrite' &&
-					e.actor_id === 'agent:root',
-			)
-			.at(-1);
-		if (!lastTodoWrite || lastTodoWrite.kind !== 'tool.pre') return [];
-		const input = lastTodoWrite.data.tool_input as unknown as
-			| TodoWriteInput
-			| undefined;
-		return Array.isArray(input?.todos) ? input.todos : [];
+		const done = startPerfStage('state.derive', {
+			op: 'todo.extract',
+			feed_events: feedEvents.length,
+		});
+		try {
+			const lastTodoWrite = feedEvents
+				.filter(
+					e =>
+						e.kind === 'tool.pre' &&
+						e.data.tool_name === 'TodoWrite' &&
+						e.actor_id === 'agent:root',
+				)
+				.at(-1);
+			if (!lastTodoWrite || lastTodoWrite.kind !== 'tool.pre') return [];
+			const input = lastTodoWrite.data.tool_input as unknown as
+				| TodoWriteInput
+				| undefined;
+			return Array.isArray(input?.todos) ? input.todos : [];
+		} finally {
+			done();
+		}
 	}, [feedEvents]);
 
-	const postByToolUseId = useMemo(
-		() => buildPostByToolUseId(feedEvents),
-		[feedEvents],
-	);
+	const postByToolUseId = useMemo(() => {
+		const done = startPerfStage('state.derive', {
+			op: 'postByToolUseId',
+			feed_events: feedEvents.length,
+		});
+		try {
+			return buildPostByToolUseId(feedEvents);
+		} finally {
+			done();
+		}
+	}, [feedEvents]);
 
 	return {
 		items,

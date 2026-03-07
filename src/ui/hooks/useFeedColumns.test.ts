@@ -1,7 +1,11 @@
 /** @vitest-environment jsdom */
 import {describe, it, expect} from 'vitest';
 import {renderHook} from '@testing-library/react';
-import {useFeedColumns} from './useFeedColumns';
+import {
+	computeFeedColumns,
+	stabilizeFeedColumns,
+	useFeedColumns,
+} from './useFeedColumns';
 import type {TimelineEntry} from '../../core/feed/timeline';
 
 function makeEntry(overrides: Partial<TimelineEntry> = {}): TimelineEntry {
@@ -48,5 +52,43 @@ describe('useFeedColumns', () => {
 
 		expect(result.current.resultW).toBe(0);
 		expect(result.current.detailsResultGapW).toBe(0);
+	});
+
+	it('keeps live feed columns monotonic while scrollback is active', () => {
+		const previous = computeFeedColumns(
+			[
+				makeEntry({
+					toolColumn: 'General Purpose',
+					summaryOutcome: 'replaced 19 -> 27 lines',
+				}),
+			],
+			160,
+		);
+		const next = computeFeedColumns([makeEntry({toolColumn: 'Read'})], 160);
+		const stabilized = stabilizeFeedColumns(previous, next, 160);
+
+		expect(stabilized.toolW).toBe(previous.toolW);
+		expect(stabilized.resultW).toBe(previous.resultW);
+		expect(stabilized.detailsW).toBeLessThanOrEqual(previous.detailsW);
+	});
+
+	it('reuses the previous column object when a patched row does not change widths', () => {
+		const initialEntries = [makeEntry({id: 'e1', summary: 'Read src/app.ts'})];
+		const {result, rerender} = renderHook(
+			({entries}) => useFeedColumns(entries, 160),
+			{initialProps: {entries: initialEntries}},
+		);
+
+		const initialCols = result.current;
+		const patchedEntries = [
+			makeEntry({
+				id: 'e1',
+				summary: 'Read src/app.js',
+			}),
+		];
+
+		rerender({entries: patchedEntries});
+
+		expect(result.current).toBe(initialCols);
 	});
 });

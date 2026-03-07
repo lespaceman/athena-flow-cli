@@ -24,6 +24,11 @@ import {
 import {runExecCommand} from './execCommand';
 import {resolveInteractiveSession} from './interactiveSession';
 import {runWorkflowCommand} from './workflowCommand';
+import {
+	installStdoutWriteMonitor,
+	isPerfEnabled,
+	logInkRender,
+} from '../../shared/utils/perf';
 
 function resolvePackageJsonPath(entryUrl: string): string {
 	let currentDir = path.dirname(fileURLToPath(entryUrl));
@@ -65,6 +70,22 @@ function isIsolationPreset(value: string): value is IsolationPreset {
 
 function exitWith(code: number): void {
 	process.exit(code);
+}
+
+function inkRenderOptions() {
+	if (isPerfEnabled()) {
+		installStdoutWriteMonitor(process.stdout);
+		return {
+			incrementalRendering: true,
+			onRender: ({renderTime}: {renderTime: number}) => {
+				logInkRender(renderTime);
+			},
+		};
+	}
+
+	return {
+		incrementalRendering: true,
+	};
 }
 
 // Register cleanup handlers early to catch all exit scenarios
@@ -233,6 +254,7 @@ async function main(): Promise<void> {
 						process.exitCode = code;
 					}}
 				/>,
+				inkRenderOptions(),
 			);
 			await waitUntilExit();
 			return;
@@ -354,6 +376,7 @@ async function main(): Promise<void> {
 			ascii={cli.flags.ascii}
 			showSetup={showSetup}
 		/>,
+		inkRenderOptions(),
 	);
 }
 

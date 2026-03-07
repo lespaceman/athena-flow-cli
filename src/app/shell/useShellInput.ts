@@ -4,6 +4,7 @@ import {parseInput} from '../commands/parser';
 import {type TimelineEntry} from '../../core/feed/timeline';
 import type {Command} from '../commands/types';
 import type {FocusMode, InputMode} from './types';
+import {getTimelineEntrySearchText} from '../../ui/hooks/useTimeline';
 
 function deriveInputMode(value: string): InputMode {
 	if (value.startsWith('/')) return 'command';
@@ -18,7 +19,7 @@ function findFirstSearchMatch(
 ): number {
 	const q = query.toLowerCase();
 	for (let i = startIndex; i < entries.length; i++) {
-		if (entries[i]!.searchText.toLowerCase().includes(q)) {
+		if (getTimelineEntrySearchText(entries[i]!).toLowerCase().includes(q)) {
 			return i;
 		}
 	}
@@ -32,7 +33,6 @@ export type UseShellInputOptions = {
 	setSearchQuery: (query: string) => void;
 	submitPromptOrSlashCommand: (value: string) => void;
 	filteredEntriesRef: React.RefObject<TimelineEntry[]>;
-	staticHwmRef: React.RefObject<number>;
 	setFeedCursorRef: React.MutableRefObject<(cursor: number) => void>;
 	setTailFollowRef: React.MutableRefObject<(follow: boolean) => void>;
 	setSearchMatchPos: React.Dispatch<React.SetStateAction<number>>;
@@ -56,7 +56,6 @@ export function useShellInput({
 	setSearchQuery,
 	submitPromptOrSlashCommand,
 	filteredEntriesRef,
-	staticHwmRef,
 	setFeedCursorRef,
 	setTailFollowRef,
 	setSearchMatchPos,
@@ -112,7 +111,7 @@ export function useShellInput({
 						const firstIdx = findFirstSearchMatch(
 							filteredEntriesRef.current,
 							query,
-							staticHwmRef.current,
+							0,
 						);
 						if (firstIdx >= 0) {
 							setFeedCursorRef.current(firstIdx);
@@ -138,7 +137,6 @@ export function useShellInput({
 			setFocusMode,
 			setSearchQuery,
 			filteredEntriesRef,
-			staticHwmRef,
 			setFeedCursorRef,
 			setTailFollowRef,
 			setSearchMatchPos,

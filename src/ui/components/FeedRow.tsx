@@ -1,3 +1,4 @@
+import {performance} from 'node:perf_hooks';
 import React from 'react';
 import {Box, Text} from 'ink';
 import chalk from 'chalk';
@@ -17,6 +18,7 @@ import {
 	formatDetails,
 } from '../../core/feed/cellFormatters';
 import {fitAnsi, spaces} from '../../shared/utils/format';
+import {logVisibleRowFormat} from '../../shared/utils/perf';
 
 type FeedColumnWidths = {
 	toolW: number;
@@ -190,7 +192,7 @@ function buildLineCacheKey({
 	].join('|');
 }
 
-/** Optionally strip ANSI and apply a single color override to a cell. */
+/** Optionally apply a single color override to a preformatted cell. */
 function cell(content: string, overrideColor?: string): string {
 	if (!overrideColor) return content;
 	return chalk.hex(overrideColor)(stripAnsi(content));
@@ -319,44 +321,49 @@ export function formatFeedRowLine({
 	innerWidth,
 	...props
 }: FeedRowLineProps): string {
-	const cachedLines = getLineCache(props.entry);
-	const cacheKey = buildLineCacheKey({...props, innerWidth});
-	const cached = cachedLines.get(cacheKey);
-	if (cached !== undefined) return cached;
+	const startedAt = performance.now();
+	try {
+		const cachedLines = getLineCache(props.entry);
+		const cacheKey = buildLineCacheKey({...props, innerWidth});
+		const cached = cachedLines.get(cacheKey);
+		if (cached !== undefined) return cached;
 
-	const parts = lineParts(props);
-	const {
-		cols: {gapW, timeEventGapW, detailsResultGapW, resultW},
-	} = props;
+		const parts = lineParts(props);
+		const {
+			cols: {gapW, timeEventGapW, detailsResultGapW, resultW},
+		} = props;
 
-	let line =
-		parts.gutter +
-		parts.time +
-		spaces(timeEventGapW) +
-		parts.event +
-		spaces(gapW) +
-		parts.actor +
-		spaces(gapW) +
-		parts.tool +
-		spaces(gapW) +
-		parts.detail;
+		let line =
+			parts.gutter +
+			parts.time +
+			spaces(timeEventGapW) +
+			parts.event +
+			spaces(gapW) +
+			parts.actor +
+			spaces(gapW) +
+			parts.tool +
+			spaces(gapW) +
+			parts.detail;
 
-	if (resultW > 0) {
-		line += spaces(detailsResultGapW) + parts.result;
-	}
-
-	const formatted = fitAnsi(line, innerWidth);
-	const focusedFormatted = props.focused
-		? fitAnsi(chalk.bgHex('#1b2a3f')(formatted), innerWidth)
-		: formatted;
-	cachedLines.set(cacheKey, focusedFormatted);
-	if (cachedLines.size > ROW_LINE_CACHE_MAX_VARIANTS) {
-		const oldestKey = cachedLines.keys().next().value;
-		if (oldestKey !== undefined) {
-			cachedLines.delete(oldestKey);
+		if (resultW > 0) {
+			line += spaces(detailsResultGapW) + parts.result;
 		}
+
+		const formatted = fitAnsi(line, innerWidth);
+		const focusedFormatted = props.focused
+			? fitAnsi(chalk.bgHex('#1b2a3f')(formatted), innerWidth)
+			: formatted;
+		cachedLines.set(cacheKey, focusedFormatted);
+		if (cachedLines.size > ROW_LINE_CACHE_MAX_VARIANTS) {
+			const oldestKey = cachedLines.keys().next().value;
+			if (oldestKey !== undefined) {
+				cachedLines.delete(oldestKey);
+			}
+		}
+		return focusedFormatted;
+	} finally {
+		logVisibleRowFormat(performance.now() - startedAt);
 	}
-	return focusedFormatted;
 }
 
 function FeedRowImpl({

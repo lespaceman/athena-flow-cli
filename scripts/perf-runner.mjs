@@ -109,6 +109,9 @@ if (enableAppProfile) {
 	if (!runEnv['ATHENA_PROFILE_LOG']) {
 		runEnv['ATHENA_PROFILE_LOG'] = appLogPath;
 	}
+	if (!runEnv['ATHENA_PROFILE_LOOP_MS']) {
+		runEnv['ATHENA_PROFILE_LOOP_MS'] = '150';
+	}
 }
 
 process.stderr.write(

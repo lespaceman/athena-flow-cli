@@ -15,7 +15,7 @@ Artifacts are written to `.profiles/`:
 
 - `athena-*.cpuprofile` (Node CPU profile)
 - `node-trace-*.json` (trace events)
-- `tui-perf-*.ndjson` (app instrumentation: slow input handlers, React commits, event-loop delay)
+- `tui-perf-*.ndjson` (app instrumentation: per-cycle budgets, React commits, Ink render, stdout writes, event-loop delay)
 
 ## Focused Modes
 
@@ -39,7 +39,8 @@ Optional env vars:
 - `ATHENA_PROFILE_SLOW_MS` (default `8`) slow-operation threshold
 - `ATHENA_PROFILE_INPUT_SLOW_MS` (default `4`) slow-input threshold
 - `ATHENA_PROFILE_INPUT_ALL=1` log every input handler (high volume)
-- `ATHENA_PROFILE_LOOP_MS` (default `1000`) event-loop sample interval
+- `ATHENA_PROFILE_LOOP_MS` (default `1000`, `150` under `perf:tui`) event-loop sample interval
+- `ATHENA_PROFILE_CYCLE_IDLE_MS` (default `40`) idle window used to close a perf cycle
 - `ATHENA_PROFILE_LOG=/path/file.ndjson` custom log path
 
 Example with full input trace:
@@ -52,8 +53,24 @@ ATHENA_PROFILE_INPUT_ALL=1 npm run perf:tui -- -- sessions
 
 1. CPU profile: open `*.cpuprofile` in Chrome DevTools (`Performance` panel -> Load profile).
 2. Trace events: open `node-trace-*.json` in Chrome tracing viewers.
-3. App log: inspect top slow paths:
+3. App log: summarize cycles first, then drill into raw events if needed:
 
 ```bash
-rg '"type":"(slow.op|input.handler|react.commit|event_loop.sample)"' .profiles/tui-perf-*.ndjson
+npm run perf:summary -- .profiles/tui-perf-<stamp>.ndjson
+```
+
+The summary groups work by cycle and prints:
+
+- cause
+- total cycle ms
+- compute vs paint ms
+- state derive / row format / React commit / Ink diff / stdout write ms
+- bytes written
+- visible rows changed
+- budget miss at 16.7ms and 33.3ms
+
+4. Raw log: inspect specific events when you need detail:
+
+```bash
+rg '"type":"(cycle.summary|feed.viewport.diff|output.write|react.commit|event_loop.sample)"' .profiles/tui-perf-*.ndjson
 ```

@@ -1,13 +1,21 @@
 import {useEffect, useMemo, useState} from 'react';
 import {type TodoPanelItem} from '../../core/feed/todoPanel';
 import {formatElapsed} from '../../shared/utils/formatElapsed';
+import {startPerfCycle} from '../../shared/utils/perf';
 
 type UseTodoDisplayItemsOptions = {
 	items: TodoPanelItem[];
 	isWorking: boolean;
 	pausedAtMs: number | null;
 	active: boolean;
+	tickMs?: number;
 };
+
+export function hasTickingElapsedItems(items: TodoPanelItem[]): boolean {
+	return items.some(
+		item => item.status === 'doing' && item.startedAtMs !== undefined,
+	);
+}
 
 export function buildTodoDisplayItems(
 	items: TodoPanelItem[],
@@ -36,22 +44,27 @@ export function useTodoDisplayItems({
 	isWorking,
 	pausedAtMs,
 	active,
+	tickMs = 1000,
 }: UseTodoDisplayItemsOptions): TodoPanelItem[] {
 	const [nowMs, setNowMs] = useState(() => Date.now());
-	const hasDoingItems = useMemo(
-		() =>
-			items.some(
-				item => item.status === 'doing' && item.startedAtMs !== undefined,
-			),
-		[items],
-	);
+	const hasDoingItems = useMemo(() => hasTickingElapsedItems(items), [items]);
 
 	useEffect(() => {
 		if (!active || !isWorking || !hasDoingItems) return;
+		startPerfCycle('timer:todo-header', {
+			scope: 'todo.elapsed',
+			items: items.length,
+		});
 		setNowMs(Date.now());
-		const id = setInterval(() => setNowMs(Date.now()), 1000);
+		const id = setInterval(() => {
+			startPerfCycle('timer:todo-header', {
+				scope: 'todo.elapsed',
+				items: items.length,
+			});
+			setNowMs(Date.now());
+		}, tickMs);
 		return () => clearInterval(id);
-	}, [active, isWorking, hasDoingItems]);
+	}, [active, isWorking, hasDoingItems, items.length, tickMs]);
 
 	return useMemo(
 		() => buildTodoDisplayItems(items, nowMs, isWorking, pausedAtMs),
