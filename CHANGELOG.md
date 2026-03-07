@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.10](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.9...cli-v0.3.10) (2026-03-07)
+
+
+### Bug Fixes
+
+* trigger release ([5421256](https://github.com/lespaceman/athena-flow-cli/commit/54212564ca4230c631de2109ac24cfaa2e8ff850))
+
 ## [0.3.9](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.8...cli-v0.3.9) (2026-03-07)
 
 
