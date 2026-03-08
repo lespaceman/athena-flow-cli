@@ -77,7 +77,8 @@ function isIsolationPreset(value: string): value is IsolationPreset {
 	return (VALID_ISOLATION_PRESETS as readonly string[]).includes(value);
 }
 
-function exitWith(code: number): void {
+async function exitWith(code: number): Promise<never> {
+	await shutdownTelemetry();
 	process.exit(code);
 }
 
@@ -224,7 +225,7 @@ async function main(): Promise<void> {
 			`Unknown command: ${command}\n` +
 				`Available commands: ${[...KNOWN_COMMANDS].join(', ')}`,
 		);
-		exitWith(1);
+		await exitWith(1);
 		return;
 	}
 
@@ -233,19 +234,19 @@ async function main(): Promise<void> {
 		commandArgs.length > 0
 	) {
 		console.error(`Command "${command}" does not accept positional arguments.`);
-		exitWith(1);
+		await exitWith(1);
 		return;
 	}
 
 	if (command === 'resume' && commandArgs.length > 1) {
 		console.error('Usage: athena-flow resume [sessionId]');
-		exitWith(1);
+		await exitWith(1);
 		return;
 	}
 
 	if (command === 'exec' && commandArgs.length !== 1) {
 		console.error('Usage: athena-flow exec "<prompt>" [options]');
-		exitWith(EXEC_EXIT_CODE.USAGE);
+		await exitWith(EXEC_EXIT_CODE.USAGE);
 		return;
 	}
 
@@ -270,7 +271,7 @@ async function main(): Promise<void> {
 			return;
 		}
 
-		exitWith(runWorkflowCommand({subcommand, subcommandArgs}));
+		await exitWith(runWorkflowCommand({subcommand, subcommandArgs}));
 		return;
 	}
 
@@ -288,7 +289,8 @@ async function main(): Promise<void> {
 			);
 		} else {
 			const currentConfig = readGlobalConfig();
-			const isEnabled = currentConfig.telemetry !== false;
+			const envDisabled = process.env['ATHENA_TELEMETRY_DISABLED'] === '1';
+			const isEnabled = currentConfig.telemetry !== false && !envDisabled;
 			console.log(
 				`Telemetry is currently ${isEnabled ? 'enabled' : 'disabled'}.`,
 			);
@@ -336,7 +338,7 @@ async function main(): Promise<void> {
 		});
 	} catch (error) {
 		console.error(`Error: ${(error as Error).message}`);
-		exitWith(command === 'exec' ? EXEC_EXIT_CODE.BOOTSTRAP : 1);
+		await exitWith(command === 'exec' ? EXEC_EXIT_CODE.BOOTSTRAP : 1);
 		return;
 	}
 
@@ -365,11 +367,6 @@ async function main(): Promise<void> {
 		);
 	}
 
-	// Flush telemetry on exit
-	process.on('beforeExit', () => {
-		void shutdownTelemetry();
-	});
-
 	if (command === 'exec') {
 		const exitCode = await runExecCommand({
 			projectDir,
@@ -387,7 +384,7 @@ async function main(): Promise<void> {
 			runtimeConfig,
 		});
 
-		exitWith(exitCode);
+		await exitWith(exitCode);
 		return;
 	}
 
@@ -407,7 +404,7 @@ async function main(): Promise<void> {
 		logError: console.error,
 	});
 	if (!interactiveSession) {
-		exitWith(1);
+		await exitWith(1);
 		return;
 	}
 
@@ -443,9 +440,8 @@ void main().catch(async error => {
 		errorName: error instanceof Error ? error.name : 'UnknownError',
 		stackTrace: error instanceof Error ? (error.stack ?? '') : String(error),
 	});
-	await shutdownTelemetry();
 	console.error(
 		`Error: ${error instanceof Error ? error.message : String(error)}`,
 	);
-	exitWith(1);
+	await exitWith(1);
 });
