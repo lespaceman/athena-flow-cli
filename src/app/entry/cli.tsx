@@ -11,6 +11,14 @@ import {processRegistry} from '../../shared/utils/processRegistry';
 import {type IsolationPreset} from '../../harnesses/claude/config/isolation';
 import {registerBuiltins} from '../commands/builtins/index';
 import {readConfig, readGlobalConfig} from '../../infra/plugins/index';
+import {
+	initTelemetry,
+	shutdownTelemetry,
+	generateDeviceId,
+	trackAppLaunched,
+	trackError,
+} from '../../infra/telemetry/index';
+import {writeGlobalConfig} from '../../infra/plugins/config';
 import {bootstrapRuntimeConfig} from '../bootstrap/bootstrapConfig';
 import {resolveTheme} from '../../ui/theme/index';
 import {shouldShowSetup} from '../../setup/shouldShowSetup';
@@ -312,6 +320,32 @@ async function main(): Promise<void> {
 		console.error(warning);
 	}
 
+	// Initialize anonymous telemetry
+	const isFirstRun = !globalConfig.deviceId;
+	let resolvedDeviceId = globalConfig.deviceId;
+	if (!resolvedDeviceId) {
+		resolvedDeviceId = generateDeviceId();
+		writeGlobalConfig({deviceId: resolvedDeviceId});
+	}
+	initTelemetry({
+		deviceId: resolvedDeviceId,
+		telemetryEnabled: globalConfig.telemetry,
+	});
+	trackAppLaunched({version, harness: runtimeConfig.harness});
+
+	// Show telemetry notice on first run
+	if (isFirstRun && globalConfig.telemetry !== false) {
+		console.log(
+			'\n  Athena collects anonymous usage data to improve the product.' +
+				"\n  Run 'athena-flow telemetry disable' or set ATHENA_TELEMETRY_DISABLED=1 to opt out.\n",
+		);
+	}
+
+	// Flush telemetry on exit
+	process.on('beforeExit', () => {
+		void shutdownTelemetry();
+	});
+
 	if (command === 'exec') {
 		const exitCode = await runExecCommand({
 			projectDir,
@@ -380,7 +414,12 @@ async function main(): Promise<void> {
 	);
 }
 
-void main().catch(error => {
+void main().catch(async error => {
+	trackError({
+		errorName: error instanceof Error ? error.name : 'UnknownError',
+		stackTrace: error instanceof Error ? (error.stack ?? '') : String(error),
+	});
+	await shutdownTelemetry();
 	console.error(
 		`Error: ${error instanceof Error ? error.message : String(error)}`,
 	);
