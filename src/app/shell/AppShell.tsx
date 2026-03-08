@@ -298,6 +298,7 @@ function AppContent({
 				permissionsDenied: m.permissions.denied,
 			});
 		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: captures initial session context
 	}, []);
 
 	useTerminalTitle(feedEvents, isHarnessRunning);
