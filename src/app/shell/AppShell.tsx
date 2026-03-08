@@ -86,6 +86,10 @@ import {
 	logReactCommit,
 	startEventLoopMonitor,
 } from '../../shared/utils/perf';
+import {
+	trackSessionStarted,
+	trackSessionEnded,
+} from '../../infra/telemetry/index';
 
 type Props = {
 	projectDir: string;
@@ -271,6 +275,31 @@ function AppContent({
 	const initialSessionRef = useRef(initialSessionId);
 
 	const metrics = useHeaderMetrics(feedEvents);
+
+	// Track session telemetry
+	const metricsRef = useRef(metrics);
+	metricsRef.current = metrics;
+
+	useEffect(() => {
+		trackSessionStarted({
+			harness,
+			workflow: workflowRef,
+			model: modelName ?? undefined,
+		});
+
+		const startTime = Date.now();
+		return () => {
+			const m = metricsRef.current;
+			trackSessionEnded({
+				durationMs: Date.now() - startTime,
+				toolCallCount: m.totalToolCallCount,
+				subagentCount: m.subagentCount,
+				permissionsAllowed: m.permissions.allowed,
+				permissionsDenied: m.permissions.denied,
+			});
+		};
+	}, []);
+
 	useTerminalTitle(feedEvents, isHarnessRunning);
 	const appMode = useAppMode(
 		isHarnessRunning,
