@@ -1,8 +1,14 @@
 import {PostHog} from 'posthog-node';
 
-// PostHog write-only API key (safe to embed — cannot read data)
-const POSTHOG_API_KEY = 'phc_PLACEHOLDER_REPLACE_WITH_REAL_KEY';
+// PostHog API key is injected at build time by tsup's `define` option.
+// The env var POSTHOG_API_KEY must be set during `npm run build` (e.g. in CI
+// via a GitHub Actions secret). When absent the key is empty and telemetry
+// silently no-ops — this is the expected behaviour for local dev builds.
+const POSTHOG_API_KEY: string =
+	typeof __POSTHOG_API_KEY__ === 'string' ? __POSTHOG_API_KEY__ : '';
 const POSTHOG_HOST = 'https://us.i.posthog.com';
+
+declare const __POSTHOG_API_KEY__: string | undefined;
 
 let client: PostHog | null = null;
 let deviceId: string | null = null;
@@ -15,7 +21,8 @@ export type TelemetryInitOptions = {
 
 export function initTelemetry(options: TelemetryInitOptions): void {
 	const envDisabled = process.env['ATHENA_TELEMETRY_DISABLED'] === '1';
-	enabled = (options.telemetryEnabled ?? true) && !envDisabled;
+	const hasKey = POSTHOG_API_KEY.length > 0;
+	enabled = hasKey && (options.telemetryEnabled ?? true) && !envDisabled;
 
 	if (!enabled) {
 		return;
