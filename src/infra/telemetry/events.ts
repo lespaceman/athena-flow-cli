@@ -8,13 +8,6 @@ function systemProps() {
 	};
 }
 
-export function trackAppInstalled(props: {
-	version: string;
-	harness: string;
-}): void {
-	capture('app.installed', {...props, ...systemProps()});
-}
-
 export function trackAppLaunched(props: {
 	version: string;
 	harness: string;
