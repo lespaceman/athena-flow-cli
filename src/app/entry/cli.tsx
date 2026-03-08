@@ -67,6 +67,7 @@ const KNOWN_COMMANDS = new Set([
 	'resume',
 	'exec',
 	'workflow',
+	'telemetry',
 ]);
 const VALID_ISOLATION_PRESETS = ['strict', 'minimal', 'permissive'] as const;
 const EXEC_PERMISSION_POLICIES_HELP = EXEC_PERMISSION_POLICIES.join(', ');
@@ -110,6 +111,7 @@ const cli = meow(
 			resume [sessionId]    Resume most recent (or specified) session
 			exec "<prompt>"       Run non-interactively (CI/script mode)
 			workflow <sub>        Manage workflows (install, list, remove, use)
+			telemetry [action]    Manage anonymous telemetry (enable/disable/status)
 
 		Options
 			--project-dir   Project directory for hook socket (default: cwd)
@@ -269,6 +271,28 @@ async function main(): Promise<void> {
 		}
 
 		exitWith(runWorkflowCommand({subcommand, subcommandArgs}));
+		return;
+	}
+
+	if (command === 'telemetry') {
+		const action = commandArgs[0] ?? 'status';
+		if (action === 'disable') {
+			writeGlobalConfig({telemetry: false});
+			console.log(
+				'Telemetry disabled. No anonymous usage data will be collected.',
+			);
+		} else if (action === 'enable') {
+			writeGlobalConfig({telemetry: true});
+			console.log(
+				'Telemetry enabled. Anonymous usage data will be collected on next launch.',
+			);
+		} else {
+			const currentConfig = readGlobalConfig();
+			const isEnabled = currentConfig.telemetry !== false;
+			console.log(
+				`Telemetry is currently ${isEnabled ? 'enabled' : 'disabled'}.`,
+			);
+		}
 		return;
 	}
 

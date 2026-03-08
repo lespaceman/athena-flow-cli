@@ -15,6 +15,7 @@ import {sessionsCommand} from './sessions';
 import {contextCommand} from './context';
 import {tasksCommand} from './tasks';
 import setup from './setup';
+import {telemetryCommand} from './telemetry';
 
 const builtins = [
 	helpCommand,
@@ -25,6 +26,7 @@ const builtins = [
 	sessionsCommand,
 	tasksCommand,
 	setup,
+	telemetryCommand,
 ];
 
 let registered = false;
