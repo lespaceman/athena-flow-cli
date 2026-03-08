@@ -41,6 +41,10 @@ export type AthenaConfig = {
 	setupComplete?: boolean;
 	/** Which AI coding harness is being used */
 	harness?: AthenaHarness;
+	/** Whether anonymous telemetry is enabled (default: true, opt-out) */
+	telemetry?: boolean;
+	/** Anonymous device identifier (UUIDv4, not tied to user identity) */
+	deviceId?: string;
 };
 
 const EMPTY_CONFIG: AthenaConfig = {plugins: [], additionalDirectories: []};
@@ -80,6 +84,8 @@ function readConfigFile(configPath: string, baseDir: string): AthenaConfig {
 		workflowSelections?: WorkflowSelections;
 		setupComplete?: boolean;
 		harness?: string;
+		telemetry?: boolean;
+		deviceId?: string;
 	};
 
 	const plugins = (raw.plugins ?? [])
@@ -119,6 +125,8 @@ function readConfigFile(configPath: string, baseDir: string): AthenaConfig {
 				: raw.harness === 'codex'
 					? 'openai-codex'
 					: undefined,
+		telemetry: raw.telemetry,
+		deviceId: raw.deviceId as string | undefined,
 	};
 }
 
