@@ -1,6 +1,10 @@
 import {describe, it, expect, vi, beforeEach} from 'vitest';
 import * as client from '../client';
-import {trackAppLaunched, trackSessionEnded} from '../events';
+import {
+	trackAppLaunched,
+	trackClaudeStartupFailed,
+	trackSessionEnded,
+} from '../events';
 
 vi.mock('../client', () => ({
 	capture: vi.fn(),
@@ -36,6 +40,22 @@ describe('telemetry events', () => {
 			subagentCount: 2,
 			permissionsAllowed: 8,
 			permissionsDenied: 1,
+		});
+	});
+
+	it('tracks sanitized Claude startup failure diagnostics', () => {
+		trackClaudeStartupFailed({
+			harness: 'claude-code',
+			failureStage: 'spawn_error',
+			message: 'spawn claude ENOENT',
+		});
+		expect(client.capture).toHaveBeenCalledWith('claude.startup_failed', {
+			harness: 'claude-code',
+			platform: expect.any(String),
+			failure_stage: 'spawn_error',
+			resolved_binary: false,
+			exit_code: undefined,
+			classified_reason: 'binary_not_found',
 		});
 	});
 });

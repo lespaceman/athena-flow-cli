@@ -1,5 +1,6 @@
 import {type UICommand} from '../types';
 import {
+	disableTelemetry,
 	isTelemetryEnabled,
 	trackTelemetryOptedOut,
 } from '../../../infra/telemetry/index';
@@ -35,12 +36,13 @@ export const telemetryCommand: UICommand = {
 
 			case 'disable':
 				trackTelemetryOptedOut();
+				void disableTelemetry();
 				writeGlobalConfig({telemetry: false});
 				ctx.addMessage({
 					id: generateId(),
 					role: 'assistant',
 					content:
-						'Telemetry disabled. No anonymous usage data will be collected.',
+						'Telemetry disabled. No anonymous usage data will be collected in this session or future launches.',
 					timestamp: new Date(),
 				});
 				break;

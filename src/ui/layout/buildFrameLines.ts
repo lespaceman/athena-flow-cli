@@ -125,7 +125,9 @@ export function buildFrameLines(ctx: FrameContext): FrameLines {
 				fit(
 					ctx.dialogType === 'question'
 						? 'Answer question in dialog...'
-						: 'Respond to permission dialog...',
+						: ctx.dialogType === 'diagnostics'
+							? 'Respond to diagnostics dialog...'
+							: 'Respond to permission dialog...',
 					inputContentWidth,
 				),
 			]

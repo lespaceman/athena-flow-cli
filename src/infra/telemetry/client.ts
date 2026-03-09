@@ -41,6 +41,18 @@ export function isTelemetryEnabled(): boolean {
 	return enabled;
 }
 
+export function disableTelemetry(): Promise<void> {
+	enabled = false;
+	deviceId = null;
+	if (!client) {
+		return Promise.resolve();
+	}
+
+	const currentClient = client;
+	client = null;
+	return currentClient.shutdown();
+}
+
 export function capture(
 	event: string,
 	properties?: Record<string, unknown>,

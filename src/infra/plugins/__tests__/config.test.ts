@@ -168,6 +168,14 @@ describe('readGlobalConfig', () => {
 			additionalDirectories: [],
 		});
 	});
+
+	it('reads telemetryDiagnostics from global config', () => {
+		files['/home/testuser/.config/athena/config.json'] = JSON.stringify({
+			telemetryDiagnostics: true,
+		});
+
+		expect(readGlobalConfig().telemetryDiagnostics).toBe(true);
+	});
 });
 
 describe('marketplace ref integration', () => {
@@ -314,6 +322,15 @@ describe('writeGlobalConfig', () => {
 		expect(written.plugins).toEqual(['existing']);
 		expect(written.setupComplete).toBe(true);
 		expect(written.harness).toBe('claude-code');
+	});
+
+	it('writes telemetryDiagnostics preference to global config', () => {
+		writeGlobalConfig({telemetryDiagnostics: false});
+
+		const written = JSON.parse(
+			files['/home/testuser/.config/athena/config.json']!,
+		) as Record<string, unknown>;
+		expect(written['telemetryDiagnostics']).toBe(false);
 	});
 
 	it('creates config when none exists', () => {

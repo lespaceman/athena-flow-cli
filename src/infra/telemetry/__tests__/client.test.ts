@@ -1,5 +1,6 @@
 import {describe, it, expect, vi, beforeEach, afterEach} from 'vitest';
 import {
+	disableTelemetry,
 	initTelemetry,
 	shutdownTelemetry,
 	isTelemetryEnabled,
@@ -60,5 +61,14 @@ describe('telemetry client', () => {
 		// Should not throw, just silently no-op
 		capture('test.event', {key: 'value'});
 		// No PostHog instance created, so nothing to verify except no crash
+	});
+
+	it('disableTelemetry turns off telemetry immediately for the current process', async () => {
+		initTelemetry({deviceId: 'test-id'});
+		expect(isTelemetryEnabled()).toBe(true);
+
+		await disableTelemetry();
+
+		expect(isTelemetryEnabled()).toBe(false);
 	});
 });

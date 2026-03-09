@@ -65,6 +65,12 @@ describe('deriveTextInputPlaceholder', () => {
 		).toBe('Respond to permission dialog...');
 	});
 
+	it('returns diagnostics message for diagnostics dialog', () => {
+		expect(
+			deriveTextInputPlaceholder(true, 'diagnostics', 'Type a prompt to begin'),
+		).toBe('Respond to diagnostics dialog...');
+	});
+
 	it('returns permission message for other dialog types', () => {
 		expect(
 			deriveTextInputPlaceholder(true, 'working', 'Type a prompt to begin'),

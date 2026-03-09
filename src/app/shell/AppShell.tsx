@@ -10,6 +10,9 @@ import React, {
 import {Box, Text, useApp, useInput, useStdout} from 'ink';
 import PermissionDialog from '../../ui/components/PermissionDialog';
 import QuestionDialog from '../../ui/components/QuestionDialog';
+import DiagnosticsConsentDialog, {
+	type DiagnosticsConsentDecision,
+} from '../../ui/components/DiagnosticsConsentDialog';
 import ErrorBoundary from '../../ui/components/ErrorBoundary';
 import {HookProvider} from '../providers/RuntimeProvider';
 import {useHarnessProcess} from '../process/useHarnessProcess';
@@ -60,12 +63,16 @@ import {
 } from '../../ui/theme/index';
 import SessionPicker from '../../ui/components/SessionPicker';
 import type {SessionEntry} from '../../shared/types/session';
-import type {AthenaHarness} from '../../infra/plugins/config';
+import {
+	type AthenaHarness,
+	writeGlobalConfig,
+} from '../../infra/plugins/config';
 import {listSessions, getSessionMeta} from '../../infra/sessions/registry';
 import chalk from 'chalk';
 import {fit} from '../../shared/utils/format';
 import {copyToClipboard} from '../../shared/utils/clipboard';
 import {extractYankContent} from '../../ui/utils/yankContent';
+import {detectHarness} from '../../shared/utils/detectHarness';
 import type {WorkflowConfig} from '../../core/workflows/types';
 import SetupWizard from '../../setup/SetupWizard';
 import {bootstrapRuntimeConfig} from '../bootstrap/bootstrapConfig';
@@ -88,6 +95,8 @@ import {
 	startEventLoopMonitor,
 } from '../../shared/utils/perf';
 import {
+	isTelemetryEnabled,
+	trackClaudeStartupFailed,
 	trackSessionStarted,
 	trackSessionEnded,
 } from '../../infra/telemetry/index';
@@ -116,6 +125,7 @@ type Props = {
 	ascii?: boolean;
 	showSetup?: boolean;
 	athenaSessionId: string;
+	initialTelemetryDiagnosticsConsent?: boolean;
 };
 
 type AppPhase =
@@ -170,6 +180,28 @@ function QuestionErrorFallback({onSkip}: {onSkip: () => void}) {
 	);
 }
 
+function DiagnosticsConsentErrorFallback({onDismiss}: {onDismiss: () => void}) {
+	const theme = useTheme();
+	useInput((_input, key) => {
+		if (key.escape) onDismiss();
+	});
+	return (
+		<Text color={theme.status.error}>
+			[Diagnostics consent dialog error -- press Escape to dismiss]
+		</Text>
+	);
+}
+
+type PendingStartupDiagnosticsEvent = {
+	failureStage: 'spawn_error' | 'exit_nonzero';
+	message: string;
+	exitCode?: number;
+};
+
+type StartupAttemptState = {
+	feedEventCountAtSpawn: number;
+};
+
 function AppContent({
 	projectDir,
 	instanceId,
@@ -186,6 +218,7 @@ function AppContent({
 	inputHistory,
 	sessionTelemetryMetricsRef,
 	onSessionTelemetrySnapshot,
+	initialTelemetryDiagnosticsConsent,
 	workflowRef,
 	workflow,
 	ascii,
@@ -205,13 +238,20 @@ function AppContent({
 	inputHistory: InputHistory;
 	sessionTelemetryMetricsRef: React.MutableRefObject<SessionMetrics>;
 	onSessionTelemetrySnapshot: (metrics: SessionMetrics) => void;
+	initialTelemetryDiagnosticsConsent?: boolean;
 }) {
 	const [messages, setMessages] = useState<MessageType[]>([]);
 	const [uiState, setUiState] = useState(initialSessionUiState);
 	const [toastMessage, setToastMessage] = useState<string | null>(null);
+	const [diagnosticsConsent, setDiagnosticsConsent] = useState<
+		boolean | undefined
+	>(initialTelemetryDiagnosticsConsent);
+	const [pendingStartupDiagnostics, setPendingStartupDiagnostics] =
+		useState<PendingStartupDiagnosticsEvent | null>(null);
 	const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const messagesRef = useRef(messages);
 	messagesRef.current = messages;
+	const startupAttemptRef = useRef<StartupAttemptState | null>(null);
 	const inputMode = uiState.inputMode;
 	const hintsForced = uiState.hintsForced;
 	const showRunOverlay = uiState.showRunOverlay;
@@ -264,6 +304,7 @@ function AppContent({
 	const currentSessionId = session?.session_id ?? null;
 	const sessionScope = useSessionScope(athenaSessionId, currentSessionId);
 	const timelineCurrentRun = useTimelineCurrentRun(currentRun);
+	const harnessLabel = detectHarness(harness);
 
 	const onExitTokens = useCallback(
 		(tokens: import('../../shared/types/headerMetrics').TokenUsage) => {
@@ -274,24 +315,73 @@ function AppContent({
 		[session?.session_id, recordTokens],
 	);
 
+	const emitClaudeStartupDiagnostics = useCallback(
+		(event: PendingStartupDiagnosticsEvent) => {
+			trackClaudeStartupFailed({
+				harness,
+				failureStage: event.failureStage,
+				message: event.message,
+				exitCode: event.exitCode,
+			});
+		},
+		[harness],
+	);
+
 	const onProcessLifecycleEvent = useCallback(
 		(
 			event: import('../../core/runtime/process').HarnessProcessLifecycleEvent,
 		) => {
+			const startupAttempt = startupAttemptRef.current;
+			const isStartupFailure =
+				harness === 'claude-code' && startupAttempt !== null;
+
 			if (event.type === 'spawn_error') {
 				emitNotification(
-					`Athena failed to start Claude: ${event.message}`,
-					'Claude Process Error',
+					`Athena failed to start ${harnessLabel}: ${event.message}`,
+					`${harnessLabel} Process Error`,
 				);
+
+				if (isStartupFailure && isTelemetryEnabled()) {
+					const diagnosticsEvent: PendingStartupDiagnosticsEvent = {
+						failureStage: 'spawn_error',
+						message: event.message,
+					};
+					if (diagnosticsConsent === true) {
+						emitClaudeStartupDiagnostics(diagnosticsEvent);
+					} else if (diagnosticsConsent === undefined) {
+						setPendingStartupDiagnostics(diagnosticsEvent);
+					}
+				}
+				startupAttemptRef.current = null;
 				return;
 			}
 
 			emitNotification(
-				`Athena lost the Claude process: ${event.message}`,
-				'Claude Process Error',
+				`Athena lost the ${harnessLabel} process: ${event.message}`,
+				`${harnessLabel} Process Error`,
 			);
+
+			if (isStartupFailure && isTelemetryEnabled()) {
+				const diagnosticsEvent: PendingStartupDiagnosticsEvent = {
+					failureStage: 'exit_nonzero',
+					message: event.message,
+					exitCode: event.code,
+				};
+				if (diagnosticsConsent === true) {
+					emitClaudeStartupDiagnostics(diagnosticsEvent);
+				} else if (diagnosticsConsent === undefined) {
+					setPendingStartupDiagnostics(diagnosticsEvent);
+				}
+			}
+			startupAttemptRef.current = null;
 		},
-		[emitNotification],
+		[
+			diagnosticsConsent,
+			emitClaudeStartupDiagnostics,
+			emitNotification,
+			harness,
+			harnessLabel,
+		],
 	);
 
 	const {
@@ -338,8 +428,21 @@ function AppContent({
 		currentPermissionRequest,
 		currentQuestionRequest,
 	);
+	const diagnosticsDialogActive = pendingStartupDiagnostics !== null;
 	const dialogActive =
-		appMode.type === 'permission' || appMode.type === 'question';
+		diagnosticsDialogActive ||
+		appMode.type === 'permission' ||
+		appMode.type === 'question';
+	const activeDialogType = diagnosticsDialogActive
+		? 'diagnostics'
+		: appMode.type;
+
+	useEffect(() => {
+		const startupAttempt = startupAttemptRef.current;
+		if (!startupAttempt) return;
+		if (feedEvents.length <= startupAttempt.feedEventCountAtSpawn) return;
+		startupAttemptRef.current = null;
+	}, [feedEvents.length]);
 
 	const addMessage = useCallback(
 		(role: 'user' | 'assistant', content: string) => {
@@ -454,8 +557,14 @@ function AppContent({
 			if (result.type === 'prompt') {
 				addMessage('user', result.text);
 				const sessionToResume = currentSessionId ?? initialSessionRef.current;
+				startupAttemptRef.current = {
+					feedEventCountAtSpawn: feedEvents.length,
+				};
 				spawnHarness(result.text, sessionToResume ?? undefined).catch(
-					(err: unknown) => console.error('[athena] spawn failed:', err),
+					(err: unknown) => {
+						startupAttemptRef.current = null;
+						console.error('[athena] spawn failed:', err);
+					},
 				);
 				// Clear intent after first use — subsequent prompts use currentSessionId from mapper
 				if (initialSessionRef.current) {
@@ -493,7 +602,17 @@ function AppContent({
 				},
 				hook: {args: result.args, feed: hookCommandFeed},
 				prompt: {
-					spawn: spawnHarness,
+					spawn: (prompt, sessionId, configOverride) => {
+						startupAttemptRef.current = {
+							feedEventCountAtSpawn: feedEvents.length,
+						};
+						return spawnHarness(prompt, sessionId, configOverride).catch(
+							(err: unknown) => {
+								startupAttemptRef.current = null;
+								throw err;
+							},
+						);
+					},
 					currentSessionId: currentSessionId ?? undefined,
 				},
 			}).catch((err: unknown) => {
@@ -504,6 +623,7 @@ function AppContent({
 			inputHistory,
 			addMessage,
 			allocateSeq,
+			feedEvents.length,
 			spawnHarness,
 			currentSessionId,
 			exit,
@@ -655,7 +775,7 @@ function AppContent({
 		searchMatchPos,
 		isHarnessRunning,
 		dialogActive,
-		dialogType: appMode.type,
+		dialogType: activeDialogType,
 		hintsForced,
 		ascii: !!ascii,
 		accentColor: theme.inputPrompt,
@@ -685,6 +805,29 @@ function AppContent({
 		if (!currentQuestionRequest?.cause?.hook_request_id) return;
 		resolveQuestion(currentQuestionRequest.cause.hook_request_id, {});
 	}, [currentQuestionRequest, resolveQuestion]);
+	const handleDiagnosticsDecision = useCallback(
+		(decision: DiagnosticsConsentDecision) => {
+			const pending = pendingStartupDiagnostics;
+			setPendingStartupDiagnostics(null);
+			if (!pending) return;
+
+			if (decision === 'send-once') {
+				emitClaudeStartupDiagnostics(pending);
+				return;
+			}
+
+			if (decision === 'always-send') {
+				writeGlobalConfig({telemetryDiagnostics: true});
+				setDiagnosticsConsent(true);
+				emitClaudeStartupDiagnostics(pending);
+				return;
+			}
+
+			writeGlobalConfig({telemetryDiagnostics: false});
+			setDiagnosticsConsent(false);
+		},
+		[emitClaudeStartupDiagnostics, pendingStartupDiagnostics],
+	);
 
 	const {pagerActive, handleExpandForPager} = usePager({
 		filteredEntriesRef,
@@ -856,7 +999,7 @@ function AppContent({
 			isHarnessRunning,
 			lastRunStatus,
 			dialogActive,
-			dialogType: appMode.type,
+			dialogType: activeDialogType,
 			ascii: useAscii,
 		});
 	inputContentWidthRef.current = inputContentWidth;
@@ -1028,6 +1171,28 @@ function AppContent({
 					border={border}
 					bottomBorder={bottomBorder}
 				/>
+			</MaybeProfiler>
+			<MaybeProfiler
+				enabled={perfEnabled}
+				id="app.main.diagnostics-dialog"
+				onRender={handleSectionProfilerRender}
+			>
+				<>
+					{pendingStartupDiagnostics && (
+						<ErrorBoundary
+							fallback={
+								<DiagnosticsConsentErrorFallback
+									onDismiss={() => setPendingStartupDiagnostics(null)}
+								/>
+							}
+						>
+							<DiagnosticsConsentDialog
+								harnessLabel={harnessLabel}
+								onDecision={handleDiagnosticsDecision}
+							/>
+						</ErrorBoundary>
+					)}
+				</>
 			</MaybeProfiler>
 			<MaybeProfiler
 				enabled={perfEnabled}
@@ -1426,6 +1591,7 @@ export default function App({
 	isolationPreset,
 	ascii,
 	athenaSessionId: initialAthenaSessionId,
+	initialTelemetryDiagnosticsConsent,
 }: Props) {
 	const [clearCount, setClearCount] = useState(0);
 	const perfEnabled = isPerfEnabled();
@@ -1689,6 +1855,9 @@ export default function App({
 					workflowRef={runtimeState.workflowRef}
 					workflow={runtimeState.workflow}
 					ascii={ascii}
+					initialTelemetryDiagnosticsConsent={
+						initialTelemetryDiagnosticsConsent
+					}
 				/>
 			</HookProvider>
 		</ThemeProvider>

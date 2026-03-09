@@ -17,6 +17,7 @@ import {
 	generateDeviceId,
 	trackAppLaunched,
 	trackError,
+	trackTelemetryOptedOut,
 } from '../../infra/telemetry/index';
 import {writeGlobalConfig} from '../../infra/plugins/config';
 import {bootstrapRuntimeConfig} from '../bootstrap/bootstrapConfig';
@@ -80,6 +81,28 @@ function isIsolationPreset(value: string): value is IsolationPreset {
 async function exitWith(code: number): Promise<never> {
 	await shutdownTelemetry();
 	process.exit(code);
+}
+
+async function flushTelemetryOptOut(config: {
+	deviceId?: string;
+	telemetry?: boolean;
+}): Promise<void> {
+	if (config.telemetry === false) {
+		return;
+	}
+
+	let deviceId = config.deviceId;
+	if (!deviceId) {
+		deviceId = generateDeviceId();
+		writeGlobalConfig({deviceId});
+	}
+
+	initTelemetry({
+		deviceId,
+		telemetryEnabled: config.telemetry,
+	});
+	trackTelemetryOptedOut();
+	await shutdownTelemetry();
 }
 
 function inkRenderOptions() {
@@ -276,8 +299,10 @@ async function main(): Promise<void> {
 	}
 
 	if (command === 'telemetry') {
+		const currentConfig = readGlobalConfig();
 		const action = commandArgs[0] ?? 'status';
 		if (action === 'disable') {
+			await flushTelemetryOptOut(currentConfig);
 			writeGlobalConfig({telemetry: false});
 			console.log(
 				'Telemetry disabled. No anonymous usage data will be collected.',
@@ -288,7 +313,6 @@ async function main(): Promise<void> {
 				'Telemetry enabled. Anonymous usage data will be collected on next launch.',
 			);
 		} else {
-			const currentConfig = readGlobalConfig();
 			const envDisabled = process.env['ATHENA_TELEMETRY_DISABLED'] === '1';
 			const isEnabled = currentConfig.telemetry !== false && !envDisabled;
 			console.log(
@@ -360,7 +384,7 @@ async function main(): Promise<void> {
 	trackAppLaunched({version, harness: runtimeConfig.harness});
 
 	// Show telemetry notice on first run
-	if (isFirstRun && globalConfig.telemetry !== false) {
+	if (command !== 'exec' && isFirstRun && globalConfig.telemetry !== false) {
 		console.log(
 			'\n  Athena collects anonymous usage data to improve the product.' +
 				"\n  Run 'athena-flow telemetry disable' or set ATHENA_TELEMETRY_DISABLED=1 to opt out.\n",
@@ -430,6 +454,7 @@ async function main(): Promise<void> {
 			isolationPreset={isolationPreset}
 			ascii={cli.flags.ascii}
 			showSetup={showSetup}
+			initialTelemetryDiagnosticsConsent={globalConfig.telemetryDiagnostics}
 		/>,
 		inkRenderOptions(),
 	);

@@ -43,6 +43,8 @@ export type AthenaConfig = {
 	harness?: AthenaHarness;
 	/** Whether anonymous telemetry is enabled (default: true, opt-out) */
 	telemetry?: boolean;
+	/** Whether anonymous startup diagnostics may be sent after explicit consent */
+	telemetryDiagnostics?: boolean;
 	/** Anonymous device identifier (UUIDv4, not tied to user identity) */
 	deviceId?: string;
 };
@@ -85,6 +87,7 @@ function readConfigFile(configPath: string, baseDir: string): AthenaConfig {
 		setupComplete?: boolean;
 		harness?: string;
 		telemetry?: boolean;
+		telemetryDiagnostics?: boolean;
 		deviceId?: string;
 	};
 
@@ -126,6 +129,7 @@ function readConfigFile(configPath: string, baseDir: string): AthenaConfig {
 					? 'openai-codex'
 					: undefined,
 		telemetry: raw.telemetry,
+		telemetryDiagnostics: raw.telemetryDiagnostics,
 		deviceId: raw.deviceId,
 	};
 }

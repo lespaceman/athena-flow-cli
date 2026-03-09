@@ -24,6 +24,7 @@ export function deriveTextInputPlaceholder(
 ): string {
 	if (!dialogActive) return inputPlaceholder;
 	if (dialogType === 'question') return 'Answer question in dialog...';
+	if (dialogType === 'diagnostics') return 'Respond to diagnostics dialog...';
 	return 'Respond to permission dialog...';
 }
 
