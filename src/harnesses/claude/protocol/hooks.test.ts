@@ -7,12 +7,20 @@ import {
 	createPermissionRequestAllowResult,
 	type HookEventEnvelope,
 	type PreToolUseEvent,
+	type PermissionRequestEvent,
 	type PostToolUseEvent,
 	type PostToolUseFailureEvent,
 	type NotificationEvent,
 	type StopEvent,
 	type SubagentStartEvent,
 	type SubagentStopEvent,
+	type SessionEndEvent,
+	type TeammateIdleEvent,
+	type TaskCompletedEvent,
+	type ConfigChangeEvent,
+	type InstructionsLoadedEvent,
+	type WorktreeCreateEvent,
+	type WorktreeRemoveEvent,
 	isPreToolUseEvent,
 	isSubagentStartEvent,
 	isSubagentStopEvent,
@@ -142,6 +150,12 @@ describe('hooks types', () => {
 				'SessionEnd',
 				'Notification',
 				'Setup',
+				'TeammateIdle',
+				'TaskCompleted',
+				'ConfigChange',
+				'InstructionsLoaded',
+				'WorktreeCreate',
+				'WorktreeRemove',
 			];
 
 			for (const name of validNames) {
@@ -217,6 +231,14 @@ describe('hooks types', () => {
 	});
 
 	describe('type guards', () => {
+		const permissionRequestEvent: PermissionRequestEvent = {
+			...createBaseEvent(),
+			hook_event_name: 'PermissionRequest',
+			tool_name: 'Bash',
+			tool_input: {command: 'ls'},
+			permission_suggestions: [{type: 'toolAlwaysAllow', tool: 'Bash'}],
+		};
+
 		const preToolUseEvent: PreToolUseEvent = {
 			...createBaseEvent(),
 			hook_event_name: 'PreToolUse',
@@ -244,6 +266,7 @@ describe('hooks types', () => {
 			...createBaseEvent(),
 			hook_event_name: 'Notification',
 			message: 'Test notification',
+			title: 'Permission needed',
 			notification_type: 'permission_prompt',
 		};
 
@@ -267,6 +290,70 @@ describe('hooks types', () => {
 			agent_id: 'agent-123',
 			agent_type: 'Explore',
 		};
+
+		const sessionEndEvent: SessionEndEvent = {
+			...createBaseEvent(),
+			hook_event_name: 'SessionEnd',
+			reason: 'bypass_permissions_disabled',
+		};
+
+		const teammateIdleEvent: TeammateIdleEvent = {
+			...createBaseEvent(),
+			hook_event_name: 'TeammateIdle',
+			teammate_name: 'researcher',
+			team_name: 'my-project',
+		};
+
+		const taskCompletedEvent: TaskCompletedEvent = {
+			...createBaseEvent(),
+			hook_event_name: 'TaskCompleted',
+			task_id: 'task-001',
+			task_subject: 'Implement auth',
+			task_description: 'Add login and signup endpoints',
+			teammate_name: 'implementer',
+			team_name: 'my-project',
+		};
+
+		const configChangeEvent: ConfigChangeEvent = {
+			...createBaseEvent(),
+			hook_event_name: 'ConfigChange',
+			source: 'project_settings',
+			file_path: '/home/user/project/.claude/settings.json',
+		};
+
+		const instructionsLoadedEvent: InstructionsLoadedEvent = {
+			...createBaseEvent(),
+			hook_event_name: 'InstructionsLoaded',
+			file_path: '/home/user/project/CLAUDE.md',
+			memory_type: 'Project',
+			load_reason: 'session_start',
+		};
+
+		const worktreeCreateEvent: WorktreeCreateEvent = {
+			...createBaseEvent(),
+			hook_event_name: 'WorktreeCreate',
+			name: 'feature-auth',
+		};
+
+		const worktreeRemoveEvent: WorktreeRemoveEvent = {
+			...createBaseEvent(),
+			hook_event_name: 'WorktreeRemove',
+			worktree_path: '/home/user/project/.claude/worktrees/feature-auth',
+		};
+
+		it('accepts the refined documented hook shapes', () => {
+			expect(permissionRequestEvent.permission_suggestions).toEqual([
+				{type: 'toolAlwaysAllow', tool: 'Bash'},
+			]);
+			expect(notificationEvent.title).toBe('Permission needed');
+			expect(sessionEndEvent.reason).toBe('bypass_permissions_disabled');
+			expect(teammateIdleEvent.team_name).toBe('my-project');
+			expect(taskCompletedEvent.task_id).toBe('task-001');
+			expect(configChangeEvent.source).toBe('project_settings');
+			expect(instructionsLoadedEvent.load_reason).toBe('session_start');
+			expect(worktreeCreateEvent.name).toBe('feature-auth');
+			expect(worktreeRemoveEvent.worktree_path).toContain('feature-auth');
+		});
 
 		it.each([
 			['isPreToolUseEvent', isPreToolUseEvent, preToolUseEvent],

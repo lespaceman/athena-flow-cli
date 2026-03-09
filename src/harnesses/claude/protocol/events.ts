@@ -18,14 +18,60 @@
  * - SessionEnd: Session terminates
  * - Notification: Claude Code sends notifications
  * - Setup: When Claude Code is invoked with --init, --init-only, or --maintenance flags
+ * - TeammateIdle: When a teammate is about to go idle
+ * - TaskCompleted: When a task is marked complete
+ * - ConfigChange: When configuration changes during a session
+ * - InstructionsLoaded: When CLAUDE.md or rules files are loaded
+ * - WorktreeCreate: When a worktree is created
+ * - WorktreeRemove: When a worktree is removed
  */
+
+export type PermissionMode =
+	| 'default'
+	| 'plan'
+	| 'acceptEdits'
+	| 'dontAsk'
+	| 'bypassPermissions';
+
+export type PermissionSuggestion = {
+	type: string;
+	tool: string;
+};
+
+export type NotificationType =
+	| 'permission_prompt'
+	| 'idle_prompt'
+	| 'auth_success'
+	| 'elicitation_dialog';
+
+export type SessionEndReason =
+	| 'clear'
+	| 'logout'
+	| 'prompt_input_exit'
+	| 'bypass_permissions_disabled'
+	| 'other';
+
+export type ConfigChangeSource =
+	| 'user_settings'
+	| 'project_settings'
+	| 'local_settings'
+	| 'policy_settings'
+	| 'skills';
+
+export type InstructionsMemoryType = 'User' | 'Project' | 'Local' | 'Managed';
+
+export type InstructionsLoadReason =
+	| 'session_start'
+	| 'nested_traversal'
+	| 'path_glob_match'
+	| 'include';
 
 // Base fields present in all hook events
 type BaseHookEvent = {
 	session_id: string;
 	transcript_path: string;
 	cwd: string;
-	permission_mode?: string; // "default", "plan", "acceptEdits", "dontAsk", or "bypassPermissions"
+	permission_mode?: PermissionMode;
 };
 
 // Tool-related fields for PreToolUse, PermissionRequest, PostToolUse, and PostToolUseFailure
@@ -43,6 +89,7 @@ export type PreToolUseEvent = ToolEventBase & {
 // PermissionRequest: When a permission dialog is shown
 export type PermissionRequestEvent = ToolEventBase & {
 	hook_event_name: 'PermissionRequest';
+	permission_suggestions?: PermissionSuggestion[];
 };
 
 // PostToolUse: After a tool completes successfully
@@ -64,7 +111,8 @@ export type PostToolUseFailureEvent = ToolEventBase & {
 export type NotificationEvent = BaseHookEvent & {
 	hook_event_name: 'Notification';
 	message: string;
-	notification_type?: string; // "permission_prompt", "idle_prompt", "auth_success", "elicitation_dialog"
+	title?: string;
+	notification_type?: NotificationType;
 };
 
 // Stop: Session stop event
@@ -121,7 +169,54 @@ export type SessionStartEvent = BaseHookEvent & {
 // SessionEnd: Session ends
 export type SessionEndEvent = BaseHookEvent & {
 	hook_event_name: 'SessionEnd';
-	reason: 'clear' | 'logout' | 'prompt_input_exit' | 'other';
+	reason: SessionEndReason;
+};
+
+// TeammateIdle: Team teammate is about to go idle
+export type TeammateIdleEvent = BaseHookEvent & {
+	hook_event_name: 'TeammateIdle';
+	teammate_name: string;
+	team_name: string;
+};
+
+// TaskCompleted: Task is being marked complete
+export type TaskCompletedEvent = BaseHookEvent & {
+	hook_event_name: 'TaskCompleted';
+	task_id: string;
+	task_subject: string;
+	task_description?: string;
+	teammate_name?: string;
+	team_name?: string;
+};
+
+// ConfigChange: Claude config changed during a session
+export type ConfigChangeEvent = BaseHookEvent & {
+	hook_event_name: 'ConfigChange';
+	source: ConfigChangeSource;
+	file_path?: string;
+};
+
+// InstructionsLoaded: CLAUDE.md or rules were loaded into context
+export type InstructionsLoadedEvent = BaseHookEvent & {
+	hook_event_name: 'InstructionsLoaded';
+	file_path: string;
+	memory_type: InstructionsMemoryType;
+	load_reason: InstructionsLoadReason;
+	globs?: string[];
+	trigger_file_path?: string;
+	parent_file_path?: string;
+};
+
+// WorktreeCreate: A worktree is being created
+export type WorktreeCreateEvent = BaseHookEvent & {
+	hook_event_name: 'WorktreeCreate';
+	name: string;
+};
+
+// WorktreeRemove: A worktree is being removed
+export type WorktreeRemoveEvent = BaseHookEvent & {
+	hook_event_name: 'WorktreeRemove';
+	worktree_path: string;
 };
 
 /**
@@ -141,7 +236,13 @@ export type ClaudeHookEvent =
 	| PreCompactEvent
 	| SetupEvent
 	| SessionStartEvent
-	| SessionEndEvent;
+	| SessionEndEvent
+	| TeammateIdleEvent
+	| TaskCompletedEvent
+	| ConfigChangeEvent
+	| InstructionsLoadedEvent
+	| WorktreeCreateEvent
+	| WorktreeRemoveEvent;
 
 /**
  * All valid hook event names.

@@ -5,6 +5,8 @@ import {
 	type PromptCommand,
 	type HookCommand,
 	type ExecuteCommandContext,
+	type HookCommandContext,
+	type UICommandContext,
 } from '../types';
 
 function makeContext(
@@ -18,34 +20,39 @@ function makeContext(
 		total: null,
 		contextSize: null,
 	};
-	return {
-		ui: {
-			args: {},
-			messages: [],
-			setMessages: vi.fn(),
-			addMessage: vi.fn(),
-			exit: vi.fn(),
-			clearScreen: vi.fn(),
-			showSessions: vi.fn(),
-			sessionStats: {
-				metrics: {
-					modelName: null,
-					toolCallCount: 0,
-					totalToolCallCount: 0,
-					subagentCount: 0,
-					subagentMetrics: [],
-					permissions: {allowed: 0, denied: 0},
-					sessionStartTime: null,
-					tokens: nullTokens,
-				},
+	const ui: UICommandContext = {
+		args: {},
+		messages: [],
+		setMessages: vi.fn(),
+		addMessage: vi.fn(),
+		exit: vi.fn(),
+		clearScreen: vi.fn(),
+		showSessions: vi.fn(),
+		showSetup: vi.fn(),
+		sessionStats: {
+			metrics: {
+				modelName: null,
+				toolCallCount: 0,
+				totalToolCallCount: 0,
+				subagentCount: 0,
+				subagentMetrics: [],
+				permissions: {allowed: 0, denied: 0},
+				sessionStartTime: null,
 				tokens: nullTokens,
-				elapsed: 0,
 			},
+			tokens: nullTokens,
+			elapsed: 0,
 		},
-		hook: {
-			args: {},
-			hookServer: {} as ExecuteCommandContext['hook']['hookServer'],
+	};
+	const hook: HookCommandContext = {
+		args: {},
+		feed: {
+			printTaskSnapshot: vi.fn(),
 		},
+	};
+	return {
+		ui,
+		hook,
 		prompt: {
 			spawn: vi.fn().mockResolvedValue(undefined),
 			currentSessionId: 'session-123',

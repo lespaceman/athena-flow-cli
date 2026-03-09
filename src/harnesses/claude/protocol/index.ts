@@ -6,6 +6,13 @@
 
 // Event types and type guards
 export {
+	type PermissionMode,
+	type PermissionSuggestion,
+	type NotificationType,
+	type SessionEndReason,
+	type ConfigChangeSource,
+	type InstructionsMemoryType,
+	type InstructionsLoadReason,
 	type PreToolUseEvent,
 	type PermissionRequestEvent,
 	type PostToolUseEvent,
@@ -19,6 +26,12 @@ export {
 	type SetupEvent,
 	type SessionStartEvent,
 	type SessionEndEvent,
+	type TeammateIdleEvent,
+	type TaskCompletedEvent,
+	type ConfigChangeEvent,
+	type InstructionsLoadedEvent,
+	type WorktreeCreateEvent,
+	type WorktreeRemoveEvent,
 	type ClaudeHookEvent,
 	type HookEventName,
 	isPreToolUseEvent,

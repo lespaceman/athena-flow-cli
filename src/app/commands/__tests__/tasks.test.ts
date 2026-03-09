@@ -1,5 +1,6 @@
 import {describe, it, expect, vi} from 'vitest';
 import {tasksCommand} from '../builtins/tasks';
+import type {HookCommandContext} from '../types';
 
 describe('tasks command', () => {
 	it('has correct name and category', () => {
@@ -9,10 +10,11 @@ describe('tasks command', () => {
 
 	it('calls feed.printTaskSnapshot', () => {
 		const printTaskSnapshot = vi.fn();
-		tasksCommand.execute({
+		const ctx: HookCommandContext = {
 			args: {},
 			feed: {printTaskSnapshot},
-		} as unknown as Parameters<typeof tasksCommand.execute>[0]);
+		};
+		tasksCommand.execute(ctx);
 		expect(printTaskSnapshot).toHaveBeenCalled();
 	});
 });
