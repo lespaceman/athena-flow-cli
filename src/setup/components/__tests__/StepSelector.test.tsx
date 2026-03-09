@@ -80,4 +80,37 @@ describe('StepSelector', () => {
 		expect(selected).toBe('skip');
 		expect(lastFrame()!).toContain('coming soon');
 	});
+
+	it('renders focused item with > prefix', () => {
+		const {lastFrame} = render(
+			<StepSelector
+				options={[
+					{label: 'Alpha', value: 'a'},
+					{label: 'Beta', value: 'b'},
+				]}
+				onSelect={() => {}}
+			/>,
+		);
+		const frame = lastFrame()!;
+		expect(frame).toContain('>');
+		expect(frame).toContain('Alpha');
+		expect(frame).toContain('Beta');
+	});
+
+	it('renders description for focused item when provided', () => {
+		const {lastFrame} = render(
+			<StepSelector
+				options={[
+					{label: 'Alpha', value: 'a', description: 'First letter'},
+					{label: 'Beta', value: 'b', description: 'Second letter'},
+				]}
+				onSelect={() => {}}
+			/>,
+		);
+		const frame = lastFrame()!;
+		// Description of focused item (Alpha) should show
+		expect(frame).toContain('First letter');
+		// Description of non-focused (Beta) should not show
+		expect(frame).not.toContain('Second letter');
+	});
 });

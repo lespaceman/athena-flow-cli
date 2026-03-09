@@ -6,6 +6,7 @@ export type SelectorOption = {
 	label: string;
 	value: string;
 	disabled?: boolean;
+	description?: string;
 };
 
 type Props = {
@@ -103,21 +104,30 @@ export default function StepSelector({
 		<Box flexDirection="column">
 			{options.map((opt, i) => {
 				const isCursor = i === cursor;
-				const prefix = isCursor ? '>' : ' ';
 				return (
-					<Text
-						key={opt.value}
-						color={
-							opt.disabled
-								? theme.textMuted
-								: isCursor
-									? theme.accent
-									: theme.text
-						}
-						bold={isCursor && !opt.disabled}
-					>
-						{prefix} {opt.label}
-					</Text>
+					<Box key={opt.value} flexDirection="column">
+						<Text
+							color={
+								opt.disabled
+									? theme.textMuted
+									: isCursor
+										? theme.accent
+										: theme.text
+							}
+							bold={isCursor && !opt.disabled}
+							inverse={isCursor && !opt.disabled}
+							dimColor={opt.disabled}
+						>
+							{isCursor ? ' > ' : '   '}
+							{opt.label}
+							{isCursor ? ' ' : ''}
+						</Text>
+						{isCursor && opt.description && !opt.disabled ? (
+							<Box paddingLeft={3}>
+								<Text dimColor>{opt.description}</Text>
+							</Box>
+						) : null}
+					</Box>
 				);
 			})}
 		</Box>
