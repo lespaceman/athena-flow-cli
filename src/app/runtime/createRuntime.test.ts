@@ -1,7 +1,7 @@
 import {describe, it, expect, vi} from 'vitest';
 
 const createClaudeHookRuntimeMock = vi.fn(() => ({
-	start: vi.fn(),
+	start: vi.fn(() => Promise.resolve()),
 	stop: vi.fn(),
 	getStatus: () => 'stopped' as const,
 	getLastError: () => null,

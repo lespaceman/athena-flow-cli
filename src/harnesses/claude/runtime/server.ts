@@ -63,6 +63,7 @@ export function createServer(opts: ServerOptions) {
 	let status: 'stopped' | 'running' = 'stopped';
 	let socketPath = '';
 	let lastError: RuntimeStartupError | null = null;
+	let startPromise: Promise<void> | null = null;
 
 	function emit(event: RuntimeEvent): void {
 		for (const handler of handlers) {
@@ -116,7 +117,14 @@ export function createServer(opts: ServerOptions) {
 	}
 
 	const connector: RuntimeConnector = {
-		start(): void {
+		start(): Promise<void> {
+			if (status === 'running') {
+				return Promise.resolve();
+			}
+			if (startPromise) {
+				return startPromise;
+			}
+
 			const socketDir = path.join(projectDir, '.claude', 'run');
 			socketPath = path.join(socketDir, `ink-${instanceId}.sock`);
 			lastError = null;
@@ -130,7 +138,7 @@ export function createServer(opts: ServerOptions) {
 				console.error(
 					`[athena] hook server failed to start on ${socketPath}: ${lastError.message}`,
 				);
-				return;
+				return Promise.resolve();
 			}
 
 			try {
@@ -144,7 +152,7 @@ export function createServer(opts: ServerOptions) {
 				console.error(
 					`[athena] hook server failed to create socket dir ${socketDir}: ${lastError.message}`,
 				);
-				return;
+				return Promise.resolve();
 			}
 			// Sweep stale sockets from previous crashed processes
 			cleanupStaleSockets(socketDir);
@@ -217,36 +225,51 @@ export function createServer(opts: ServerOptions) {
 				});
 			});
 
-			server.on('listening', () => {
-				status = 'running';
-				lastError = null;
-			});
-			server.on('error', (error: NodeJS.ErrnoException) => {
-				status = 'stopped';
-				lastError = makeStartupError('socket_bind_failed', error.message);
-				console.error(
-					`[athena] hook server failed to start on ${socketPath}: ${error.message}`,
-				);
-			});
+			const currentServer = server;
+			startPromise = new Promise(resolve => {
+				let settled = false;
+				const settle = () => {
+					if (settled) return;
+					settled = true;
+					startPromise = null;
+					resolve();
+				};
 
-			try {
-				server.listen(socketPath, () => {
-					try {
-						fs.chmodSync(socketPath, 0o600);
-					} catch {
-						/* best effort */
-					}
+				currentServer.on('listening', () => {
+					status = 'running';
+					lastError = null;
+					settle();
 				});
-			} catch (error) {
-				status = 'stopped';
-				lastError = makeStartupError(
-					'socket_bind_failed',
-					error instanceof Error ? error.message : String(error),
-				);
-				console.error(
-					`[athena] hook server failed to start on ${socketPath}: ${lastError.message}`,
-				);
-			}
+				currentServer.on('error', (error: NodeJS.ErrnoException) => {
+					status = 'stopped';
+					lastError = makeStartupError('socket_bind_failed', error.message);
+					console.error(
+						`[athena] hook server failed to start on ${socketPath}: ${error.message}`,
+					);
+					settle();
+				});
+
+				try {
+					currentServer.listen(socketPath, () => {
+						try {
+							fs.chmodSync(socketPath, 0o600);
+						} catch {
+							/* best effort */
+						}
+					});
+				} catch (error) {
+					status = 'stopped';
+					lastError = makeStartupError(
+						'socket_bind_failed',
+						error instanceof Error ? error.message : String(error),
+					);
+					console.error(
+						`[athena] hook server failed to start on ${socketPath}: ${lastError.message}`,
+					);
+					settle();
+				}
+			});
+			return startPromise;
 		},
 
 		stop(): void {
@@ -259,6 +282,7 @@ export function createServer(opts: ServerOptions) {
 				server.close();
 				server = null;
 			}
+			startPromise = null;
 			status = 'stopped';
 			lastError = null;
 

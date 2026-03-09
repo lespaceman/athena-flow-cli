@@ -27,6 +27,7 @@ function createLocalConnectorMock(): RuntimeConnector & {
 	return {
 		start() {
 			status = 'running';
+			return Promise.resolve();
 		},
 		stop() {
 			status = 'stopped';

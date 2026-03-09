@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import {describe, it, expect, vi} from 'vitest';
-import {renderHook, act} from '@testing-library/react';
+import {renderHook, act, waitFor} from '@testing-library/react';
 import {useFeed} from '../useFeed';
 import type {SessionStore} from '../../../infra/sessions/store';
 import type {
@@ -37,7 +37,7 @@ function createMockRuntime(): Runtime & {
 			};
 		},
 		sendDecision: vi.fn(),
-		start: vi.fn(),
+		start: vi.fn(() => Promise.resolve()),
 		stop: vi.fn(),
 		getStatus: () => status,
 		getLastError: () => lastError,
@@ -244,7 +244,7 @@ describe('useFeed session store lifecycle', () => {
 });
 
 describe('useFeed runtime startup errors', () => {
-	it('surfaces hook server startup errors in state and feed notifications', () => {
+	it('surfaces hook server startup errors in state and feed notifications', async () => {
 		const runtime = createMockRuntime();
 		runtime.setStatus('stopped');
 		runtime.setLastError({
@@ -259,14 +259,16 @@ describe('useFeed runtime startup errors', () => {
 			code: 'socket_path_too_long',
 			message: 'Socket path is too long for darwin',
 		});
-		expect(
-			result.current.feedEvents.some(
-				event =>
-					event.kind === 'notification' &&
-					String(event.data.message).includes(
-						'Athena hook server failed to start',
-					),
-			),
-		).toBe(true);
+		await waitFor(() =>
+			expect(
+				result.current.feedEvents.some(
+					event =>
+						event.kind === 'notification' &&
+						String(event.data.message).includes(
+							'Athena hook server failed to start',
+						),
+				),
+			).toBe(true),
+		);
 	});
 });

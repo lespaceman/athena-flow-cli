@@ -42,6 +42,7 @@ export function createInjectableMockRuntime(): InjectableMockRuntime {
 	return {
 		start() {
 			status = 'running';
+			return Promise.resolve();
 		},
 
 		stop() {

@@ -54,6 +54,7 @@ export function createMockRuntime(script: ScriptedEvent[]): Runtime & {
 				}, accumulated);
 				timers.push(timer);
 			}
+			return Promise.resolve();
 		},
 
 		stop() {

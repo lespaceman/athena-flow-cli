@@ -117,6 +117,9 @@ export function useFeed(
 	messages: Message[] = [],
 	initialAllowedTools?: string[],
 	sessionStore?: SessionStore,
+	options?: {
+		autoStart?: boolean;
+	},
 ): UseFeedResult {
 	// Restore stored session data on mount (if resuming)
 	const mapperBootstrap = useMemo(
@@ -339,6 +342,8 @@ export function useFeed(
 		);
 	}, [emitNotification]);
 
+	const autoStart = options?.autoStart ?? true;
+
 	// Main effect: subscribe to runtime events
 	useEffect(() => {
 		abortRef.current = new AbortController();
@@ -466,8 +471,13 @@ export function useFeed(
 			},
 		);
 
-		runtime.start();
-		refreshRuntimeStatus(true);
+		if (autoStart) {
+			void runtime.start().finally(() => {
+				refreshRuntimeStatus(true);
+			});
+		} else {
+			refreshRuntimeStatus(true);
+		}
 
 		return () => {
 			abortRef.current.abort();
@@ -481,6 +491,7 @@ export function useFeed(
 		enqueueQuestion,
 		dequeuePermission,
 		refreshRuntimeStatus,
+		autoStart,
 	]);
 
 	// Derive items (content ordering)

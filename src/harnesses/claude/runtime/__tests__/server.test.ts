@@ -27,10 +27,9 @@ describe('createClaudeHookRuntime', () => {
 		cleanup.push(() => fs.rmSync(projectDir, {recursive: true, force: true}));
 
 		const runtime = createClaudeHookRuntime({projectDir, instanceId: 99});
-		runtime.start();
+		await runtime.start();
 		cleanup.push(() => runtime.stop());
 
-		await new Promise(r => setTimeout(r, 100));
 		expect(runtime.getStatus()).toBe('running');
 		expect(runtime.getLastError()).toBeNull();
 	});
@@ -61,10 +60,8 @@ describe('createClaudeHookRuntime', () => {
 		const runtime = createClaudeHookRuntime({projectDir, instanceId: 98});
 		const events: RuntimeEvent[] = [];
 		runtime.onEvent(e => events.push(e));
-		runtime.start();
+		await runtime.start();
 		cleanup.push(() => runtime.stop());
-
-		await new Promise(r => setTimeout(r, 100));
 
 		const sockPath = path.join(projectDir, '.claude', 'run', 'ink-98.sock');
 		const client = net.createConnection(sockPath);
@@ -100,10 +97,8 @@ describe('createClaudeHookRuntime', () => {
 		const runtime = createClaudeHookRuntime({projectDir, instanceId: 97});
 		const events: RuntimeEvent[] = [];
 		runtime.onEvent(e => events.push(e));
-		runtime.start();
+		await runtime.start();
 		cleanup.push(() => runtime.stop());
-
-		await new Promise(r => setTimeout(r, 100));
 
 		const sockPath = path.join(projectDir, '.claude', 'run', 'ink-97.sock');
 		const client = net.createConnection(sockPath);
@@ -159,10 +154,8 @@ describe('createClaudeHookRuntime', () => {
 		fs.writeFileSync(staleSock, '');
 
 		const runtime = createClaudeHookRuntime({projectDir, instanceId: 77});
-		runtime.start();
+		await runtime.start();
 		cleanup.push(() => runtime.stop());
-
-		await new Promise(r => setTimeout(r, 100));
 
 		// Stale socket should be gone; only the new one should remain
 		const remaining = fs.readdirSync(runDir);
@@ -175,14 +168,13 @@ describe('createClaudeHookRuntime', () => {
 		cleanup.push(() => fs.rmSync(projectDir, {recursive: true, force: true}));
 
 		const runtime = createClaudeHookRuntime({projectDir, instanceId: 96});
-		runtime.start();
-		await new Promise(r => setTimeout(r, 100));
+		await runtime.start();
 		runtime.stop();
 		expect(runtime.getStatus()).toBe('stopped');
 		expect(runtime.getLastError()).toBeNull();
 	});
 
-	it('records a startup error when the socket path is too long', () => {
+	it('records a startup error when the socket path is too long', async () => {
 		const repeated = 'a'.repeat(120);
 		const projectDir = path.join(makeTmpDir(), repeated);
 		cleanup.push(() =>
@@ -190,7 +182,7 @@ describe('createClaudeHookRuntime', () => {
 		);
 
 		const runtime = createClaudeHookRuntime({projectDir, instanceId: 55});
-		runtime.start();
+		await runtime.start();
 
 		expect(runtime.getStatus()).toBe('stopped');
 		expect(runtime.getLastError()).toEqual({

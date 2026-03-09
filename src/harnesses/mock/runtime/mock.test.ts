@@ -11,7 +11,7 @@ describe('createMockRuntime (scripted)', () => {
 			{delayMs: 20, event: {hookName: 'PreToolUse', toolName: 'Bash'}},
 		]);
 		runtime.onEvent(e => events.push(e));
-		runtime.start();
+		await runtime.start();
 
 		await new Promise(r => setTimeout(r, 100));
 		expect(events).toHaveLength(2);
@@ -29,7 +29,7 @@ describe('createMockRuntime (scripted)', () => {
 			},
 		]);
 		runtime.onEvent(() => {});
-		runtime.start();
+		await runtime.start();
 
 		await new Promise(r => setTimeout(r, 50));
 		const decision: RuntimeDecision = {
@@ -50,7 +50,7 @@ describe('createInjectableMockRuntime', () => {
 		const events: RuntimeEvent[] = [];
 		const mock = createInjectableMockRuntime();
 		mock.onEvent(e => events.push(e));
-		mock.start();
+		void mock.start();
 
 		mock.emit({hookName: 'PreToolUse', toolName: 'Read'});
 		expect(events).toHaveLength(1);
@@ -62,7 +62,7 @@ describe('createInjectableMockRuntime', () => {
 	it('captures decisions', () => {
 		const mock = createInjectableMockRuntime();
 		mock.onEvent(() => {});
-		mock.start();
+		void mock.start();
 
 		mock.emit({hookName: 'PermissionRequest', toolName: 'Bash'});
 		mock.sendDecision(mock.getLastEventId(), {

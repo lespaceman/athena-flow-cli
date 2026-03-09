@@ -105,7 +105,7 @@ export type RuntimeDecisionHandler = (
 ) => void;
 
 export type Runtime = {
-	start(): void;
+	start(): Promise<void>;
 	stop(): void;
 	getStatus(): 'stopped' | 'running';
 	getLastError(): RuntimeStartupError | null;

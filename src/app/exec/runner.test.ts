@@ -19,8 +19,9 @@ class MockRuntime implements Runtime {
 	private status: 'stopped' | 'running' = 'stopped';
 	public decisions: Array<{eventId: string; decision: RuntimeDecision}> = [];
 
-	start(): void {
+	start(): Promise<void> {
 		this.status = 'running';
+		return Promise.resolve();
 	}
 
 	stop(): void {

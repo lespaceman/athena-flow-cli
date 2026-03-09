@@ -1,4 +1,5 @@
-import {useEffect, useMemo} from 'react';
+import {useEffect, useMemo, useState} from 'react';
+import {Text} from 'ink';
 import {
 	createContext,
 	useContext,
@@ -10,10 +11,35 @@ import {createSessionStore} from '../../infra/sessions/store';
 import {sessionsDir} from '../../infra/sessions/registry';
 import {type HookContextValue, type HookProviderProps} from './types';
 import {createRuntime} from '../runtime/createRuntime';
+import type {Runtime} from '../../core/runtime/types';
 
 const HookContext = createContext<HookContextValue | null>(null);
 const EMPTY_MESSAGES: never[] = [];
 const MISSING_CONTEXT = Symbol('missing-hook-context');
+
+function HookProviderContent({
+	runtime,
+	allowedTools,
+	sessionStore,
+	children,
+}: {
+	runtime: ReturnType<typeof createRuntime>;
+	allowedTools?: string[];
+	sessionStore: ReturnType<typeof createSessionStore>;
+	children: HookProviderProps['children'];
+}) {
+	const hookServer = useFeed(
+		runtime,
+		EMPTY_MESSAGES,
+		allowedTools,
+		sessionStore,
+		{autoStart: false},
+	);
+
+	return (
+		<HookContext.Provider value={hookServer}>{children}</HookContext.Provider>
+	);
+}
 
 export function HookProvider({
 	projectDir,
@@ -41,21 +67,40 @@ export function HookProvider({
 		[athenaSessionId, projectDir],
 	);
 
+	const [readyRuntime, setReadyRuntime] = useState<Runtime | null>(null);
+
+	useEffect(() => {
+		let cancelled = false;
+		setReadyRuntime(null);
+		void runtime.start().finally(() => {
+			if (!cancelled) {
+				setReadyRuntime(runtime);
+			}
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [runtime]);
+
 	useEffect(() => {
 		return () => {
 			sessionStore.close();
+			runtime.stop();
 		};
-	}, [sessionStore]);
+	}, [runtime, sessionStore]);
 
-	const hookServer = useFeed(
-		runtime,
-		EMPTY_MESSAGES,
-		allowedTools,
-		sessionStore,
-	);
+	if (readyRuntime !== runtime) {
+		return <Text dimColor>Starting Athena hook server...</Text>;
+	}
 
 	return (
-		<HookContext.Provider value={hookServer}>{children}</HookContext.Provider>
+		<HookProviderContent
+			runtime={runtime}
+			allowedTools={allowedTools}
+			sessionStore={sessionStore}
+		>
+			{children}
+		</HookProviderContent>
 	);
 }
 

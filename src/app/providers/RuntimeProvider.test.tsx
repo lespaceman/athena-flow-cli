@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React from 'react';
 import {describe, it, expect, vi, beforeEach} from 'vitest';
-import {render} from '@testing-library/react';
+import {render, waitFor} from '@testing-library/react';
 
 const useFeedMock = vi.fn();
 const createSessionStoreMock = vi.fn();
@@ -23,7 +23,7 @@ const {HookProvider} = await import('./RuntimeProvider');
 
 function makeRuntime() {
 	return {
-		start: vi.fn(),
+		start: vi.fn(() => Promise.resolve()),
 		stop: vi.fn(),
 		getStatus: vi.fn(() => 'stopped' as const),
 		getLastError: vi.fn(() => null),
@@ -74,7 +74,7 @@ describe('HookProvider runtime factory wiring', () => {
 		});
 	});
 
-	it('constructs runtime via runtimeFactory using selected harness inputs', () => {
+	it('constructs runtime via runtimeFactory using selected harness inputs', async () => {
 		const runtime = makeRuntime();
 		const runtimeFactory = vi.fn(() => runtime);
 		const {unmount} = render(
@@ -95,11 +95,14 @@ describe('HookProvider runtime factory wiring', () => {
 			projectDir: '/repo',
 			instanceId: 42,
 		});
-		expect(useFeedMock).toHaveBeenCalledWith(
-			runtime,
-			[],
-			['Read'],
-			expect.any(Object),
+		await waitFor(() =>
+			expect(useFeedMock).toHaveBeenCalledWith(
+				runtime,
+				[],
+				['Read'],
+				expect.any(Object),
+				{autoStart: false},
+			),
 		);
 
 		unmount();
@@ -109,7 +112,7 @@ describe('HookProvider runtime factory wiring', () => {
 		expect(store.close).toHaveBeenCalledTimes(1);
 	});
 
-	it('prefers provided runtime over runtimeFactory', () => {
+	it('prefers provided runtime over runtimeFactory', async () => {
 		const providedRuntime = makeRuntime();
 		const runtimeFactory = vi.fn(() => makeRuntime());
 
@@ -127,11 +130,103 @@ describe('HookProvider runtime factory wiring', () => {
 		);
 
 		expect(runtimeFactory).not.toHaveBeenCalled();
-		expect(useFeedMock).toHaveBeenCalledWith(
-			providedRuntime,
-			[],
-			undefined,
-			expect.any(Object),
+		await waitFor(() =>
+			expect(useFeedMock).toHaveBeenCalledWith(
+				providedRuntime,
+				[],
+				undefined,
+				expect.any(Object),
+				{autoStart: false},
+			),
 		);
+	});
+
+	it('waits for runtime startup before mounting useFeed', async () => {
+		let resolveStart: (() => void) | null = null;
+		const runtime = {
+			...makeRuntime(),
+			start: vi.fn(
+				() =>
+					new Promise<void>(resolve => {
+						resolveStart = resolve;
+					}),
+			),
+		};
+
+		const {queryByText} = render(
+			<HookProvider
+				projectDir="/repo"
+				instanceId={9}
+				harness="claude-code"
+				runtime={runtime}
+				athenaSessionId="athena-3"
+			>
+				<></>
+			</HookProvider>,
+		);
+
+		expect(queryByText('Starting Athena hook server...')).not.toBeNull();
+		expect(useFeedMock).not.toHaveBeenCalled();
+
+		resolveStart?.();
+
+		await waitFor(() => expect(useFeedMock).toHaveBeenCalledTimes(1));
+	});
+
+	it('re-gates mounting when the runtime instance changes', async () => {
+		let resolveFirstStart: (() => void) | null = null;
+		const firstRuntime = {
+			...makeRuntime(),
+			start: vi.fn(
+				() =>
+					new Promise<void>(resolve => {
+						resolveFirstStart = resolve;
+					}),
+			),
+		};
+
+		const {queryByText, rerender} = render(
+			<HookProvider
+				projectDir="/repo"
+				instanceId={9}
+				harness="claude-code"
+				runtime={firstRuntime}
+				athenaSessionId="athena-4"
+			>
+				<></>
+			</HookProvider>,
+		);
+
+		resolveFirstStart?.();
+		await waitFor(() => expect(useFeedMock).toHaveBeenCalledTimes(1));
+
+		let resolveSecondStart: (() => void) | null = null;
+		const secondRuntime = {
+			...makeRuntime(),
+			start: vi.fn(
+				() =>
+					new Promise<void>(resolve => {
+						resolveSecondStart = resolve;
+					}),
+			),
+		};
+
+		rerender(
+			<HookProvider
+				projectDir="/repo"
+				instanceId={10}
+				harness="openai-codex"
+				runtime={secondRuntime}
+				athenaSessionId="athena-4"
+			>
+				<></>
+			</HookProvider>,
+		);
+
+		expect(queryByText('Starting Athena hook server...')).not.toBeNull();
+		expect(useFeedMock).toHaveBeenCalledTimes(1);
+
+		resolveSecondStart?.();
+		await waitFor(() => expect(useFeedMock).toHaveBeenCalledTimes(2));
 	});
 });

@@ -440,7 +440,7 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 	});
 
 	try {
-		runtime.start();
+		await runtime.start();
 		runtimeStarted = true;
 		output.emitJsonEvent('runtime.started', {
 			status: runtime.getStatus(),
