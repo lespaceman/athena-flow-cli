@@ -67,7 +67,8 @@ describe('SetupWizard', () => {
 		);
 		expect(lastFrame()!).toContain('Dark');
 		expect(lastFrame()!).toContain('Light');
-		expect(lastFrame()!).toContain('Up/Down move');
+		expect(lastFrame()!).toContain('ATHENA SETUP');
+		expect(lastFrame()!).toContain('move');
 	});
 
 	it('completes setup and persists config', () => {
@@ -135,13 +136,14 @@ describe('SetupWizard', () => {
 		expect(lastFrame()!).toContain('Choose your display theme');
 	});
 
-	it('shows 4 steps in progress bar', () => {
+	it('shows step dots indicator', () => {
 		const {lastFrame} = render(
 			<ThemeProvider value={darkTheme}>
 				<SetupWizard onComplete={() => {}} />
 			</ThemeProvider>,
 		);
-		expect(lastFrame()!).toContain('Step 1 of 4');
+		expect(lastFrame()!).toContain('◉');
+		expect(lastFrame()!).toContain('Theme');
 	});
 
 	it('shows MCP options step when workflow has servers with options', async () => {
