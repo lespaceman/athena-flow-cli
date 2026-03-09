@@ -6,6 +6,9 @@ import HarnessStep from './steps/HarnessStep';
 import WorkflowStep from './steps/WorkflowStep';
 import McpOptionsStep from './steps/McpOptionsStep';
 import StepStatus from './components/StepStatus';
+import WizardFrame from './components/WizardFrame';
+import StepDots from './components/StepDots';
+import WizardHints from './components/WizardHints';
 import {
 	writeGlobalConfig,
 	type AthenaHarness,
@@ -30,22 +33,6 @@ type Props = {
 };
 
 const STEP_LABELS = ['Theme', 'Harness', 'Workflow', 'MCP Options'];
-const PROGRESS_BAR_WIDTH = 18;
-
-function progressBar(
-	step: number,
-	total: number,
-): {filled: string; empty: string} {
-	const ratio = total === 0 ? 0 : step / total;
-	const filledCount = Math.max(
-		0,
-		Math.min(PROGRESS_BAR_WIDTH, Math.round(ratio * PROGRESS_BAR_WIDTH)),
-	);
-	return {
-		filled: '='.repeat(filledCount),
-		empty: '-'.repeat(PROGRESS_BAR_WIDTH - filledCount),
-	};
-}
 
 export default function SetupWizard({onComplete, onThemePreview}: Props) {
 	const theme = useTheme();
@@ -210,87 +197,79 @@ export default function SetupWizard({onComplete, onThemePreview}: Props) {
 		}
 	}, [isComplete, result, onComplete, writeRetryCount]);
 
-	const totalSteps = STEP_LABELS.length;
-	const activeStep = isComplete
-		? totalSteps
-		: Math.min(stepIndex + 1, totalSteps);
-	const bar = progressBar(activeStep, totalSteps);
+	const completedSteps = new Set(Array.from({length: stepIndex}, (_, i) => i));
 
 	return (
-		<Box flexDirection="column" paddingX={3} paddingY={1}>
-			<Box flexDirection="column">
-				<Text bold color={theme.accent}>
-					ATHENA SETUP
-				</Text>
-				<Text color={theme.textMuted}>
-					Configure your defaults in under a minute.
-				</Text>
-			</Box>
-
-			<Box marginTop={1} flexDirection="column">
-				<Text color={theme.textMuted}>
-					Step {activeStep} of {totalSteps} -{' '}
-					{STEP_LABELS[stepIndex] ?? 'Complete'}
-				</Text>
-				<Box>
-					<Text color={theme.accent}>[{bar.filled}</Text>
-					<Text color={theme.textMuted}>{bar.empty}]</Text>
-				</Box>
-			</Box>
-
-			<Box marginTop={2} flexDirection="column">
-				{stepIndex === 0 && stepState !== 'success' && !isComplete && (
-					<ThemeStep
-						onComplete={handleThemeComplete}
-						onPreview={handleThemePreview}
-					/>
-				)}
-				{stepIndex === 0 && stepState === 'success' && (
-					<StepStatus status="success" message={`Theme: ${result.theme}`} />
-				)}
-
-				{stepIndex === 1 && !isComplete && (
-					<HarnessStep
-						key={retryCount}
-						onComplete={handleHarnessComplete}
-						onError={() => markError()}
-					/>
-				)}
-
-				{stepIndex === 2 && !isComplete && (
-					<WorkflowStep
-						key={retryCount}
-						onComplete={handleWorkflowComplete}
-						onError={() => markError()}
-					/>
-				)}
-
-				{stepIndex === 3 && !isComplete && (
-					<McpOptionsStep
-						servers={mcpServersWithOptions}
-						onComplete={handleMcpOptionsComplete}
-					/>
-				)}
-
-				{stepState === 'error' && (
-					<Text color={theme.textMuted}>Press r to retry this step.</Text>
-				)}
-				{isComplete && !writeError && (
-					<StepStatus status="verifying" message="Saving setup..." />
-				)}
-				{isComplete && writeError && (
-					<>
-						<StepStatus status="error" message={writeError} />
-						<Text color={theme.textMuted}>Press r to retry saving.</Text>
-					</>
-				)}
-
-				<Box marginTop={2}>
+		<WizardFrame
+			title="ATHENA SETUP"
+			header={
+				<>
 					<Text color={theme.textMuted}>
-						Up/Down move Enter select Esc back S skip R retry
+						Configure your defaults in under a minute.
 					</Text>
-				</Box>
-			</Box>
-		</Box>
+					<Box marginTop={1}>
+						<StepDots
+							steps={STEP_LABELS}
+							currentIndex={isComplete ? STEP_LABELS.length : stepIndex}
+							completedSteps={
+								isComplete
+									? new Set(STEP_LABELS.map((_, i) => i))
+									: completedSteps
+							}
+						/>
+					</Box>
+				</>
+			}
+			footer={
+				<WizardHints
+					stepState={
+						isComplete ? (writeError ? 'error' : 'verifying') : stepState
+					}
+					stepIndex={stepIndex}
+				/>
+			}
+		>
+			{stepIndex === 0 && stepState !== 'success' && !isComplete && (
+				<ThemeStep
+					onComplete={handleThemeComplete}
+					onPreview={handleThemePreview}
+				/>
+			)}
+			{stepIndex === 0 && stepState === 'success' && (
+				<StepStatus status="success" message={`Theme: ${result.theme}`} />
+			)}
+			{stepIndex === 1 && !isComplete && (
+				<HarnessStep
+					key={retryCount}
+					onComplete={handleHarnessComplete}
+					onError={() => markError()}
+				/>
+			)}
+			{stepIndex === 2 && !isComplete && (
+				<WorkflowStep
+					key={retryCount}
+					onComplete={handleWorkflowComplete}
+					onError={() => markError()}
+				/>
+			)}
+			{stepIndex === 3 && !isComplete && (
+				<McpOptionsStep
+					servers={mcpServersWithOptions}
+					onComplete={handleMcpOptionsComplete}
+				/>
+			)}
+			{stepState === 'error' && !isComplete && (
+				<Text color={theme.status.error}>Press r to retry this step.</Text>
+			)}
+			{isComplete && !writeError && (
+				<StepStatus status="verifying" message="Saving setup..." />
+			)}
+			{isComplete && writeError && (
+				<>
+					<StepStatus status="error" message={writeError} />
+					<Text color={theme.textMuted}>Press r to retry saving.</Text>
+				</>
+			)}
+		</WizardFrame>
 	);
 }
