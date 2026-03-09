@@ -21,9 +21,21 @@ export default function ThemeStep({onComplete, onPreview}: Props) {
 			<Box marginTop={1}>
 				<StepSelector
 					options={[
-						{label: 'Dark', value: 'dark'},
-						{label: 'Light', value: 'light'},
-						{label: 'High Contrast', value: 'high-contrast'},
+						{
+							label: 'Dark',
+							value: 'dark',
+							description: 'Warm gray on dark background',
+						},
+						{
+							label: 'Light',
+							value: 'light',
+							description: 'Dark text on light background',
+						},
+						{
+							label: 'High Contrast',
+							value: 'high-contrast',
+							description: 'Maximum readability',
+						},
 					]}
 					initialValue={theme.name}
 					onHighlight={onPreview}

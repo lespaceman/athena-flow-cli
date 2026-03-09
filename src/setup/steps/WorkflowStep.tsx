@@ -61,11 +61,16 @@ export default function WorkflowStep({onComplete, onError}: Props) {
 				<Box marginTop={1}>
 					<StepSelector
 						options={[
-							{label: 'e2e-test-builder', value: 'e2e-test-builder'},
+							{
+								label: 'e2e-test-builder',
+								value: 'e2e-test-builder',
+								description: 'Playwright-based browser test generation',
+							},
 							{
 								label: 'bug-triage (coming soon)',
 								value: 'bug-triage',
 								disabled: true,
+								description: 'Automated bug classification',
 							},
 						]}
 						onSelect={handleSelect}

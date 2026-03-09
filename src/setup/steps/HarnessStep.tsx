@@ -58,6 +58,9 @@ export default function HarnessStep({onComplete, onError}: Props) {
 							label: `${index + 1}. ${capability.label}`,
 							value: capability.id,
 							disabled: !capability.enabled,
+							description: capability.enabled
+								? `Connect to ${capability.label}`
+								: 'Not available',
 						}))}
 						onSelect={value => handleSelect(value as AthenaHarness)}
 					/>
