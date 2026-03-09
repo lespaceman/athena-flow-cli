@@ -76,6 +76,17 @@ export type GeneratedHookSettings = {
 	cleanup: () => void;
 };
 
+export function quoteShellArg(value: string): string {
+	return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
+
+export function formatHookForwarderCommand(
+	nodePath: string,
+	scriptPath: string,
+): string {
+	return `${quoteShellArg(nodePath)} ${quoteShellArg(scriptPath)}`;
+}
+
 function resolveHookForwarderPath(entryUrl: string): string | null {
 	let currentDir = path.dirname(fileURLToPath(entryUrl));
 
@@ -107,7 +118,7 @@ function resolveHookForwarderPath(entryUrl: string): string | null {
 function getHookForwarderPath(): string {
 	const resolvedPath = resolveHookForwarderPath(import.meta.url);
 	if (resolvedPath) {
-		return `node ${resolvedPath}`;
+		return formatHookForwarderCommand(process.execPath, resolvedPath);
 	}
 
 	// Fallback to global bin name (when installed via npm -g)

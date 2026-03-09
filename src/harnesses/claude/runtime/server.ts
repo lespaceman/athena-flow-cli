@@ -178,8 +178,11 @@ export function createServer(opts: ServerOptions) {
 			server.on('listening', () => {
 				status = 'running';
 			});
-			server.on('error', () => {
+			server.on('error', (error: NodeJS.ErrnoException) => {
 				status = 'stopped';
+				console.error(
+					`[athena] hook server failed to start on ${socketPath}: ${error.message}`,
+				);
 			});
 
 			server.listen(socketPath, () => {

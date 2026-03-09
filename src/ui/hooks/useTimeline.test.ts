@@ -113,4 +113,27 @@ describe('useTimeline', () => {
 		expect(entry.details).toBe('');
 		expect(getTimelineEntrySearchText(entry)).toContain('needle');
 	});
+
+	it('keeps notification entries visible when verbose is false', () => {
+		const event = makeEvent('notification', 1, {
+			message: 'Athena failed to start Claude: spawn claude ENOENT',
+			title: 'Claude Process Error',
+		});
+		const {result} = renderHook(() =>
+			useTimeline({
+				feedItems: mergeFeedItems([], [event]),
+				feedEvents: [event],
+				currentRun: null,
+				searchQuery: '',
+				postByToolUseId: buildPostByToolUseId([event]),
+				verbose: false,
+			}),
+		);
+
+		expect(result.current.timelineEntries).toHaveLength(1);
+		expect(result.current.timelineEntries[0]?.opTag).toBe('notify');
+		expect(result.current.timelineEntries[0]?.summary).toContain(
+			'spawn claude ENOENT',
+		);
+	});
 });

@@ -64,6 +64,7 @@ export type UseFeedResult = {
 	removeRule: (id: string) => void;
 	clearRules: () => void;
 	printTaskSnapshot: () => void;
+	emitNotification: (message: string, title?: string) => void;
 	isDegraded: boolean;
 	postByToolUseId: Map<string, FeedEvent>;
 	allocateSeq: () => number;
@@ -81,6 +82,32 @@ function buildInitialRules(allowedTools?: string[]): HookRule[] {
 		action: 'approve' as const,
 		addedBy: 'allowedTools',
 	}));
+}
+
+function buildSyntheticNotificationEvent(
+	mapper: FeedMapper,
+	message: string,
+	title?: string,
+): RuntimeEvent {
+	const sessionId = mapper.getSession()?.session_id ?? 'unknown';
+	return {
+		id: `notification-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+		timestamp: Date.now(),
+		kind: 'notification',
+		data: {message, ...(title ? {title} : {})},
+		hookName: 'Notification',
+		sessionId,
+		context: {cwd: '', transcriptPath: ''},
+		interaction: {expectsDecision: false},
+		payload: {
+			hook_event_name: 'Notification',
+			session_id: sessionId,
+			transcript_path: '',
+			cwd: '',
+			message,
+			...(title ? {title} : {}),
+		},
+	};
 }
 
 export function useFeed(
@@ -252,6 +279,19 @@ export function useFeed(
 		[runtime, dequeueQuestion],
 	);
 
+	const emitNotification = useCallback((message: string, title?: string) => {
+		const mapper = mapperRef.current;
+		const syntheticRuntime = buildSyntheticNotificationEvent(
+			mapper,
+			message,
+			title,
+		);
+		const newEvents = mapper.mapEvent(syntheticRuntime);
+		if (!abortRef.current.signal.aborted) {
+			setFeedEvents(prev => [...prev, ...newEvents]);
+		}
+	}, []);
+
 	const printTaskSnapshot = useCallback(() => {
 		const hasTasks = feedEventsRef.current.some(
 			e =>
@@ -261,32 +301,10 @@ export function useFeed(
 		);
 		if (!hasTasks) return;
 
-		// Synthesize a notification feed event
-		const mapper = mapperRef.current;
-		const syntheticRuntime: RuntimeEvent = {
-			id: `task-snapshot-${Date.now()}`,
-			timestamp: Date.now(),
-			kind: 'notification',
-			data: {
-				message: '\u{1F4CB} Task list snapshot requested via /tasks command',
-			},
-			hookName: 'Notification',
-			sessionId: mapper.getSession()?.session_id ?? 'unknown',
-			context: {cwd: '', transcriptPath: ''},
-			interaction: {expectsDecision: false},
-			payload: {
-				hook_event_name: 'Notification',
-				session_id: mapper.getSession()?.session_id ?? 'unknown',
-				transcript_path: '',
-				cwd: '',
-				message: '\u{1F4CB} Task list snapshot requested via /tasks command',
-			},
-		};
-		const newEvents = mapper.mapEvent(syntheticRuntime);
-		if (!abortRef.current.signal.aborted) {
-			setFeedEvents(prev => [...prev, ...newEvents]);
-		}
-	}, []);
+		emitNotification(
+			'\u{1F4CB} Task list snapshot requested via /tasks command',
+		);
+	}, [emitNotification]);
 
 	// Main effect: subscribe to runtime events
 	useEffect(() => {
@@ -497,6 +515,7 @@ export function useFeed(
 		removeRule,
 		clearRules,
 		printTaskSnapshot,
+		emitNotification,
 		isDegraded: sessionStoreRef.current?.isDegraded ?? false,
 		postByToolUseId,
 		allocateSeq: () => mapperRef.current.allocateSeq(),

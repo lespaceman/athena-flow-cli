@@ -39,12 +39,20 @@ vi.mock('node:child_process', () => ({
 	spawn: vi.fn(),
 }));
 
+vi.mock('../system/resolveBinary', () => ({
+	resolveClaudeBinary: vi.fn(() => '/resolved/claude'),
+}));
+
+import {resolveClaudeBinary} from '../system/resolveBinary';
+
 describe('spawnClaude', () => {
 	let mockChildProcess: ReturnType<typeof createMockChildProcess>;
+	const mockResolveClaudeBinary = vi.mocked(resolveClaudeBinary);
 
 	beforeEach(() => {
 		mockChildProcess = createMockChildProcess();
 		vi.mocked(childProcess.spawn).mockReturnValue(mockChildProcess);
+		mockResolveClaudeBinary.mockReturnValue('/resolved/claude');
 		mockCleanup.mockClear();
 	});
 
@@ -60,7 +68,7 @@ describe('spawnClaude', () => {
 		});
 
 		expect(childProcess.spawn).toHaveBeenCalledWith(
-			'claude',
+			'/resolved/claude',
 			expect.arrayContaining([
 				'-p',
 				'Hello, Claude!',
@@ -79,6 +87,22 @@ describe('spawnClaude', () => {
 					ATHENA_INSTANCE_ID: '12345',
 				}),
 			}),
+		);
+	});
+
+	it('falls back to bare claude when binary resolution misses', () => {
+		mockResolveClaudeBinary.mockReturnValue(null);
+
+		spawnClaude({
+			prompt: 'Hello, Claude!',
+			projectDir: '/test/project',
+			instanceId: 12345,
+		});
+
+		expect(childProcess.spawn).toHaveBeenCalledWith(
+			'claude',
+			expect.any(Array),
+			expect.any(Object),
 		);
 	});
 

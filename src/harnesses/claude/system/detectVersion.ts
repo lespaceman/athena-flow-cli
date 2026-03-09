@@ -1,4 +1,5 @@
 import {execFileSync} from 'node:child_process';
+import {resolveClaudeBinary} from './resolveBinary';
 
 /**
  * Detect the installed Claude Code version by running `claude --version`.
@@ -6,7 +7,10 @@ import {execFileSync} from 'node:child_process';
  */
 export function detectClaudeVersion(): string | null {
 	try {
-		const output = execFileSync('claude', ['--version'], {
+		const claudeBinary = resolveClaudeBinary();
+		if (!claudeBinary) return null;
+
+		const output = execFileSync(claudeBinary, ['--version'], {
 			timeout: 5000,
 			encoding: 'utf-8',
 			stdio: ['ignore', 'pipe', 'ignore'],

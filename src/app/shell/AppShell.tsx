@@ -44,6 +44,7 @@ import {buildHeaderModel} from '../../ui/header/model';
 import {renderHeaderLines} from '../../ui/header/renderLines';
 import type {Message as MessageType} from '../../shared/types/common';
 import {generateId} from '../../shared/utils/id';
+import type {SessionMetrics} from '../../shared/types/headerMetrics';
 import type {
 	IsolationConfig,
 	IsolationPreset,
@@ -90,6 +91,11 @@ import {
 	trackSessionStarted,
 	trackSessionEnded,
 } from '../../infra/telemetry/index';
+import {
+	accumulateSessionTelemetryCarry,
+	buildSessionTelemetrySummary,
+	createEmptySessionTelemetryCarry,
+} from './sessionTelemetry';
 
 type Props = {
 	projectDir: string;
@@ -116,6 +122,29 @@ type AppPhase =
 	| {type: 'setup'}
 	| {type: 'session-select'}
 	| {type: 'main'; initialSessionId?: string};
+
+const EMPTY_SESSION_METRICS: SessionMetrics = {
+	modelName: null,
+	toolCallCount: 0,
+	totalToolCallCount: 0,
+	subagentCount: 0,
+	subagentMetrics: [],
+	permissions: {
+		allowed: 0,
+		denied: 0,
+	},
+	sessionStartTime: null,
+	tokens: {
+		input: null,
+		output: null,
+		cacheRead: null,
+		cacheWrite: null,
+		total: null,
+		contextSize: null,
+	},
+	failures: 0,
+	blocks: 0,
+};
 
 function PermissionErrorFallback({onDeny}: {onDeny: () => void}) {
 	const theme = useTheme();
@@ -155,6 +184,8 @@ function AppContent({
 	onShowSessions,
 	onShowSetup,
 	inputHistory,
+	sessionTelemetryMetricsRef,
+	onSessionTelemetrySnapshot,
 	workflowRef,
 	workflow,
 	ascii,
@@ -166,13 +197,15 @@ function AppContent({
 	| 'pluginFlags'
 	| 'isolationPreset'
 	| 'version'
-> & {
-	initialSessionId?: string;
-	onClear: () => void;
-	onShowSessions: () => void;
-	onShowSetup: () => void;
-	inputHistory: InputHistory;
-}) {
+	> & {
+		initialSessionId?: string;
+		onClear: () => void;
+		onShowSessions: () => void;
+		onShowSetup: () => void;
+		inputHistory: InputHistory;
+		sessionTelemetryMetricsRef: React.MutableRefObject<SessionMetrics>;
+		onSessionTelemetrySnapshot: (metrics: SessionMetrics) => void;
+	}) {
 	const [messages, setMessages] = useState<MessageType[]>([]);
 	const [uiState, setUiState] = useState(initialSessionUiState);
 	const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -222,6 +255,7 @@ function AppContent({
 		postByToolUseId,
 		allocateSeq,
 		clearEvents,
+		emitNotification,
 		recordTokens,
 		restoredTokens,
 		hookCommandFeed,
@@ -240,6 +274,26 @@ function AppContent({
 		[session?.session_id, recordTokens],
 	);
 
+	const onProcessLifecycleEvent = useCallback(
+		(
+			event: import('../../core/runtime/process').HarnessProcessLifecycleEvent,
+		) => {
+			if (event.type === 'spawn_error') {
+				emitNotification(
+					`Athena failed to start Claude: ${event.message}`,
+					'Claude Process Error',
+				);
+				return;
+			}
+
+			emitNotification(
+				`Athena lost the Claude process: ${event.message}`,
+				'Claude Process Error',
+			);
+		},
+		[emitNotification],
+	);
+
 	const {
 		spawn: spawnHarness,
 		isRunning: isHarnessRunning,
@@ -256,6 +310,7 @@ function AppContent({
 		options: {
 			initialTokens: restoredTokens,
 			onExitTokens,
+			onLifecycleEvent: onProcessLifecycleEvent,
 			trackOutput: false,
 			trackStreamingText: false,
 			tokenUpdateMs: 1000,
@@ -275,31 +330,7 @@ function AppContent({
 	const initialSessionRef = useRef(initialSessionId);
 
 	const metrics = useHeaderMetrics(feedEvents);
-
-	// Track session telemetry
-	const metricsRef = useRef(metrics);
-	metricsRef.current = metrics;
-
-	useEffect(() => {
-		trackSessionStarted({
-			harness,
-			workflow: workflowRef,
-			model: modelName ?? undefined,
-		});
-
-		const startTime = Date.now();
-		return () => {
-			const m = metricsRef.current;
-			trackSessionEnded({
-				durationMs: Date.now() - startTime,
-				toolCallCount: m.totalToolCallCount,
-				subagentCount: m.subagentCount,
-				permissionsAllowed: m.permissions.allowed,
-				permissionsDenied: m.permissions.denied,
-			});
-		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: captures initial session context
-	}, []);
+	sessionTelemetryMetricsRef.current = metrics;
 
 	useTerminalTitle(feedEvents, isHarnessRunning);
 	const appMode = useAppMode(
@@ -326,10 +357,11 @@ function AppContent({
 	);
 
 	const clearScreen = useCallback(() => {
+		onSessionTelemetrySnapshot(metrics);
 		clearEvents();
 		process.stdout.write('\x1B[2J\x1B[3J\x1B[H');
 		onClear();
-	}, [clearEvents, onClear]);
+	}, [clearEvents, metrics, onClear, onSessionTelemetrySnapshot]);
 
 	const timeline = useTimeline({
 		feedItems,
@@ -1427,6 +1459,8 @@ export default function App({
 		initialPhase = {type: 'main', initialSessionId};
 	}
 	const [phase, setPhase] = useState<AppPhase>(initialPhase);
+	const sessionTelemetryMetricsRef = useRef<SessionMetrics>(EMPTY_SESSION_METRICS);
+	const sessionTelemetryCarryRef = useRef(createEmptySessionTelemetryCarry());
 
 	useEffect(() => {
 		if (!perfEnabled) return;
@@ -1441,6 +1475,35 @@ export default function App({
 		if (!perfEnabled) return;
 		logPerfEvent('app.phase', {phase: phase.type});
 	}, [perfEnabled, phase.type]);
+
+	useEffect(() => {
+		if (phase.type !== 'main') {
+			return;
+		}
+
+		sessionTelemetryCarryRef.current = createEmptySessionTelemetryCarry();
+		sessionTelemetryMetricsRef.current = EMPTY_SESSION_METRICS;
+		trackSessionStarted({
+			harness: runtimeState.harness,
+			workflow: runtimeState.workflowRef,
+			model: runtimeState.modelName ?? undefined,
+		});
+
+		const startTime = Date.now();
+		return () => {
+			const summary = buildSessionTelemetrySummary(
+				sessionTelemetryCarryRef.current,
+				sessionTelemetryMetricsRef.current,
+			);
+			trackSessionEnded({
+				durationMs: Date.now() - startTime,
+				toolCallCount: summary.toolCallCount,
+				subagentCount: summary.subagentCount,
+				permissionsAllowed: summary.permissionsAllowed,
+				permissionsDenied: summary.permissionsDenied,
+			});
+		};
+	}, [phase.type, athenaSessionId, runtimeState.harness, runtimeState.modelName, runtimeState.workflowRef]);
 
 	const handleProfilerRender = useCallback(
 		(
@@ -1593,8 +1656,8 @@ export default function App({
 				allowedTools={runtimeState.isolation?.allowedTools}
 				athenaSessionId={athenaSessionId}
 			>
-				<AppContent
-					key={clearCount}
+					<AppContent
+						key={clearCount}
 					projectDir={projectDir}
 					instanceId={instanceId}
 					harness={runtimeState.harness}
@@ -1606,12 +1669,20 @@ export default function App({
 					initialSessionId={phase.initialSessionId}
 					onClear={() => setClearCount(c => c + 1)}
 					onShowSessions={handleShowSessions}
-					onShowSetup={handleShowSetup}
-					inputHistory={inputHistory}
-					workflowRef={runtimeState.workflowRef}
-					workflow={runtimeState.workflow}
-					ascii={ascii}
-				/>
+						onShowSetup={handleShowSetup}
+						inputHistory={inputHistory}
+						sessionTelemetryMetricsRef={sessionTelemetryMetricsRef}
+						onSessionTelemetrySnapshot={metrics => {
+							sessionTelemetryCarryRef.current =
+								accumulateSessionTelemetryCarry(
+									sessionTelemetryCarryRef.current,
+									metrics,
+								);
+						}}
+						workflowRef={runtimeState.workflowRef}
+						workflow={runtimeState.workflow}
+						ascii={ascii}
+					/>
 			</HookProvider>
 		</ThemeProvider>
 	);

@@ -26,12 +26,13 @@ export function useRuntimeSelectors() {
 	const allocateSeq = useHookContextSelector(v => v.allocateSeq);
 	const clearEvents = useHookContextSelector(v => v.clearEvents);
 	const printTaskSnapshot = useHookContextSelector(v => v.printTaskSnapshot);
+	const emitNotification = useHookContextSelector(v => v.emitNotification);
 	const recordTokens = useHookContextSelector(v => v.recordTokens);
 	const restoredTokens = useHookContextSelector(v => v.restoredTokens);
 
 	const hookCommandFeed = useMemo(
-		() => ({printTaskSnapshot}),
-		[printTaskSnapshot],
+		() => ({printTaskSnapshot, emitNotification}),
+		[printTaskSnapshot, emitNotification],
 	);
 
 	return {
@@ -49,6 +50,7 @@ export function useRuntimeSelectors() {
 		postByToolUseId,
 		allocateSeq,
 		clearEvents,
+		emitNotification,
 		recordTokens,
 		restoredTokens,
 		hookCommandFeed,

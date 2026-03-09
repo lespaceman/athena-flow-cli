@@ -7,6 +7,7 @@ import {
 	registerCleanupOnExit,
 } from '../hooks/generateHookSettings';
 import {buildIsolationArgs, validateConflicts} from '../config/flagRegistry';
+import {resolveClaudeBinary} from '../system/resolveBinary';
 
 /**
  * Spawns a Claude Code headless process with the given prompt.
@@ -78,7 +79,8 @@ export function spawnClaude(options: SpawnClaudeOptions): ChildProcess {
 		console.error('[athena-debug] Spawning claude with args:', args);
 	}
 
-	const child = spawn('claude', args, {
+	const claudeBinary = resolveClaudeBinary() ?? 'claude';
+	const child = spawn(claudeBinary, args, {
 		cwd: projectDir,
 		stdio: ['ignore', 'pipe', 'pipe'],
 		env: {

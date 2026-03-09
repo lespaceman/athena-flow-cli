@@ -19,7 +19,10 @@ import {
 	type LoopManager,
 } from '../../../core/workflows/index';
 import path from 'node:path';
-import type {TokenUsageParserFactory} from '../../../core/runtime/process';
+import type {
+	HarnessProcessLifecycleEvent,
+	TokenUsageParserFactory,
+} from '../../../core/runtime/process';
 
 export type {UseClaudeProcessResult};
 
@@ -82,6 +85,7 @@ const JQ_ASSISTANT_TEXT_FILTER =
 export type UseClaudeProcessOptions = {
 	initialTokens?: TokenUsage | null;
 	onExitTokens?: (tokens: TokenUsage) => void;
+	onLifecycleEvent?: (event: HarnessProcessLifecycleEvent) => void;
 	/** Keep raw stdout/stderr lines in React state (expensive for high-volume streams). */
 	trackOutput?: boolean;
 	/** Keep jq-filtered assistant text in React state (debug-only). */
@@ -119,6 +123,8 @@ export function useClaudeProcess(
 	const [streamingText, setStreamingText] = useState('');
 	const onExitTokensRef = useRef(options?.onExitTokens);
 	onExitTokensRef.current = options?.onExitTokens;
+	const onLifecycleEventRef = useRef(options?.onLifecycleEvent);
+	onLifecycleEventRef.current = options?.onLifecycleEvent;
 	const trackOutputRef = useRef(options?.trackOutput ?? true);
 	trackOutputRef.current = options?.trackOutput ?? true;
 	const trackStreamingTextRef = useRef(options?.trackStreamingText ?? true);
@@ -132,6 +138,8 @@ export function useClaudeProcess(
 	tokenUsageRef.current = tokenUsage;
 	const pendingTokenUsageRef = useRef<TokenUsage | null>(null);
 	const tokenUsageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const lastStderrRef = useRef('');
+	const reportedFailureRef = useRef(false);
 
 	const clearTokenUsageTimer = useCallback(() => {
 		if (!tokenUsageTimerRef.current) return;
@@ -233,6 +241,8 @@ export function useClaudeProcess(
 			tokenAccRef.current.reset();
 			clearTokenUsageTimer();
 			pendingTokenUsageRef.current = null;
+			lastStderrRef.current = '';
+			reportedFailureRef.current = false;
 			// Capture cumulative base before this spawn (input/output/cache carry forward,
 			// contextSize resets per-process since the new process reports its own).
 			const current = tokenUsageRef.current;
@@ -352,6 +362,7 @@ export function useClaudeProcess(
 				},
 				onStderr: (data: string) => {
 					if (abortRef.current.signal.aborted) return;
+					lastStderrRef.current = data.trim() || lastStderrRef.current;
 					if (!trackOutputRef.current) return;
 					setOutput(prev => {
 						const updated = [...prev, `[stderr] ${data}`];
@@ -437,6 +448,21 @@ export function useClaudeProcess(
 					if (trackOutputRef.current && code !== 0 && code !== null) {
 						setOutput(prev => [...prev, `[exit code: ${code}]`]);
 					}
+					if (
+						code !== null &&
+						code !== 0 &&
+						!reportedFailureRef.current
+					) {
+						reportedFailureRef.current = true;
+						const stderrDetail = lastStderrRef.current
+							? ` Stderr: ${lastStderrRef.current}`
+							: '';
+						onLifecycleEventRef.current?.({
+							type: 'exit_nonzero',
+							code,
+							message: `Claude exited with code ${code}.${stderrDetail}`,
+						});
+					}
 				},
 				onError: (error: Error) => {
 					// Resolve any pending kill promise
@@ -447,6 +473,13 @@ export function useClaudeProcess(
 					if (abortRef.current.signal.aborted) return;
 					processRef.current = null;
 					setIsRunning(false);
+					if (!reportedFailureRef.current) {
+						reportedFailureRef.current = true;
+						onLifecycleEventRef.current?.({
+							type: 'spawn_error',
+							message: error.message,
+						});
+					}
 					if (!trackOutputRef.current) return;
 					setOutput(prev => [...prev, `[error] ${error.message}`]);
 				},

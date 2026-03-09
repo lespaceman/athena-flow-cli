@@ -1,5 +1,16 @@
 import type {TokenUsage} from '../../shared/types/headerMetrics';
 
+export type HarnessProcessLifecycleEvent =
+	| {
+			type: 'spawn_error';
+			message: string;
+	  }
+	| {
+			type: 'exit_nonzero';
+			code: number;
+			message: string;
+	  };
+
 /**
  * Harness-agnostic process lifecycle contract for prompt execution.
  */
@@ -46,6 +57,7 @@ export type HarnessProcessOverride = Record<string, unknown>;
 export type HarnessProcessOptions = {
 	initialTokens?: TokenUsage | null;
 	onExitTokens?: (tokens: TokenUsage) => void;
+	onLifecycleEvent?: (event: HarnessProcessLifecycleEvent) => void;
 	trackOutput?: boolean;
 	trackStreamingText?: boolean;
 	tokenUpdateMs?: number;

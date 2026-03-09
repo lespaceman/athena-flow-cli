@@ -381,6 +381,37 @@ describe('useClaudeProcess', () => {
 		expect(result.current.output).toContain('[error] spawn claude ENOENT');
 	});
 
+	it('emits lifecycle event for spawn errors even when output tracking is disabled', async () => {
+		const onLifecycleEvent = vi.fn();
+		const {result} = renderHook(() =>
+			useClaudeProcess(
+				'/test',
+				TEST_INSTANCE_ID,
+				undefined,
+				undefined,
+				false,
+				undefined,
+				{
+					trackOutput: false,
+					onLifecycleEvent,
+				},
+			),
+		);
+
+		await act(async () => {
+			await result.current.spawn('test');
+		});
+
+		act(() => {
+			capturedCallbacks.onError?.(new Error('spawn claude ENOENT'));
+		});
+
+		expect(onLifecycleEvent).toHaveBeenCalledWith({
+			type: 'spawn_error',
+			message: 'spawn claude ENOENT',
+		});
+	});
+
 	it('should log non-zero exit code', async () => {
 		const {result} = renderHook(() =>
 			useClaudeProcess('/test', TEST_INSTANCE_ID),
@@ -396,6 +427,40 @@ describe('useClaudeProcess', () => {
 
 		expect(result.current.isRunning).toBe(false);
 		expect(result.current.output).toContain('[exit code: 1]');
+	});
+
+	it('emits lifecycle event for non-zero exits with stderr context', async () => {
+		const onLifecycleEvent = vi.fn();
+		const {result} = renderHook(() =>
+			useClaudeProcess(
+				'/test',
+				TEST_INSTANCE_ID,
+				undefined,
+				undefined,
+				false,
+				undefined,
+				{
+					trackOutput: false,
+					onLifecycleEvent,
+				},
+			),
+		);
+
+		await act(async () => {
+			await result.current.spawn('test');
+		});
+
+		act(() => {
+			capturedCallbacks.onStderr?.('permission denied');
+			capturedCallbacks.onExit?.(1);
+		});
+
+		expect(onLifecycleEvent).toHaveBeenCalledWith({
+			type: 'exit_nonzero',
+			code: 1,
+			message: 'Claude exited with code 1. Stderr: permission denied',
+		});
+		expect(result.current.isRunning).toBe(false);
 	});
 
 	it('should not log zero exit code', async () => {

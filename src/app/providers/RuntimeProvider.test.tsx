@@ -63,6 +63,7 @@ describe('HookProvider runtime factory wiring', () => {
 			removeRule: vi.fn(),
 			clearRules: vi.fn(),
 			printTaskSnapshot: vi.fn(),
+			emitNotification: vi.fn(),
 			isDegraded: false,
 			postByToolUseId: new Map(),
 			allocateSeq: vi.fn(() => 1),

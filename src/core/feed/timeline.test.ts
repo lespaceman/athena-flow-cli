@@ -1171,11 +1171,11 @@ describe('VERBOSE_ONLY_KINDS', () => {
 		expect(VERBOSE_ONLY_KINDS.has('session.end')).toBe(true);
 		expect(VERBOSE_ONLY_KINDS.has('run.start')).toBe(true);
 		expect(VERBOSE_ONLY_KINDS.has('run.end')).toBe(true);
-		expect(VERBOSE_ONLY_KINDS.has('notification')).toBe(true);
 		expect(VERBOSE_ONLY_KINDS.has('config.change')).toBe(true);
 	});
 
 	it('excludes tool and action event kinds', () => {
+		expect(VERBOSE_ONLY_KINDS.has('notification')).toBe(false);
 		expect(VERBOSE_ONLY_KINDS.has('tool.pre')).toBe(false);
 		expect(VERBOSE_ONLY_KINDS.has('tool.post')).toBe(false);
 		expect(VERBOSE_ONLY_KINDS.has('tool.failure')).toBe(false);

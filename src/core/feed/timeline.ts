@@ -615,7 +615,6 @@ export const VERBOSE_ONLY_KINDS: ReadonlySet<FeedEventKind> = new Set([
 	'session.end',
 	'run.start',
 	'run.end',
-	'notification',
 	'unknown.hook',
 	'compact.pre',
 	'config.change',
