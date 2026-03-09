@@ -1,11 +1,14 @@
 import type {AthenaHarness} from '../infra/plugins/config';
-import {detectClaudeVersion} from './claude/system/detectVersion';
+import {
+	type HarnessVerificationResult,
+	verifyClaudeHarness,
+} from './claude/system/verifyHarness';
 
 export type HarnessCapability = {
 	id: AthenaHarness;
 	label: string;
 	enabled: boolean;
-	verify?: () => {ok: boolean; message: string};
+	verify?: () => HarnessVerificationResult;
 };
 
 const HARNESS_CAPABILITIES: HarnessCapability[] = [
@@ -13,16 +16,7 @@ const HARNESS_CAPABILITIES: HarnessCapability[] = [
 		id: 'claude-code',
 		label: 'Claude Code',
 		enabled: true,
-		verify: () => {
-			const version = detectClaudeVersion();
-			return version
-				? {ok: true, message: `Claude Code v${version} detected`}
-				: {
-						ok: false,
-						message:
-							'Claude Code not found. Install it, then press r to retry.',
-					};
-		},
+		verify: () => verifyClaudeHarness(),
 	},
 	{
 		id: 'openai-codex',

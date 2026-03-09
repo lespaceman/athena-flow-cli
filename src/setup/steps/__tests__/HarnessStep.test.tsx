@@ -5,8 +5,45 @@ import HarnessStep from '../HarnessStep';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-vi.mock('../../../harnesses/claude/system/detectVersion', () => ({
-	detectClaudeVersion: vi.fn(() => '2.5.0'),
+vi.mock('../../../harnesses/registry', () => ({
+	listHarnessCapabilities: vi.fn(() => [
+		{
+			id: 'claude-code',
+			label: 'Claude Code',
+			enabled: true,
+			verify: () => ({
+				ok: true,
+				summary: 'Claude Code v2.5.0 detected',
+				checks: [
+					{
+						label: 'Claude binary',
+						status: 'pass',
+						message: '/usr/local/bin/claude',
+					},
+					{
+						label: 'Smoke prompt',
+						status: 'pass',
+						message: 'Claude replied: ATHENA_SETUP_OK',
+					},
+					{
+						label: 'Hook forwarder',
+						status: 'pass',
+						message: '/usr/local/bin/athena-hook-forwarder',
+					},
+				],
+			}),
+		},
+		{
+			id: 'openai-codex',
+			label: 'OpenAI Codex (coming soon)',
+			enabled: false,
+		},
+		{
+			id: 'opencode',
+			label: 'OpenCode (coming soon)',
+			enabled: false,
+		},
+	]),
 }));
 
 describe('HarnessStep', () => {
@@ -34,6 +71,24 @@ describe('HarnessStep', () => {
 		// Wait for async verification
 		await vi.waitFor(() => {
 			expect(result).toBe('claude-code');
+		});
+	});
+
+	it('renders detailed verification checks after selection', async () => {
+		const {stdin, lastFrame} = render(
+			<HarnessStep onComplete={() => {}} onError={() => {}} />,
+		);
+
+		stdin.write('\r');
+
+		await vi.waitFor(() => {
+			const frame = lastFrame()!;
+			expect(frame).toContain('Claude Code v2.5.0 detected');
+			expect(frame).toContain('Claude binary: /usr/local/bin/claude');
+			expect(frame).toContain('Smoke prompt: Claude replied: ATHENA_SETUP_OK');
+			expect(frame).toContain(
+				'Hook forwarder: /usr/local/bin/athena-hook-forwarder',
+			);
 		});
 	});
 

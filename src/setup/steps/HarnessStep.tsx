@@ -4,7 +4,11 @@ import StepSelector from '../components/StepSelector';
 import StepStatus from '../components/StepStatus';
 import {useTheme} from '../../ui/theme/index';
 import type {AthenaHarness} from '../../infra/plugins/config';
-import {listHarnessCapabilities} from '../../harnesses/registry';
+import {
+	listHarnessCapabilities,
+	type HarnessCapability,
+} from '../../harnesses/registry';
+import type {HarnessVerificationCheck} from '../../harnesses/claude/system/verifyHarness';
 
 type Props = {
 	onComplete: (harness: AthenaHarness) => void;
@@ -18,25 +22,51 @@ export default function HarnessStep({onComplete, onError}: Props) {
 		'selecting' | 'verifying' | 'success' | 'error'
 	>('selecting');
 	const [message, setMessage] = useState('');
+	const [checks, setChecks] = useState<HarnessVerificationCheck[]>([]);
+
+	const renderCheckLine = useCallback(
+		(check: HarnessVerificationCheck) => {
+			const glyph =
+				check.status === 'pass' ? '✓' : check.status === 'fail' ? '✗' : '!';
+			const color =
+				check.status === 'pass'
+					? theme.status.success
+					: check.status === 'fail'
+						? theme.status.error
+						: theme.status.warning;
+			return (
+				<Text key={check.label} color={color}>
+					{`${glyph} ${check.label}: ${check.message}`}
+				</Text>
+			);
+		},
+		[theme.status.error, theme.status.success, theme.status.warning],
+	);
 
 	const handleSelect = useCallback(
 		(value: AthenaHarness) => {
-			const capability = capabilities.find(c => c.id === value);
+			const capability = capabilities.find(
+				(c: HarnessCapability) => c.id === value,
+			);
 			if (!capability || !capability.enabled) return;
 			setStatus('verifying');
+			setChecks([]);
+			setMessage('');
 			// Run verification asynchronously to not block render
 			setTimeout(() => {
 				const verifyResult = capability.verify?.() ?? {
 					ok: true,
-					message: `${capability.label} ready`,
+					summary: `${capability.label} ready`,
+					checks: [],
 				};
-				setMessage(verifyResult.message);
+				setMessage(verifyResult.summary);
+				setChecks(verifyResult.checks);
 				if (verifyResult.ok) {
 					setStatus('success');
 					onComplete(value);
 				} else {
 					setStatus('error');
-					onError(verifyResult.message);
+					onError(verifyResult.summary);
 				}
 			}, 0);
 		},
@@ -69,10 +99,17 @@ export default function HarnessStep({onComplete, onError}: Props) {
 			{(status === 'verifying' ||
 				status === 'success' ||
 				status === 'error') && (
-				<StepStatus
-					status={status}
-					message={message || 'Verifying harness...'}
-				/>
+				<Box flexDirection="column" marginTop={1}>
+					<StepStatus
+						status={status}
+						message={message || 'Verifying harness...'}
+					/>
+					{checks.length > 0 && (
+						<Box flexDirection="column" marginTop={1}>
+							{checks.map(renderCheckLine)}
+						</Box>
+					)}
+				</Box>
 			)}
 		</Box>
 	);
