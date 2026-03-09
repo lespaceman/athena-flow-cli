@@ -1,6 +1,7 @@
 import type {Runtime} from '../../core/runtime/types';
 import type {AthenaHarness} from '../../infra/plugins/config';
 import {createClaudeHookRuntime} from '../../harnesses/claude/runtime';
+import {createCodexRuntime} from '../../harnesses/codex/runtime';
 
 export type RuntimeFactoryInput = {
 	harness: AthenaHarness;
@@ -20,6 +21,10 @@ export function createRuntime(input: RuntimeFactoryInput): Runtime {
 				instanceId: input.instanceId,
 			});
 		case 'openai-codex':
+			return createCodexRuntime({
+				projectDir: input.projectDir,
+				instanceId: input.instanceId,
+			});
 		case 'opencode':
 		default:
 			// Backward-compatible fallback until additional harness adapters land.

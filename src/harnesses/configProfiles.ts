@@ -60,7 +60,14 @@ function createFallbackProfile(harness: AthenaHarness): HarnessConfigProfile {
 
 const PROFILE_BY_HARNESS: Record<AthenaHarness, HarnessConfigProfile> = {
 	'claude-code': CLAUDE_PROFILE,
-	'openai-codex': createFallbackProfile('openai-codex'),
+	'openai-codex': {
+		harness: 'openai-codex',
+		buildIsolationConfig: ({isolationPreset, configuredModel}) => ({
+			preset: isolationPreset,
+			model: configuredModel,
+		}),
+		resolveModelName: ({configuredModel}) => configuredModel ?? 'gpt-5.3-codex',
+	} satisfies HarnessConfigProfile,
 	opencode: createFallbackProfile('opencode'),
 };
 

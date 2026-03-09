@@ -36,7 +36,7 @@ describe('resolveHarnessConfigProfile', () => {
 			profile.resolveModelName({
 				projectDir: '/project',
 			}),
-		).toBeNull();
+		).toBe('gpt-5.3-codex');
 		expect(
 			profile.resolveModelName({
 				projectDir: '/project',

@@ -1,8 +1,7 @@
 import type {AthenaHarness} from '../infra/plugins/config';
-import {
-	type HarnessVerificationResult,
-	verifyClaudeHarness,
-} from './claude/system/verifyHarness';
+import {verifyClaudeHarness} from './claude/system/verifyHarness';
+import {verifyCodexHarness} from './codex/system/verifyHarness';
+import type {HarnessVerificationResult} from './types';
 
 export type HarnessCapability = {
 	id: AthenaHarness;
@@ -20,8 +19,9 @@ const HARNESS_CAPABILITIES: HarnessCapability[] = [
 	},
 	{
 		id: 'openai-codex',
-		label: 'OpenAI Codex (coming soon)',
-		enabled: false,
+		label: 'OpenAI Codex',
+		enabled: true,
+		verify: () => verifyCodexHarness(),
 	},
 	{
 		id: 'opencode',

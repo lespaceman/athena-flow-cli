@@ -10,9 +10,24 @@ const createClaudeHookRuntimeMock = vi.fn(() => ({
 	sendDecision: vi.fn(),
 }));
 
+const createCodexRuntimeMock = vi.fn(() => ({
+	start: vi.fn(() => Promise.resolve()),
+	stop: vi.fn(),
+	getStatus: () => 'stopped' as const,
+	getLastError: () => null,
+	onEvent: () => () => {},
+	onDecision: () => () => {},
+	sendDecision: vi.fn(),
+}));
+
 vi.mock('../../harnesses/claude/runtime', () => ({
 	createClaudeHookRuntime: (opts: {projectDir: string; instanceId: number}) =>
 		createClaudeHookRuntimeMock(opts),
+}));
+
+vi.mock('../../harnesses/codex/runtime', () => ({
+	createCodexRuntime: (opts: {projectDir: string; instanceId: number}) =>
+		createCodexRuntimeMock(opts),
 }));
 
 const {createRuntime, DEFAULT_HARNESS} = await import('./createRuntime');
@@ -31,14 +46,14 @@ describe('createRuntime', () => {
 		});
 	});
 
-	it('falls back to claude runtime for unsupported harnesses', () => {
+	it('uses codex runtime for openai-codex harness', () => {
 		createRuntime({
 			harness: 'openai-codex',
 			projectDir: '/tmp/project',
 			instanceId: 7,
 		});
 
-		expect(createClaudeHookRuntimeMock).toHaveBeenCalledWith({
+		expect(createCodexRuntimeMock).toHaveBeenCalledWith({
 			projectDir: '/tmp/project',
 			instanceId: 7,
 		});
