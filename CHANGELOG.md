@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.12](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.11...cli-v0.3.12) (2026-03-09)
+
+
+### Bug Fixes
+
+* **ci:** fix telemetry test assertion and gate release on CI ([3f2dccb](https://github.com/lespaceman/athena-flow-cli/commit/3f2dccb643887a211115a1fcb598f7bbb24a8673))
+
 ## [0.3.11](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.10...cli-v0.3.11) (2026-03-09)
 
 
