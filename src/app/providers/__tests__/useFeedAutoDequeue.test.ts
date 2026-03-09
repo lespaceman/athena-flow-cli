@@ -9,14 +9,19 @@ import type {
 	RuntimeDecision,
 	RuntimeEventHandler,
 	RuntimeDecisionHandler,
+	RuntimeStartupError,
 } from '../../../core/runtime/types';
 
 function createMockRuntime(): Runtime & {
 	emitEvent: (event: RuntimeEvent) => void;
 	emitDecision: (eventId: string, decision: RuntimeDecision) => void;
+	setStatus: (status: 'stopped' | 'running') => void;
+	setLastError: (error: RuntimeStartupError | null) => void;
 } {
 	const eventListeners: RuntimeEventHandler[] = [];
 	const decisionListeners: RuntimeDecisionHandler[] = [];
+	let status: 'stopped' | 'running' = 'running';
+	let lastError: RuntimeStartupError | null = null;
 
 	return {
 		onEvent: cb => {
@@ -34,10 +39,17 @@ function createMockRuntime(): Runtime & {
 		sendDecision: vi.fn(),
 		start: vi.fn(),
 		stop: vi.fn(),
-		getStatus: () => 'running' as const,
+		getStatus: () => status,
+		getLastError: () => lastError,
 		emitEvent: event => eventListeners.forEach(cb => cb(event)),
 		emitDecision: (eventId, decision) =>
 			decisionListeners.forEach(cb => cb(eventId, decision)),
+		setStatus: nextStatus => {
+			status = nextStatus;
+		},
+		setLastError: error => {
+			lastError = error;
+		},
 	};
 }
 
@@ -228,5 +240,33 @@ describe('useFeed session store lifecycle', () => {
 		).not.toThrow();
 		expect(sessionStore.recordTokens).not.toHaveBeenCalled();
 		expect(sessionStore.markDegraded).not.toHaveBeenCalled();
+	});
+});
+
+describe('useFeed runtime startup errors', () => {
+	it('surfaces hook server startup errors in state and feed notifications', () => {
+		const runtime = createMockRuntime();
+		runtime.setStatus('stopped');
+		runtime.setLastError({
+			code: 'socket_path_too_long',
+			message: 'Socket path is too long for darwin',
+		});
+
+		const {result} = renderHook(() => useFeed(runtime));
+
+		expect(result.current.isServerRunning).toBe(false);
+		expect(result.current.runtimeError).toEqual({
+			code: 'socket_path_too_long',
+			message: 'Socket path is too long for darwin',
+		});
+		expect(
+			result.current.feedEvents.some(
+				event =>
+					event.kind === 'notification' &&
+					String(event.data.message).includes(
+						'Athena hook server failed to start',
+					),
+			),
+		).toBe(true);
 	});
 });

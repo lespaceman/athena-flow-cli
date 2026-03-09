@@ -1,5 +1,8 @@
 import {describe, it, expect, vi, beforeEach, afterEach} from 'vitest';
 import * as childProcess from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {spawnClaude} from './spawn';
 import {EventEmitter} from 'node:events';
 
@@ -11,6 +14,7 @@ vi.mock('../hooks/generateHookSettings', () => ({
 		cleanup: mockCleanup,
 	})),
 	registerCleanupOnExit: vi.fn(),
+	resolveHookForwarderCommand: vi.fn(),
 }));
 
 function createMockChildProcess(opts?: {withStdin?: boolean}) {
@@ -44,19 +48,41 @@ vi.mock('../system/resolveBinary', () => ({
 }));
 
 import {resolveClaudeBinary} from '../system/resolveBinary';
+import {resolveHookForwarderCommand} from '../hooks/generateHookSettings';
 
 describe('spawnClaude', () => {
 	let mockChildProcess: ReturnType<typeof createMockChildProcess>;
 	const mockResolveClaudeBinary = vi.mocked(resolveClaudeBinary);
+	const mockResolveHookForwarderCommand = vi.mocked(
+		resolveHookForwarderCommand,
+	);
+	let tempHookForwarderPath = '';
 
 	beforeEach(() => {
+		tempHookForwarderPath = path.join(
+			os.tmpdir(),
+			`athena-hook-forwarder-${Date.now()}.js`,
+		);
+		fs.writeFileSync(tempHookForwarderPath, 'console.log("ok");');
 		mockChildProcess = createMockChildProcess();
 		vi.mocked(childProcess.spawn).mockReturnValue(mockChildProcess);
 		mockResolveClaudeBinary.mockReturnValue('/resolved/claude');
+		mockResolveHookForwarderCommand.mockReturnValue({
+			command: `'${process.execPath}' '${tempHookForwarderPath}'`,
+			executable: process.execPath,
+			args: [tempHookForwarderPath],
+			source: 'bundled',
+			scriptPath: tempHookForwarderPath,
+		});
 		mockCleanup.mockClear();
 	});
 
 	afterEach(() => {
+		try {
+			fs.unlinkSync(tempHookForwarderPath);
+		} catch {
+			// ignore
+		}
 		vi.clearAllMocks();
 	});
 
@@ -90,20 +116,39 @@ describe('spawnClaude', () => {
 		);
 	});
 
-	it('falls back to bare claude when binary resolution misses', () => {
+	it('throws a preflight error when claude binary resolution misses', () => {
 		mockResolveClaudeBinary.mockReturnValue(null);
 
-		spawnClaude({
-			prompt: 'Hello, Claude!',
-			projectDir: '/test/project',
-			instanceId: 12345,
-		});
+		expect(() =>
+			spawnClaude({
+				prompt: 'Hello, Claude!',
+				projectDir: '/test/project',
+				instanceId: 12345,
+			}),
+		).toThrow(/Claude binary not found/);
+	});
 
-		expect(childProcess.spawn).toHaveBeenCalledWith(
-			'claude',
-			expect.any(Array),
-			expect.any(Object),
-		);
+	it('throws a preflight error when hook forwarder cannot be resolved', () => {
+		mockResolveHookForwarderCommand.mockReturnValue({
+			command: 'athena-hook-forwarder',
+			executable: 'athena-hook-forwarder',
+			args: [],
+			source: 'path',
+		});
+		const originalPath = process.env['PATH'];
+		process.env['PATH'] = '';
+
+		try {
+			expect(() =>
+				spawnClaude({
+					prompt: 'Hello, Claude!',
+					projectDir: '/test/project',
+					instanceId: 12345,
+				}),
+			).toThrow(/athena-hook-forwarder/);
+		} finally {
+			process.env['PATH'] = originalPath;
+		}
 	});
 
 	it('wires stdout, stderr, exit, and error callbacks correctly', () => {

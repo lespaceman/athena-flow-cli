@@ -32,6 +32,7 @@ describe('createClaudeHookRuntime', () => {
 
 		await new Promise(r => setTimeout(r, 100));
 		expect(runtime.getStatus()).toBe('running');
+		expect(runtime.getLastError()).toBeNull();
 	});
 
 	it('conforms to the transport-neutral runtime connector contract', () => {
@@ -46,6 +47,7 @@ describe('createClaudeHookRuntime', () => {
 		expect(typeof runtime.start).toBe('function');
 		expect(typeof runtime.stop).toBe('function');
 		expect(typeof runtime.getStatus).toBe('function');
+		expect(typeof runtime.getLastError).toBe('function');
 		expect(typeof runtime.onEvent).toBe('function');
 		expect(typeof runtime.onDecision).toBe('function');
 		expect(typeof runtime.sendDecision).toBe('function');
@@ -177,5 +179,23 @@ describe('createClaudeHookRuntime', () => {
 		await new Promise(r => setTimeout(r, 100));
 		runtime.stop();
 		expect(runtime.getStatus()).toBe('stopped');
+		expect(runtime.getLastError()).toBeNull();
+	});
+
+	it('records a startup error when the socket path is too long', () => {
+		const repeated = 'a'.repeat(120);
+		const projectDir = path.join(makeTmpDir(), repeated);
+		cleanup.push(() =>
+			fs.rmSync(path.dirname(projectDir), {recursive: true, force: true}),
+		);
+
+		const runtime = createClaudeHookRuntime({projectDir, instanceId: 55});
+		runtime.start();
+
+		expect(runtime.getStatus()).toBe('stopped');
+		expect(runtime.getLastError()).toEqual({
+			code: 'socket_path_too_long',
+			message: expect.stringContaining('Socket path is too long'),
+		});
 	});
 });

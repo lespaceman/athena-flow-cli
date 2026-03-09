@@ -66,6 +66,10 @@ export function createMockRuntime(script: ScriptedEvent[]): Runtime & {
 			return status;
 		},
 
+		getLastError() {
+			return null;
+		},
+
 		onEvent(handler: RuntimeEventHandler) {
 			handlers.add(handler);
 			return () => handlers.delete(handler);

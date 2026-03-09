@@ -52,11 +52,14 @@ export type AppMode =
 	| {type: 'idle'}
 	| {type: 'working'}
 	| {type: 'permission'}
-	| {type: 'question'};
+	| {type: 'question'}
+	| {type: 'startup_failed'; message: string};
 
 /** Map AppMode to ClaudeState for Header display. */
 export function appModeToClaudeState(mode: AppMode): ClaudeState {
 	switch (mode.type) {
+		case 'startup_failed':
+			return 'error';
 		case 'permission':
 		case 'question':
 			return 'waiting';

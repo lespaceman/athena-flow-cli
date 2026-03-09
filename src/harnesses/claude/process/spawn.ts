@@ -1,13 +1,106 @@
 import {spawn, type ChildProcess} from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
 import {processRegistry} from '../../../shared/utils/processRegistry';
 import {type SpawnClaudeOptions} from './types';
 import {resolveIsolationConfig} from '../config/isolation';
 import {
 	generateHookSettings,
 	registerCleanupOnExit,
+	resolveHookForwarderCommand,
 } from '../hooks/generateHookSettings';
 import {buildIsolationArgs, validateConflicts} from '../config/flagRegistry';
 import {resolveClaudeBinary} from '../system/resolveBinary';
+import type {HarnessProcessFailureCode} from '../../../core/runtime/process';
+
+const MAX_UNIX_SOCKET_PATH_BYTES = {
+	darwin: 103,
+	default: 107,
+} as const;
+
+type SpawnPreflightError = Error & {
+	failureCode?: HarnessProcessFailureCode;
+};
+
+function makePreflightError(
+	failureCode: HarnessProcessFailureCode,
+	message: string,
+): SpawnPreflightError {
+	const error = new Error(message) as SpawnPreflightError;
+	error.name = 'ClaudeSpawnPreflightError';
+	error.failureCode = failureCode;
+	return error;
+}
+
+function resolveExecutableOnPath(commandName: string): string | null {
+	const pathValue = process.env['PATH'] ?? '';
+	for (const entry of pathValue.split(path.delimiter)) {
+		if (!entry) continue;
+		const candidate = path.join(entry, commandName);
+		try {
+			fs.accessSync(candidate, fs.constants.X_OK);
+			return candidate;
+		} catch {
+			// Continue searching.
+		}
+	}
+	return null;
+}
+
+function validateSocketPath(projectDir: string, instanceId: number): void {
+	const socketPath = path.join(
+		projectDir,
+		'.claude',
+		'run',
+		`ink-${instanceId}.sock`,
+	);
+	const pathBytes = Buffer.byteLength(socketPath);
+	const maxBytes =
+		process.platform === 'darwin'
+			? MAX_UNIX_SOCKET_PATH_BYTES.darwin
+			: MAX_UNIX_SOCKET_PATH_BYTES.default;
+	if (pathBytes <= maxBytes) {
+		return;
+	}
+	throw makePreflightError(
+		'socket_path_too_long',
+		`Athena hook socket path is too long for ${process.platform}: ${socketPath}. Move the repo to a shorter path and try again.`,
+	);
+}
+
+function runSpawnPreflight(projectDir: string, instanceId: number): void {
+	const claudeBinary = resolveClaudeBinary();
+	if (!claudeBinary) {
+		throw makePreflightError(
+			'claude_binary_missing',
+			'Claude binary not found in PATH. Install Claude Code and verify `claude` works in this shell.',
+		);
+	}
+
+	const hookForwarder = resolveHookForwarderCommand();
+	if (
+		hookForwarder.source === 'bundled' &&
+		(!fs.existsSync(hookForwarder.executable) ||
+			!hookForwarder.scriptPath ||
+			!fs.existsSync(hookForwarder.scriptPath))
+	) {
+		throw makePreflightError(
+			'hook_forwarder_missing',
+			'Athena hook forwarder bundle is missing. Rebuild or reinstall Athena before retrying.',
+		);
+	}
+	if (
+		hookForwarder.source === 'path' &&
+		!resolveExecutableOnPath(hookForwarder.executable)
+	) {
+		throw makePreflightError(
+			'hook_forwarder_missing',
+			'`athena-hook-forwarder` is not available in PATH. Reinstall Athena and verify the global bin is present.',
+		);
+	}
+
+	validateSocketPath(projectDir, instanceId);
+}
 
 /**
  * Spawns a Claude Code headless process with the given prompt.
@@ -37,6 +130,8 @@ export function spawnClaude(options: SpawnClaudeOptions): ChildProcess {
 		onFilteredStdout,
 		onJqStderr,
 	} = options;
+
+	runSpawnPreflight(projectDir, instanceId);
 
 	// Resolve isolation config (defaults to strict)
 	const isolationConfig = resolveIsolationConfig(isolation);
@@ -79,7 +174,13 @@ export function spawnClaude(options: SpawnClaudeOptions): ChildProcess {
 		console.error('[athena-debug] Spawning claude with args:', args);
 	}
 
-	const claudeBinary = resolveClaudeBinary() ?? 'claude';
+	const claudeBinary = resolveClaudeBinary();
+	if (!claudeBinary) {
+		throw makePreflightError(
+			'claude_binary_missing',
+			'Claude binary not found in PATH. Install Claude Code and verify `claude` works in this shell.',
+		);
+	}
 	const child = spawn(claudeBinary, args, {
 		cwd: projectDir,
 		stdio: ['ignore', 'pipe', 'pipe'],

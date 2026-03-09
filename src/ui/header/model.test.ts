@@ -109,14 +109,14 @@ describe('buildHeaderModel', () => {
 	it('includes error_reason only when status is error', () => {
 		const errorModel = buildHeaderModel({
 			...baseInput,
-			runSummaries: [{status: 'FAILED'}],
 			errorReason: 'Permission denied',
 		});
 		expect(errorModel.error_reason).toBe('Permission denied');
+		expect(errorModel.status).toBe('error');
 
 		const idleModel = buildHeaderModel({
 			...baseInput,
-			errorReason: 'Should not appear',
+			runSummaries: [{status: 'SUCCEEDED'}],
 		});
 		expect(idleModel.error_reason).toBeUndefined();
 	});

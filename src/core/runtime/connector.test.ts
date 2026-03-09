@@ -11,6 +11,7 @@ function assertConnectorContract(connector: RuntimeConnector): void {
 	expect(typeof connector.start).toBe('function');
 	expect(typeof connector.stop).toBe('function');
 	expect(typeof connector.getStatus).toBe('function');
+	expect(typeof connector.getLastError).toBe('function');
 	expect(typeof connector.onEvent).toBe('function');
 	expect(typeof connector.onDecision).toBe('function');
 	expect(typeof connector.sendDecision).toBe('function');
@@ -32,6 +33,9 @@ function createLocalConnectorMock(): RuntimeConnector & {
 		},
 		getStatus() {
 			return status;
+		},
+		getLastError() {
+			return null;
 		},
 		onEvent(handler: RuntimeEventHandler) {
 			eventHandlers.add(handler);

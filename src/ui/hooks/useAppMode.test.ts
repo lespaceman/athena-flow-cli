@@ -11,6 +11,14 @@ describe('useAppMode', () => {
 		// Idle even with stale requests (Claude not running)
 		expect(useAppMode(false, fakeEvent, fakeEvent)).toEqual({type: 'idle'});
 
+		// Startup failures take precedence over all other states
+		expect(
+			useAppMode(true, fakeEvent, fakeEvent, 'Socket path too long'),
+		).toEqual({
+			type: 'startup_failed',
+			message: 'Socket path too long',
+		});
+
 		// Working when Claude is running, no dialogs
 		expect(useAppMode(true, null, null)).toEqual({type: 'working'});
 

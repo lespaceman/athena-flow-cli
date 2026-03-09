@@ -235,6 +235,40 @@ describe('useClaudeProcess', () => {
 		expect(result.current.output).toEqual(['[stderr] error message']);
 	});
 
+	it('reports preflight spawn errors without leaving the process running', async () => {
+		const onLifecycleEvent = vi.fn();
+		vi.mocked(spawnModule.spawnClaude).mockImplementationOnce(() => {
+			const error = new Error('Claude binary not found') as Error & {
+				failureCode?: string;
+			};
+			error.failureCode = 'claude_binary_missing';
+			throw error;
+		});
+
+		const {result} = renderHook(() =>
+			useClaudeProcess(
+				'/test',
+				TEST_INSTANCE_ID,
+				undefined,
+				undefined,
+				false,
+				undefined,
+				{onLifecycleEvent},
+			),
+		);
+
+		await act(async () => {
+			await result.current.spawn('test');
+		});
+
+		expect(result.current.isRunning).toBe(false);
+		expect(onLifecycleEvent).toHaveBeenCalledWith({
+			type: 'spawn_error',
+			message: 'Claude binary not found',
+			failureCode: 'claude_binary_missing',
+		});
+	});
+
 	it('should set isRunning to false when process exits', async () => {
 		const {result} = renderHook(() =>
 			useClaudeProcess('/test', TEST_INSTANCE_ID),

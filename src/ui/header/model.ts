@@ -45,7 +45,9 @@ export interface HeaderModelInput {
 function deriveStatus(
 	currentRun: HeaderModelInput['currentRun'],
 	runSummaries: HeaderModelInput['runSummaries'],
+	errorReason?: string,
 ): HeaderStatus {
+	if (errorReason) return 'error';
 	if (currentRun) return 'active';
 	const last = runSummaries.at(-1);
 	if (!last) return 'idle';
@@ -65,7 +67,7 @@ export function buildHeaderModel(input: HeaderModelInput): HeaderModel {
 		workflowRef,
 	} = input;
 
-	const status = deriveStatus(currentRun, runSummaries);
+	const status = deriveStatus(currentRun, runSummaries, input.errorReason);
 	const sessionTotal = Math.max(
 		0,
 		Math.trunc(input.sessionTotal ?? (session?.session_id ? 1 : 0)),

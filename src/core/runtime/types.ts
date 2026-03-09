@@ -8,6 +8,16 @@
 
 import type {RuntimeEventData, RuntimeEventKind} from './events';
 
+export type RuntimeStartupErrorCode =
+	| 'socket_path_too_long'
+	| 'socket_dir_unavailable'
+	| 'socket_bind_failed';
+
+export type RuntimeStartupError = {
+	code: RuntimeStartupErrorCode;
+	message: string;
+};
+
 // ── Runtime Event (adapter → UI) ─────────────────────────
 
 export type RuntimeEvent = {
@@ -98,6 +108,7 @@ export type Runtime = {
 	start(): void;
 	stop(): void;
 	getStatus(): 'stopped' | 'running';
+	getLastError(): RuntimeStartupError | null;
 	/** Subscribe to events. Returns unsubscribe function. */
 	onEvent(handler: RuntimeEventHandler): () => void;
 	/** Subscribe to decisions (user, rule, or timeout). Returns unsubscribe function. */

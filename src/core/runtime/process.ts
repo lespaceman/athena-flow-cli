@@ -1,14 +1,30 @@
 import type {TokenUsage} from '../../shared/types/headerMetrics';
 
+export type HarnessProcessFailureCode =
+	| 'claude_binary_missing'
+	| 'hook_forwarder_missing'
+	| 'hook_server_unavailable'
+	| 'hook_handshake_timeout'
+	| 'socket_path_too_long'
+	| 'spawn_error'
+	| 'unknown';
+
 export type HarnessProcessLifecycleEvent =
 	| {
 			type: 'spawn_error';
 			message: string;
+			failureCode?: HarnessProcessFailureCode;
 	  }
 	| {
 			type: 'exit_nonzero';
 			code: number;
 			message: string;
+			failureCode?: HarnessProcessFailureCode;
+	  }
+	| {
+			type: 'startup_timeout';
+			message: string;
+			failureCode?: HarnessProcessFailureCode;
 	  };
 
 /**

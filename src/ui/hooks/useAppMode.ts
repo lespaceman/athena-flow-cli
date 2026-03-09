@@ -11,7 +11,11 @@ export function useAppMode(
 	isClaudeRunning: boolean,
 	currentPermissionRequest: unknown | null,
 	currentQuestionRequest: unknown | null,
+	startupFailureMessage?: string | null,
 ): AppMode {
+	if (startupFailureMessage) {
+		return {type: 'startup_failed', message: startupFailureMessage};
+	}
 	if (!isClaudeRunning) return {type: 'idle'};
 	if (currentPermissionRequest) return {type: 'permission'};
 	if (currentQuestionRequest) return {type: 'question'};

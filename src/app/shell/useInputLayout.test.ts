@@ -15,6 +15,12 @@ describe('deriveInputPlaceholder', () => {
 		);
 	});
 
+	it('returns startup failure message when startup failed', () => {
+		expect(deriveInputPlaceholder('normal', null, 'Socket path too long')).toBe(
+			'Startup failed — fix issue and retry',
+		);
+	});
+
 	it('returns failed message on failed run', () => {
 		expect(deriveInputPlaceholder('normal', 'failed')).toBe(
 			'Run failed — retry or adjust prompt',
@@ -28,7 +34,7 @@ describe('deriveInputPlaceholder', () => {
 	});
 
 	it('uses ASCII-safe separator in ascii mode', () => {
-		expect(deriveInputPlaceholder('normal', 'completed', true)).toBe(
+		expect(deriveInputPlaceholder('normal', 'completed', null, true)).toBe(
 			'Done - send a follow-up',
 		);
 	});

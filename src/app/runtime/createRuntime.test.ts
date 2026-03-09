@@ -4,6 +4,7 @@ const createClaudeHookRuntimeMock = vi.fn(() => ({
 	start: vi.fn(),
 	stop: vi.fn(),
 	getStatus: () => 'stopped' as const,
+	getLastError: () => null,
 	onEvent: () => () => {},
 	onDecision: () => () => {},
 	sendDecision: vi.fn(),

@@ -31,6 +31,10 @@ class MockRuntime implements Runtime {
 		return this.status;
 	}
 
+	getLastError() {
+		return null;
+	}
+
 	onEvent(handler: RuntimeEventHandler): () => void {
 		this.eventHandlers.add(handler);
 		return () => this.eventHandlers.delete(handler);

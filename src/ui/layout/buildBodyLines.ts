@@ -20,7 +20,7 @@ export type TodoViewState = {
 	focusMode: string;
 	ascii: boolean;
 	colors?: TodoGlyphColors;
-	appMode: 'idle' | 'working' | 'permission' | 'question';
+	appMode: 'idle' | 'working' | 'permission' | 'question' | 'startup_failed';
 	doneCount: number;
 	totalCount: number;
 	spinnerFrame: string;

@@ -21,6 +21,7 @@ import {
 import path from 'node:path';
 import type {
 	HarnessProcessLifecycleEvent,
+	HarnessProcessFailureCode,
 	TokenUsageParserFactory,
 } from '../../../core/runtime/process';
 
@@ -58,6 +59,39 @@ const NULL_TOKENS: TokenUsage = {
 	total: null,
 	contextSize: null,
 };
+
+function extractFailureCode(
+	error: unknown,
+): HarnessProcessFailureCode | undefined {
+	if (
+		error &&
+		typeof error === 'object' &&
+		'failureCode' in error &&
+		typeof (error as {failureCode?: unknown}).failureCode === 'string'
+	) {
+		return (error as {failureCode: HarnessProcessFailureCode}).failureCode;
+	}
+	return undefined;
+}
+
+function inferFailureCodeFromMessage(
+	message: string,
+): HarnessProcessFailureCode | undefined {
+	const normalized = message.toLowerCase();
+	if (normalized.includes('socket path is too long')) {
+		return 'socket_path_too_long';
+	}
+	if (normalized.includes('hook forwarder')) {
+		return 'hook_forwarder_missing';
+	}
+	if (
+		normalized.includes('socket not found') ||
+		normalized.includes('stale socket')
+	) {
+		return 'hook_server_unavailable';
+	}
+	return undefined;
+}
 
 function tokenUsageEquals(a: TokenUsage, b: TokenUsage): boolean {
 	return (
@@ -305,183 +339,216 @@ export function useClaudeProcess(
 						}
 					: undefined;
 
-			const child = spawnClaude({
-				prompt: effectivePrompt,
-				projectDir,
-				instanceId,
-				sessionId,
-				isolation: mergeIsolation(
-					isolation,
-					pluginMcpConfig,
-					effectivePerCallIsolation,
-				),
-				env: workflow?.env,
-				...(verbose
-					? {
-							jqFilter: JQ_ASSISTANT_TEXT_FILTER,
-							onFilteredStdout: (data: string) => {
-								if (abortRef.current.signal.aborted) return;
-								if (!trackStreamingTextRef.current) return;
-								setStreamingText(prev => prev + data);
-							},
-							onJqStderr: (data: string) => {
-								if (abortRef.current.signal.aborted) return;
-								if (!trackOutputRef.current) return;
-								setOutput(prev => [...prev, `[jq] ${data}`]);
-							},
-						}
-					: {}),
-				onStdout: (data: string) => {
-					if (abortRef.current.signal.aborted) return;
-					// Parse stream-json for token usage — merge with cumulative base
-					tokenAccRef.current.feed(data);
-					const acc = tokenAccRef.current.getUsage();
-					const base = tokenBaseRef.current;
-					publishTokenUsage({
-						input: (base.input || 0) + (acc.input ?? 0) || null,
-						output: (base.output || 0) + (acc.output ?? 0) || null,
-						cacheRead: (base.cacheRead || 0) + (acc.cacheRead ?? 0) || null,
-						cacheWrite: (base.cacheWrite || 0) + (acc.cacheWrite ?? 0) || null,
-						total:
-							(base.input || 0) +
-								(acc.input ?? 0) +
-								(base.output || 0) +
-								(acc.output ?? 0) || null,
-						contextSize: acc.contextSize,
-					});
-
-					if (!trackOutputRef.current) return;
-					setOutput(prev => {
-						const updated = [...prev, data];
-						// Limit output size to prevent memory issues
-						if (updated.length > MAX_OUTPUT) {
-							return updated.slice(-MAX_OUTPUT);
-						}
-						return updated;
-					});
-				},
-				onStderr: (data: string) => {
-					if (abortRef.current.signal.aborted) return;
-					lastStderrRef.current = data.trim() || lastStderrRef.current;
-					if (!trackOutputRef.current) return;
-					setOutput(prev => {
-						const updated = [...prev, `[stderr] ${data}`];
-						if (updated.length > MAX_OUTPUT) {
-							return updated.slice(-MAX_OUTPUT);
-						}
-						return updated;
-					});
-				},
-				onExit: (code: number | null) => {
-					// Flush any remaining buffered data for final token count
-					tokenAccRef.current.flush();
-					const finalAcc = tokenAccRef.current.getUsage();
-					if (!abortRef.current.signal.aborted) {
-						const base = tokenBaseRef.current;
-						publishTokenUsage(
-							{
-								input: (base.input || 0) + (finalAcc.input ?? 0) || null,
-								output: (base.output || 0) + (finalAcc.output ?? 0) || null,
-								cacheRead:
-									(base.cacheRead || 0) + (finalAcc.cacheRead ?? 0) || null,
-								cacheWrite:
-									(base.cacheWrite || 0) + (finalAcc.cacheWrite ?? 0) || null,
-								total:
-									(base.input || 0) +
-										(finalAcc.input ?? 0) +
-										(base.output || 0) +
-										(finalAcc.output ?? 0) || null,
-								contextSize: finalAcc.contextSize,
-							},
-							true,
-						);
-					}
-					// Persist this process's own tokens (not cumulative)
-					onExitTokensRef.current?.(finalAcc);
-
-					// Resolve any pending kill promise
-					if (exitResolverRef.current) {
-						exitResolverRef.current();
-						exitResolverRef.current = null;
-					}
-					if (abortRef.current.signal.aborted) return;
-					processRef.current = null;
-
-					// Loop respawn: spawn next iteration if not terminal and the workflow
-					// actually started (tracker file exists). This prevents accidental
-					// "continue task" loops for non-workflow prompts.
-					// Never respawn on non-zero exit (process error) to avoid infinite loops.
-					const loopManager = loopManagerRef.current;
-					const loopConfig = workflow?.loop;
-					const canContinueLoop =
-						loopConfig &&
-						loopManager &&
-						code === 0 &&
-						fs.existsSync(loopManager.trackerPath) &&
-						!loopManager.isTerminal();
-					if (canContinueLoop) {
-						loopManager.incrementIteration();
-						spawn(buildContinuePrompt(loopConfig)).catch(() => {
-							loopManagerRef.current?.deactivate();
-							loopManagerRef.current = null;
-							if (!abortRef.current.signal.aborted) {
-								setIsRunning(false);
+			try {
+				const child = spawnClaude({
+					prompt: effectivePrompt,
+					projectDir,
+					instanceId,
+					sessionId,
+					isolation: mergeIsolation(
+						isolation,
+						pluginMcpConfig,
+						effectivePerCallIsolation,
+					),
+					env: workflow?.env,
+					...(verbose
+						? {
+								jqFilter: JQ_ASSISTANT_TEXT_FILTER,
+								onFilteredStdout: (data: string) => {
+									if (abortRef.current.signal.aborted) return;
+									if (!trackStreamingTextRef.current) return;
+									setStreamingText(prev => prev + data);
+								},
+								onJqStderr: (data: string) => {
+									if (abortRef.current.signal.aborted) return;
+									if (!trackOutputRef.current) return;
+									setOutput(prev => [...prev, `[jq] ${data}`]);
+								},
 							}
+						: {}),
+					onStdout: (data: string) => {
+						if (abortRef.current.signal.aborted) return;
+						// Parse stream-json for token usage — merge with cumulative base
+						tokenAccRef.current.feed(data);
+						const acc = tokenAccRef.current.getUsage();
+						const base = tokenBaseRef.current;
+						publishTokenUsage({
+							input: (base.input || 0) + (acc.input ?? 0) || null,
+							output: (base.output || 0) + (acc.output ?? 0) || null,
+							cacheRead: (base.cacheRead || 0) + (acc.cacheRead ?? 0) || null,
+							cacheWrite:
+								(base.cacheWrite || 0) + (acc.cacheWrite ?? 0) || null,
+							total:
+								(base.input || 0) +
+									(acc.input ?? 0) +
+									(base.output || 0) +
+									(acc.output ?? 0) || null,
+							contextSize: acc.contextSize,
 						});
-						return;
-					}
 
-					// Loop reached terminal state — deactivate
-					if (loopManagerRef.current) {
-						if (
-							code === 0 &&
-							fs.existsSync(loopManagerRef.current.trackerPath) &&
-							loopManagerRef.current.isTerminal()
-						) {
-							cleanupTrackerFile(loopManagerRef.current.trackerPath);
+						if (!trackOutputRef.current) return;
+						setOutput(prev => {
+							const updated = [...prev, data];
+							// Limit output size to prevent memory issues
+							if (updated.length > MAX_OUTPUT) {
+								return updated.slice(-MAX_OUTPUT);
+							}
+							return updated;
+						});
+					},
+					onStderr: (data: string) => {
+						if (abortRef.current.signal.aborted) return;
+						lastStderrRef.current = data.trim() || lastStderrRef.current;
+						if (!trackOutputRef.current) return;
+						setOutput(prev => {
+							const updated = [...prev, `[stderr] ${data}`];
+							if (updated.length > MAX_OUTPUT) {
+								return updated.slice(-MAX_OUTPUT);
+							}
+							return updated;
+						});
+					},
+					onExit: (code: number | null) => {
+						// Flush any remaining buffered data for final token count
+						tokenAccRef.current.flush();
+						const finalAcc = tokenAccRef.current.getUsage();
+						if (!abortRef.current.signal.aborted) {
+							const base = tokenBaseRef.current;
+							publishTokenUsage(
+								{
+									input: (base.input || 0) + (finalAcc.input ?? 0) || null,
+									output: (base.output || 0) + (finalAcc.output ?? 0) || null,
+									cacheRead:
+										(base.cacheRead || 0) + (finalAcc.cacheRead ?? 0) || null,
+									cacheWrite:
+										(base.cacheWrite || 0) + (finalAcc.cacheWrite ?? 0) || null,
+									total:
+										(base.input || 0) +
+											(finalAcc.input ?? 0) +
+											(base.output || 0) +
+											(finalAcc.output ?? 0) || null,
+									contextSize: finalAcc.contextSize,
+								},
+								true,
+							);
 						}
-						loopManagerRef.current.deactivate();
-						loopManagerRef.current = null;
-					}
+						// Persist this process's own tokens (not cumulative)
+						onExitTokensRef.current?.(finalAcc);
 
-					setIsRunning(false);
-					if (trackOutputRef.current && code !== 0 && code !== null) {
-						setOutput(prev => [...prev, `[exit code: ${code}]`]);
-					}
-					if (code !== null && code !== 0 && !reportedFailureRef.current) {
-						reportedFailureRef.current = true;
-						const stderrDetail = lastStderrRef.current
-							? ` Stderr: ${lastStderrRef.current}`
-							: '';
-						onLifecycleEventRef.current?.({
-							type: 'exit_nonzero',
-							code,
-							message: `Claude exited with code ${code}.${stderrDetail}`,
-						});
-					}
-				},
-				onError: (error: Error) => {
-					// Resolve any pending kill promise
-					if (exitResolverRef.current) {
-						exitResolverRef.current();
-						exitResolverRef.current = null;
-					}
-					if (abortRef.current.signal.aborted) return;
-					processRef.current = null;
-					setIsRunning(false);
-					if (!reportedFailureRef.current) {
-						reportedFailureRef.current = true;
-						onLifecycleEventRef.current?.({
-							type: 'spawn_error',
-							message: error.message,
-						});
-					}
-					if (!trackOutputRef.current) return;
-					setOutput(prev => [...prev, `[error] ${error.message}`]);
-				},
-			});
+						// Resolve any pending kill promise
+						if (exitResolverRef.current) {
+							exitResolverRef.current();
+							exitResolverRef.current = null;
+						}
+						if (abortRef.current.signal.aborted) return;
+						processRef.current = null;
 
-			processRef.current = child;
+						// Loop respawn: spawn next iteration if not terminal and the workflow
+						// actually started (tracker file exists). This prevents accidental
+						// "continue task" loops for non-workflow prompts.
+						// Never respawn on non-zero exit (process error) to avoid infinite loops.
+						const loopManager = loopManagerRef.current;
+						const loopConfig = workflow?.loop;
+						const canContinueLoop =
+							loopConfig &&
+							loopManager &&
+							code === 0 &&
+							fs.existsSync(loopManager.trackerPath) &&
+							!loopManager.isTerminal();
+						if (canContinueLoop) {
+							loopManager.incrementIteration();
+							spawn(buildContinuePrompt(loopConfig)).catch(() => {
+								loopManagerRef.current?.deactivate();
+								loopManagerRef.current = null;
+								if (!abortRef.current.signal.aborted) {
+									setIsRunning(false);
+								}
+							});
+							return;
+						}
+
+						// Loop reached terminal state — deactivate
+						if (loopManagerRef.current) {
+							if (
+								code === 0 &&
+								fs.existsSync(loopManagerRef.current.trackerPath) &&
+								loopManagerRef.current.isTerminal()
+							) {
+								cleanupTrackerFile(loopManagerRef.current.trackerPath);
+							}
+							loopManagerRef.current.deactivate();
+							loopManagerRef.current = null;
+						}
+
+						setIsRunning(false);
+						if (trackOutputRef.current && code !== 0 && code !== null) {
+							setOutput(prev => [...prev, `[exit code: ${code}]`]);
+						}
+						if (code !== null && code !== 0 && !reportedFailureRef.current) {
+							reportedFailureRef.current = true;
+							const stderrDetail = lastStderrRef.current
+								? ` Stderr: ${lastStderrRef.current}`
+								: '';
+							onLifecycleEventRef.current?.({
+								type: 'exit_nonzero',
+								code,
+								message: `Claude exited with code ${code}.${stderrDetail}`,
+								failureCode: inferFailureCodeFromMessage(lastStderrRef.current),
+							});
+						}
+					},
+					onError: (error: Error) => {
+						// Resolve any pending kill promise
+						if (exitResolverRef.current) {
+							exitResolverRef.current();
+							exitResolverRef.current = null;
+						}
+						if (abortRef.current.signal.aborted) return;
+						processRef.current = null;
+						setIsRunning(false);
+						if (!reportedFailureRef.current) {
+							reportedFailureRef.current = true;
+							onLifecycleEventRef.current?.({
+								type: 'spawn_error',
+								message: error.message,
+								failureCode:
+									extractFailureCode(error) ??
+									inferFailureCodeFromMessage(error.message),
+							});
+						}
+						if (!trackOutputRef.current) return;
+						setOutput(prev => [...prev, `[error] ${error.message}`]);
+					},
+				});
+
+				processRef.current = child;
+			} catch (error) {
+				if (exitResolverRef.current) {
+					exitResolverRef.current();
+					exitResolverRef.current = null;
+				}
+				if (abortRef.current.signal.aborted) return;
+				processRef.current = null;
+				setIsRunning(false);
+				if (!reportedFailureRef.current) {
+					reportedFailureRef.current = true;
+					onLifecycleEventRef.current?.({
+						type: 'spawn_error',
+						message:
+							error instanceof Error ? error.message : 'Unknown spawn failure',
+						failureCode:
+							extractFailureCode(error) ??
+							(error instanceof Error
+								? inferFailureCodeFromMessage(error.message)
+								: 'unknown'),
+					});
+				}
+				if (!trackOutputRef.current) return;
+				setOutput(prev => [
+					...prev,
+					`[error] ${error instanceof Error ? error.message : 'Unknown spawn failure'}`,
+				]);
+			}
 		},
 		[
 			projectDir,

@@ -21,6 +21,8 @@ export function useRuntimeSelectors() {
 	);
 	const questionQueueCount = useHookContextSelector(v => v.questionQueueCount);
 	const resolveQuestion = useHookContextSelector(v => v.resolveQuestion);
+	const isServerRunning = useHookContextSelector(v => v.isServerRunning);
+	const runtimeError = useHookContextSelector(v => v.runtimeError);
 
 	const postByToolUseId = useHookContextSelector(v => v.postByToolUseId);
 	const allocateSeq = useHookContextSelector(v => v.allocateSeq);
@@ -47,6 +49,8 @@ export function useRuntimeSelectors() {
 		currentQuestionRequest,
 		questionQueueCount,
 		resolveQuestion,
+		isServerRunning,
+		runtimeError,
 		postByToolUseId,
 		allocateSeq,
 		clearEvents,

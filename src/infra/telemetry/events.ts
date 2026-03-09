@@ -52,7 +52,10 @@ export function trackTelemetryOptedOut(): void {
 	capture('telemetry.opted_out', {});
 }
 
-export type ClaudeStartupFailureStage = 'spawn_error' | 'exit_nonzero';
+export type ClaudeStartupFailureStage =
+	| 'spawn_error'
+	| 'exit_nonzero'
+	| 'startup_timeout';
 
 function classifyClaudeStartupFailure(reason: string): string {
 	const normalized = reason.toLowerCase();
@@ -97,6 +100,7 @@ export function trackClaudeStartupFailed(props: {
 	const classifiedReason = classifyClaudeStartupFailure(props.message);
 	const resolvedBinary =
 		props.failureStage === 'exit_nonzero' ||
+		props.failureStage === 'startup_timeout' ||
 		classifiedReason !== 'binary_not_found';
 
 	capture('claude.startup_failed', {

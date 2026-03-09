@@ -44,6 +44,14 @@ type HookCommand = {
 	timeout?: number;
 };
 
+export type HookForwarderResolution = {
+	command: string;
+	executable: string;
+	args: string[];
+	source: 'bundled' | 'path';
+	scriptPath?: string;
+};
+
 /**
  * Hook entry with matcher (for tool events).
  */
@@ -115,14 +123,25 @@ function resolveHookForwarderPath(entryUrl: string): string | null {
 /**
  * Finds the athena-hook-forwarder executable path.
  */
-function getHookForwarderPath(): string {
+export function resolveHookForwarderCommand(): HookForwarderResolution {
 	const resolvedPath = resolveHookForwarderPath(import.meta.url);
 	if (resolvedPath) {
-		return formatHookForwarderCommand(process.execPath, resolvedPath);
+		return {
+			command: formatHookForwarderCommand(process.execPath, resolvedPath),
+			executable: process.execPath,
+			args: [resolvedPath],
+			source: 'bundled',
+			scriptPath: resolvedPath,
+		};
 	}
 
 	// Fallback to global bin name (when installed via npm -g)
-	return 'athena-hook-forwarder';
+	return {
+		command: 'athena-hook-forwarder',
+		executable: 'athena-hook-forwarder',
+		args: [],
+		source: 'path',
+	};
 }
 
 /**
@@ -132,16 +151,16 @@ function getHookForwarderPath(): string {
  * @returns Generated settings with path and cleanup function
  */
 export function generateHookSettings(tempDir?: string): GeneratedHookSettings {
-	const hookForwarderPath = getHookForwarderPath();
+	const hookForwarder = resolveHookForwarderCommand();
 
 	// Debug logging
 	if (process.env['ATHENA_DEBUG']) {
-		console.error('[athena-debug] Hook forwarder path:', hookForwarderPath);
+		console.error('[athena-debug] Hook forwarder path:', hookForwarder.command);
 	}
 
 	const hookCommand: HookCommand = {
 		type: 'command',
-		command: hookForwarderPath,
+		command: hookForwarder.command,
 	};
 
 	// Build hooks configuration for all event types

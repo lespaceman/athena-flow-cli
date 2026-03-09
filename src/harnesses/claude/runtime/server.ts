@@ -18,6 +18,8 @@ import type {
 	RuntimeDecision,
 	RuntimeEventHandler,
 	RuntimeDecisionHandler,
+	RuntimeStartupError,
+	RuntimeStartupErrorCode,
 } from '../../../core/runtime/types';
 import type {RuntimeConnector} from '../../../core/runtime/connector';
 import {mapEnvelopeToRuntimeEvent} from './mapper';
@@ -34,6 +36,24 @@ type ServerOptions = {
 	instanceId: number;
 };
 
+const MAX_UNIX_SOCKET_PATH_BYTES = {
+	darwin: 103,
+	default: 107,
+} as const;
+
+function makeStartupError(
+	code: RuntimeStartupErrorCode,
+	message: string,
+): RuntimeStartupError {
+	return {code, message};
+}
+
+function getSocketPathLimit(): number {
+	return process.platform === 'darwin'
+		? MAX_UNIX_SOCKET_PATH_BYTES.darwin
+		: MAX_UNIX_SOCKET_PATH_BYTES.default;
+}
+
 export function createServer(opts: ServerOptions) {
 	const {projectDir, instanceId} = opts;
 	const pending = new Map<string, PendingRequest>();
@@ -42,6 +62,7 @@ export function createServer(opts: ServerOptions) {
 	let server: net.Server | null = null;
 	let status: 'stopped' | 'running' = 'stopped';
 	let socketPath = '';
+	let lastError: RuntimeStartupError | null = null;
 
 	function emit(event: RuntimeEvent): void {
 		for (const handler of handlers) {
@@ -98,11 +119,32 @@ export function createServer(opts: ServerOptions) {
 		start(): void {
 			const socketDir = path.join(projectDir, '.claude', 'run');
 			socketPath = path.join(socketDir, `ink-${instanceId}.sock`);
+			lastError = null;
+
+			if (Buffer.byteLength(socketPath) > getSocketPathLimit()) {
+				status = 'stopped';
+				lastError = makeStartupError(
+					'socket_path_too_long',
+					`Socket path is too long for ${process.platform}: ${socketPath}`,
+				);
+				console.error(
+					`[athena] hook server failed to start on ${socketPath}: ${lastError.message}`,
+				);
+				return;
+			}
 
 			try {
 				fs.mkdirSync(socketDir, {recursive: true});
-			} catch {
-				/* exists */
+			} catch (error) {
+				status = 'stopped';
+				lastError = makeStartupError(
+					'socket_dir_unavailable',
+					error instanceof Error ? error.message : String(error),
+				);
+				console.error(
+					`[athena] hook server failed to create socket dir ${socketDir}: ${lastError.message}`,
+				);
+				return;
 			}
 			// Sweep stale sockets from previous crashed processes
 			cleanupStaleSockets(socketDir);
@@ -177,21 +219,34 @@ export function createServer(opts: ServerOptions) {
 
 			server.on('listening', () => {
 				status = 'running';
+				lastError = null;
 			});
 			server.on('error', (error: NodeJS.ErrnoException) => {
 				status = 'stopped';
+				lastError = makeStartupError('socket_bind_failed', error.message);
 				console.error(
 					`[athena] hook server failed to start on ${socketPath}: ${error.message}`,
 				);
 			});
 
-			server.listen(socketPath, () => {
-				try {
-					fs.chmodSync(socketPath, 0o600);
-				} catch {
-					/* best effort */
-				}
-			});
+			try {
+				server.listen(socketPath, () => {
+					try {
+						fs.chmodSync(socketPath, 0o600);
+					} catch {
+						/* best effort */
+					}
+				});
+			} catch (error) {
+				status = 'stopped';
+				lastError = makeStartupError(
+					'socket_bind_failed',
+					error instanceof Error ? error.message : String(error),
+				);
+				console.error(
+					`[athena] hook server failed to start on ${socketPath}: ${lastError.message}`,
+				);
+			}
 		},
 
 		stop(): void {
@@ -205,6 +260,7 @@ export function createServer(opts: ServerOptions) {
 				server = null;
 			}
 			status = 'stopped';
+			lastError = null;
 
 			try {
 				fs.unlinkSync(socketPath);
@@ -215,6 +271,10 @@ export function createServer(opts: ServerOptions) {
 
 		getStatus(): 'stopped' | 'running' {
 			return status;
+		},
+
+		getLastError(): RuntimeStartupError | null {
+			return lastError;
 		},
 
 		onEvent(handler: RuntimeEventHandler): () => void {

@@ -193,7 +193,7 @@ function DiagnosticsConsentErrorFallback({onDismiss}: {onDismiss: () => void}) {
 }
 
 type PendingStartupDiagnosticsEvent = {
-	failureStage: 'spawn_error' | 'exit_nonzero';
+	failureStage: 'spawn_error' | 'exit_nonzero' | 'startup_timeout';
 	message: string;
 	exitCode?: number;
 };
@@ -201,6 +201,13 @@ type PendingStartupDiagnosticsEvent = {
 type StartupAttemptState = {
 	feedEventCountAtSpawn: number;
 };
+
+type StartupFailureState = {
+	message: string;
+	failureCode?: import('../../core/runtime/process').HarnessProcessFailureCode;
+};
+
+const STARTUP_HANDSHAKE_TIMEOUT_MS = 2500;
 
 function AppContent({
 	projectDir,
@@ -248,6 +255,8 @@ function AppContent({
 	>(initialTelemetryDiagnosticsConsent);
 	const [pendingStartupDiagnostics, setPendingStartupDiagnostics] =
 		useState<PendingStartupDiagnosticsEvent | null>(null);
+	const [startupFailure, setStartupFailure] =
+		useState<StartupFailureState | null>(null);
 	const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const messagesRef = useRef(messages);
 	messagesRef.current = messages;
@@ -296,8 +305,10 @@ function AppContent({
 		allocateSeq,
 		clearEvents,
 		emitNotification,
+		isServerRunning,
 		recordTokens,
 		restoredTokens,
+		runtimeError,
 		hookCommandFeed,
 	} = useRuntimeSelectors();
 
@@ -340,6 +351,12 @@ function AppContent({
 					`Athena failed to start ${harnessLabel}: ${event.message}`,
 					`${harnessLabel} Process Error`,
 				);
+				if (isStartupFailure) {
+					setStartupFailure({
+						message: event.message,
+						failureCode: event.failureCode,
+					});
+				}
 
 				if (isStartupFailure && isTelemetryEnabled()) {
 					const diagnosticsEvent: PendingStartupDiagnosticsEvent = {
@@ -360,8 +377,18 @@ function AppContent({
 				`Athena lost the ${harnessLabel} process: ${event.message}`,
 				`${harnessLabel} Process Error`,
 			);
+			if (isStartupFailure) {
+				setStartupFailure({
+					message: event.message,
+					failureCode: event.failureCode,
+				});
+			}
 
-			if (isStartupFailure && isTelemetryEnabled()) {
+			if (
+				isStartupFailure &&
+				event.type !== 'startup_timeout' &&
+				isTelemetryEnabled()
+			) {
 				const diagnosticsEvent: PendingStartupDiagnosticsEvent = {
 					failureStage: 'exit_nonzero',
 					message: event.message,
@@ -427,6 +454,7 @@ function AppContent({
 		isHarnessRunning,
 		currentPermissionRequest,
 		currentQuestionRequest,
+		startupFailure?.message,
 	);
 	const diagnosticsDialogActive = pendingStartupDiagnostics !== null;
 	const dialogActive =
@@ -442,7 +470,79 @@ function AppContent({
 		if (!startupAttempt) return;
 		if (feedEvents.length <= startupAttempt.feedEventCountAtSpawn) return;
 		startupAttemptRef.current = null;
+		setStartupFailure(null);
 	}, [feedEvents.length]);
+
+	useEffect(() => {
+		const startupAttempt = startupAttemptRef.current;
+		if (!startupAttempt) return;
+
+		const timer = setTimeout(() => {
+			const pendingAttempt = startupAttemptRef.current;
+			if (!pendingAttempt) return;
+			if (feedEvents.length > pendingAttempt.feedEventCountAtSpawn) {
+				startupAttemptRef.current = null;
+				return;
+			}
+
+			const derivedFailure: StartupFailureState = runtimeError
+				? {
+						message: runtimeError.message,
+						failureCode:
+							runtimeError.code === 'socket_path_too_long'
+								? 'socket_path_too_long'
+								: 'hook_server_unavailable',
+					}
+				: !isServerRunning
+					? {
+							message:
+								'Athena hook server is not running. Check socket path length and restart from the real project path.',
+							failureCode: 'hook_server_unavailable',
+						}
+					: isHarnessRunning
+						? {
+								message:
+									'Claude started but Athena did not receive startup hook events. Hook forwarding may be broken.',
+								failureCode: 'hook_handshake_timeout',
+							}
+						: {
+								message:
+									'Claude exited before Athena received startup events. Check Claude installation and hook configuration.',
+								failureCode: 'hook_handshake_timeout',
+							};
+
+			setStartupFailure(derivedFailure);
+			emitNotification(
+				`Athena startup failed: ${derivedFailure.message}`,
+				`${harnessLabel} Startup Error`,
+			);
+
+			if (isTelemetryEnabled()) {
+				const diagnosticsEvent: PendingStartupDiagnosticsEvent = {
+					failureStage: 'startup_timeout',
+					message: derivedFailure.message,
+				};
+				if (diagnosticsConsent === true) {
+					emitClaudeStartupDiagnostics(diagnosticsEvent);
+				} else if (diagnosticsConsent === undefined) {
+					setPendingStartupDiagnostics(diagnosticsEvent);
+				}
+			}
+
+			startupAttemptRef.current = null;
+		}, STARTUP_HANDSHAKE_TIMEOUT_MS);
+
+		return () => clearTimeout(timer);
+	}, [
+		diagnosticsConsent,
+		emitClaudeStartupDiagnostics,
+		emitNotification,
+		feedEvents.length,
+		harnessLabel,
+		isHarnessRunning,
+		isServerRunning,
+		runtimeError,
+	]);
 
 	const addMessage = useCallback(
 		(role: 'user' | 'assistant', content: string) => {
@@ -555,7 +655,22 @@ function AppContent({
 			inputHistory.push(value);
 			const result = parseInput(value);
 			if (result.type === 'prompt') {
+				setStartupFailure(null);
 				addMessage('user', result.text);
+				if (!isServerRunning && runtimeError) {
+					setStartupFailure({
+						message: runtimeError.message,
+						failureCode:
+							runtimeError.code === 'socket_path_too_long'
+								? 'socket_path_too_long'
+								: 'hook_server_unavailable',
+					});
+					emitNotification(
+						`Athena failed to start ${harnessLabel}: ${runtimeError.message}`,
+						`${harnessLabel} Startup Error`,
+					);
+					return;
+				}
 				const sessionToResume = currentSessionId ?? initialSessionRef.current;
 				startupAttemptRef.current = {
 					feedEventCountAtSpawn: feedEvents.length,
@@ -603,6 +718,21 @@ function AppContent({
 				hook: {args: result.args, feed: hookCommandFeed},
 				prompt: {
 					spawn: (prompt, sessionId, configOverride) => {
+						setStartupFailure(null);
+						if (!isServerRunning && runtimeError) {
+							setStartupFailure({
+								message: runtimeError.message,
+								failureCode:
+									runtimeError.code === 'socket_path_too_long'
+										? 'socket_path_too_long'
+										: 'hook_server_unavailable',
+							});
+							emitNotification(
+								`Athena failed to start ${harnessLabel}: ${runtimeError.message}`,
+								`${harnessLabel} Startup Error`,
+							);
+							return Promise.resolve();
+						}
 						startupAttemptRef.current = {
 							feedEventCountAtSpawn: feedEvents.length,
 						};
@@ -626,6 +756,8 @@ function AppContent({
 			feedEvents.length,
 			spawnHarness,
 			currentSessionId,
+			isServerRunning,
+			runtimeError,
 			exit,
 			clearScreen,
 			onShowSessions,
@@ -634,6 +766,8 @@ function AppContent({
 			modelName,
 			tokenUsage,
 			hookCommandFeed,
+			harnessLabel,
+			emitNotification,
 		],
 	);
 
@@ -966,6 +1100,7 @@ function AppContent({
 			sessionIndex: sessionScope.current,
 			sessionTotal: sessionScope.total,
 			harness,
+			errorReason: startupFailure?.message,
 		});
 		return renderHeaderLines(headerModel, innerWidth, hasColor, theme)[0];
 	}, [
@@ -984,6 +1119,7 @@ function AppContent({
 		tokenUsage.contextSize,
 		sessionScope,
 		harness,
+		startupFailure?.message,
 		innerWidth,
 		hasColor,
 		theme,
@@ -998,6 +1134,7 @@ function AppContent({
 			inputMode,
 			isHarnessRunning,
 			lastRunStatus,
+			startupFailureMessage: startupFailure?.message,
 			dialogActive,
 			dialogType: activeDialogType,
 			ascii: useAscii,
@@ -1013,9 +1150,11 @@ function AppContent({
 			chalk.hex(inputChevronColor)('> '),
 		[inputChevronColor, inputKeywordColor],
 	);
-	const runBadgeStyled = isHarnessRunning
-		? chalk.bgHex('#4a3a0c').hex('#fbbf24')(' RUN ')
-		: chalk.bgHex('#10321d').hex('#3fb950')(' IDLE ');
+	const runBadgeStyled = startupFailure
+		? chalk.bgHex('#4b1014').hex('#ff7b72')(' ERR ')
+		: isHarnessRunning
+			? chalk.bgHex('#4a3a0c').hex('#fbbf24')(' RUN ')
+			: chalk.bgHex('#10321d').hex('#3fb950')(' IDLE ');
 	let modeBadgeStyled = '';
 	if (inputMode === 'search') {
 		modeBadgeStyled = chalk.bgHex('#1b2a3f').hex(theme.accent)(' SEARCH ');
@@ -1276,7 +1415,12 @@ const TodoHeaderSection = React.memo(function TodoHeaderSection({
 	actualTodoRows: number;
 	innerWidth: number;
 	useAscii: boolean;
-	appModeType: 'idle' | 'working' | 'permission' | 'question';
+	appModeType:
+		| 'idle'
+		| 'working'
+		| 'permission'
+		| 'question'
+		| 'startup_failed';
 	todoColors: {
 		doing: string;
 		done: string;
@@ -1371,7 +1515,12 @@ const TodoBodySection = React.memo(function TodoBodySection({
 		textMuted: string;
 		default: string;
 	};
-	appModeType: 'idle' | 'working' | 'permission' | 'question';
+	appModeType:
+		| 'idle'
+		| 'working'
+		| 'permission'
+		| 'question'
+		| 'startup_failed';
 	doneCount: number;
 	totalCount: number;
 	actualRunOverlayRows: number;

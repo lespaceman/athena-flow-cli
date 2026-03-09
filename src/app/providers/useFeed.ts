@@ -5,6 +5,7 @@ import type {
 	Runtime,
 	RuntimeEvent,
 	RuntimeDecision,
+	RuntimeStartupError,
 } from '../../core/runtime/types';
 import type {FeedEvent} from '../../core/feed/types';
 import type {SessionStore} from '../../infra/sessions/store';
@@ -48,6 +49,7 @@ export type UseFeedResult = {
 	currentRun: Run | null;
 	actors: Actor[];
 	isServerRunning: boolean;
+	runtimeError: RuntimeStartupError | null;
 
 	currentPermissionRequest: PermissionQueueItem | null;
 	permissionQueueCount: number;
@@ -132,6 +134,12 @@ export function useFeed(
 		[],
 	);
 	const [questionQueue, setQuestionQueue] = useState<string[]>([]);
+	const [isServerRunning, setIsServerRunning] = useState(
+		() => runtime.getStatus() === 'running',
+	);
+	const [runtimeError, setRuntimeError] = useState<RuntimeStartupError | null>(
+		() => runtime.getLastError(),
+	);
 
 	const restoredTokens = useMemo(
 		() => sessionStore?.getRestoredTokens() ?? null,
@@ -143,6 +151,7 @@ export function useFeed(
 	const rulesRef = useRef<HookRule[]>([]);
 	const abortRef = useRef<AbortController>(new AbortController());
 	const feedEventsRef = useRef<FeedEvent[]>([]);
+	const notifiedRuntimeErrorRef = useRef<string | null>(null);
 
 	rulesRef.current = rules;
 	feedEventsRef.current = feedEvents;
@@ -292,6 +301,30 @@ export function useFeed(
 		}
 	}, []);
 
+	const refreshRuntimeStatus = useCallback(
+		(notify = false) => {
+			const nextIsServerRunning = runtime.getStatus() === 'running';
+			const nextRuntimeError = runtime.getLastError();
+			setIsServerRunning(nextIsServerRunning);
+			setRuntimeError(nextRuntimeError);
+
+			if (!nextRuntimeError) {
+				notifiedRuntimeErrorRef.current = null;
+				return;
+			}
+
+			if (!notify) return;
+			const signature = `${nextRuntimeError.code}:${nextRuntimeError.message}`;
+			if (signature === notifiedRuntimeErrorRef.current) return;
+			notifiedRuntimeErrorRef.current = signature;
+			emitNotification(
+				`Athena hook server failed to start: ${nextRuntimeError.message}`,
+				'Athena Hook Server Error',
+			);
+		},
+		[runtime, emitNotification],
+	);
+
 	const printTaskSnapshot = useCallback(() => {
 		const hasTasks = feedEventsRef.current.some(
 			e =>
@@ -434,6 +467,7 @@ export function useFeed(
 		);
 
 		runtime.start();
+		refreshRuntimeStatus(true);
 
 		return () => {
 			abortRef.current.abort();
@@ -441,7 +475,13 @@ export function useFeed(
 			unsubDecision();
 			runtime.stop();
 		};
-	}, [runtime, enqueuePermission, enqueueQuestion, dequeuePermission]);
+	}, [
+		runtime,
+		enqueuePermission,
+		enqueueQuestion,
+		dequeuePermission,
+		refreshRuntimeStatus,
+	]);
 
 	// Derive items (content ordering)
 	const items = useMemo(() => {
@@ -501,7 +541,8 @@ export function useFeed(
 		session: mapperRef.current.getSession(),
 		currentRun: mapperRef.current.getCurrentRun(),
 		actors: mapperRef.current.getActors(),
-		isServerRunning: runtime.getStatus() === 'running',
+		isServerRunning,
+		runtimeError,
 		currentPermissionRequest,
 		permissionQueueCount: permissionQueue.length,
 		resolvePermission,

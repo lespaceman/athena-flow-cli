@@ -52,6 +52,10 @@ export function createInjectableMockRuntime(): InjectableMockRuntime {
 			return status;
 		},
 
+		getLastError() {
+			return null;
+		},
+
 		onEvent(handler: RuntimeEventHandler) {
 			handlers.add(handler);
 			return () => handlers.delete(handler);

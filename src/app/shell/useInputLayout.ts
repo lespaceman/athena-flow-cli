@@ -6,11 +6,14 @@ const INPUT_PREFIX = 'input> ';
 export function deriveInputPlaceholder(
 	inputMode: InputMode,
 	lastRunStatus: string | null,
+	startupFailureMessage?: string | null,
 	ascii = false,
 ): string {
 	const dash = ascii ? '-' : '\u2014';
 	if (inputMode === 'search') return ':search';
 	if (inputMode === 'command') return '/command';
+	if (startupFailureMessage)
+		return `Startup failed ${dash} fix issue and retry`;
 	if (lastRunStatus === 'completed') return `Done ${dash} send a follow-up`;
 	if (lastRunStatus === 'failed' || lastRunStatus === 'aborted')
 		return `Run failed ${dash} retry or adjust prompt`;
@@ -40,6 +43,7 @@ export function useInputLayout(opts: {
 	inputMode: InputMode;
 	isHarnessRunning: boolean;
 	lastRunStatus: string | null;
+	startupFailureMessage?: string | null;
 	dialogActive: boolean;
 	dialogType: string | undefined;
 	ascii: boolean;
@@ -49,13 +53,18 @@ export function useInputLayout(opts: {
 		inputMode,
 		isHarnessRunning,
 		lastRunStatus,
+		startupFailureMessage,
 		dialogActive,
 		dialogType,
 		ascii,
 	} = opts;
 
 	return useMemo(() => {
-		const runBadge = isHarnessRunning ? '[RUN]' : '[IDLE]';
+		const runBadge = startupFailureMessage
+			? '[ERR]'
+			: isHarnessRunning
+				? '[RUN]'
+				: '[IDLE]';
 		const modeBadges = [
 			runBadge,
 			...(inputMode === 'search' ? ['[SEARCH]'] : []),
@@ -69,6 +78,7 @@ export function useInputLayout(opts: {
 		const inputPlaceholder = deriveInputPlaceholder(
 			inputMode,
 			lastRunStatus,
+			startupFailureMessage,
 			ascii,
 		);
 		const textInputPlaceholder = deriveTextInputPlaceholder(
@@ -88,6 +98,7 @@ export function useInputLayout(opts: {
 		inputMode,
 		isHarnessRunning,
 		lastRunStatus,
+		startupFailureMessage,
 		dialogActive,
 		dialogType,
 		ascii,
