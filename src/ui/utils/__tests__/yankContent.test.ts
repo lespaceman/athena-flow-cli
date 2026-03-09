@@ -3,6 +3,8 @@ import {extractYankContent} from '../yankContent';
 import type {TimelineEntry} from '../../../core/feed/timeline';
 import type {FeedEvent} from '../../../core/feed/types';
 
+const EVENT_TS = Date.UTC(2026, 0, 1, 12, 34);
+
 function makeEntry(overrides: Partial<TimelineEntry> = {}): TimelineEntry {
 	return {
 		id: 'e1',
@@ -23,14 +25,11 @@ function makeEntry(overrides: Partial<TimelineEntry> = {}): TimelineEntry {
 	};
 }
 
-function countOccurrences(haystack: string, needle: string): number {
-	return haystack.split(needle).length - 1;
-}
-
 describe('extractYankContent', () => {
 	it('extracts agent.message as rich detail text', () => {
 		const event = {
 			kind: 'agent.message' as const,
+			ts: EVENT_TS,
 			data: {
 				message: '# Hello\n\nWorld',
 				source: 'hook' as const,
@@ -39,18 +38,21 @@ describe('extractYankContent', () => {
 		} as FeedEvent;
 		const entry = makeEntry({feedEvent: event});
 		const result = extractYankContent(entry);
-		expect(result).toContain('Agent Response');
+		expect(result).toContain('Agent · ');
+		expect(result).not.toContain('NaN:NaN');
 		expect(result).toContain('Hello');
 		expect(result).toContain('World');
 	});
 
-	it('includes full rich request + response for paired tool rows', () => {
+	it('includes subject and response content for paired tool rows', () => {
 		const preEvent = {
 			kind: 'tool.pre' as const,
+			ts: EVENT_TS,
 			data: {tool_name: 'Read', tool_input: {file_path: '/foo.ts'}},
 		} as FeedEvent;
 		const postEvent = {
 			kind: 'tool.post' as const,
+			ts: EVENT_TS,
 			data: {
 				tool_name: 'Read',
 				tool_input: {file_path: '/foo.ts'},
@@ -59,13 +61,16 @@ describe('extractYankContent', () => {
 		} as FeedEvent;
 		const entry = makeEntry({feedEvent: preEvent, pairedPostEvent: postEvent});
 		const result = extractYankContent(entry);
-		expect(result).toContain('"file_path": "/foo.ts"');
+		// Subject line shows file path
+		expect(result).toContain('/foo.ts');
+		// Response content shown
 		expect(result).toContain('file content here');
 	});
 
-	it('includes full rich request + failure for paired tool failures', () => {
+	it('includes subject and error for paired tool failures', () => {
 		const preEvent = {
 			kind: 'tool.pre' as const,
+			ts: EVENT_TS,
 			data: {
 				tool_name: 'Bash',
 				tool_input: {command: 'cat /missing.txt'},
@@ -73,6 +78,7 @@ describe('extractYankContent', () => {
 		} as FeedEvent;
 		const failureEvent = {
 			kind: 'tool.failure' as const,
+			ts: EVENT_TS,
 			data: {
 				tool_name: 'Bash',
 				tool_input: {command: 'cat /missing.txt'},
@@ -85,15 +91,18 @@ describe('extractYankContent', () => {
 			pairedPostEvent: failureEvent,
 		});
 		const result = extractYankContent(entry);
-		expect(result).toContain('"command": "cat /missing.txt"');
+		// Subject shows command
+		expect(result).toContain('$ cat /missing.txt');
+		// Error content shown
 		expect(result).toContain('File not found');
 	});
 
-	it('does not duplicate request/response sections for paired MCP rows', () => {
+	it('does not duplicate content for paired MCP rows', () => {
 		const toolName =
 			'mcp__plugin_web-testing-toolkit_agent-web-interface__find_elements';
 		const preEvent = {
 			kind: 'tool.pre' as const,
+			ts: EVENT_TS,
 			data: {
 				tool_name: toolName,
 				tool_input: {kind: 'button', label: 'Search'},
@@ -102,6 +111,7 @@ describe('extractYankContent', () => {
 		} as FeedEvent;
 		const postEvent = {
 			kind: 'tool.post' as const,
+			ts: EVENT_TS,
 			data: {
 				tool_name: toolName,
 				tool_input: {kind: 'button', label: 'Search'},
@@ -111,9 +121,14 @@ describe('extractYankContent', () => {
 		} as FeedEvent;
 		const entry = makeEntry({feedEvent: preEvent, pairedPostEvent: postEvent});
 		const result = extractYankContent(entry);
-		expect(countOccurrences(result, 'Request')).toBe(1);
-		expect(countOccurrences(result, 'Response')).toBe(1);
-		expect(countOccurrences(result, '"kind": "button"')).toBe(1);
+		// Compact view — no "Request"/"Response" labels
+		expect(result).not.toContain('Request');
+		expect(result).not.toContain('Response');
+		// Tool server is identified
+		expect(result).toContain('agent-web-interface');
+		// Paired MCP rows render the response once without raw input JSON
+		expect(result).toContain('ok');
+		expect(result).not.toContain('"kind": "button"');
 	});
 
 	it('falls back to markdown details rendering when no feedEvent exists', () => {
@@ -129,6 +144,7 @@ describe('extractYankContent', () => {
 	it('renders unknown event details as structured JSON text', () => {
 		const event = {
 			kind: 'run.end' as const,
+			ts: EVENT_TS,
 			data: {
 				status: 'completed',
 				counters: {
@@ -148,6 +164,7 @@ describe('extractYankContent', () => {
 	it('strips ANSI escape sequences from copied output', () => {
 		const event = {
 			kind: 'agent.message' as const,
+			ts: EVENT_TS,
 			data: {
 				message: '**bold** text',
 				source: 'hook' as const,
@@ -160,9 +177,10 @@ describe('extractYankContent', () => {
 		expect(/\x1B\[[0-9;]*m/.test(result)).toBe(false);
 	});
 
-	it('starts copied output with the unified detail title', () => {
+	it('starts copied output with the tool name', () => {
 		const event = {
 			kind: 'tool.post' as const,
+			ts: EVENT_TS,
 			data: {
 				tool_name: 'Grep',
 				tool_input: {pattern: 'hello'},
@@ -171,6 +189,7 @@ describe('extractYankContent', () => {
 		} as FeedEvent;
 		const entry = makeEntry({feedEvent: event});
 		const result = extractYankContent(entry);
-		expect(result.startsWith('Tool Result')).toBe(true);
+		// Compact header starts with tool name
+		expect(result.startsWith('Grep')).toBe(true);
 	});
 });

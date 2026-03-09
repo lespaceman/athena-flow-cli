@@ -104,7 +104,6 @@ describe('renderDetailLines', () => {
 			},
 		});
 		const result = renderDetailLines(event, 80);
-		expect(result.showLineNumbers).toBe(false);
 		expect(result.lines.some(l => l.includes('const'))).toBe(true);
 	});
 
@@ -136,13 +135,12 @@ describe('renderDetailLines', () => {
 			},
 		});
 		const result = renderDetailLines(event, 80);
-		expect(result.showLineNumbers).toBe(false);
 		const joined = result.lines.join('\n');
 		expect(joined).toContain('foo');
 		expect(joined).toContain('bar');
 	});
 
-	it('renders tool.pre as highlighted JSON', () => {
+	it('renders tool.pre with subject line and input JSON', () => {
 		const event = makeEvent({
 			kind: 'tool.pre',
 			data: {
@@ -151,8 +149,11 @@ describe('renderDetailLines', () => {
 			},
 		});
 		const result = renderDetailLines(event, 80);
-		expect(result.showLineNumbers).toBe(false);
-		expect(result.lines.some(l => l.includes('echo hello'))).toBe(true);
+		const text = stripAnsi(result.lines.join('\n'));
+		// Subject line shows the command
+		expect(text).toContain('$ echo hello');
+		// Full input JSON is shown below (no response yet)
+		expect(text).toContain('echo hello');
 	});
 
 	it('wraps long tool request lines to detail width', () => {
@@ -174,7 +175,7 @@ describe('renderDetailLines', () => {
 		expect(maxLineWidth).toBeLessThanOrEqual(width);
 	});
 
-	it('shows structured header for MCP tool.pre', () => {
+	it('shows compact header for MCP tool.pre with server name', () => {
 		const event = makeEvent({
 			kind: 'tool.pre',
 			data: {
@@ -184,14 +185,15 @@ describe('renderDetailLines', () => {
 			},
 		});
 		const result = renderDetailLines(event, 80);
-		const text = result.lines.join('\n');
-		expect(text).toContain('Tool Call');
+		const text = stripAnsi(result.lines.join('\n'));
+		// Header shows tool display name with server
 		expect(text).toContain('agent-web-interface');
-		expect(text).toContain('Session ID: S1');
-		expect(text).toContain('Event ID: E1');
+		// No verbose IDs
+		expect(text).not.toContain('Session ID:');
+		expect(text).not.toContain('Event ID:');
 	});
 
-	it('shows standard header for built-in tool.pre', () => {
+	it('shows compact header for built-in tool.pre', () => {
 		const event = makeEvent({
 			kind: 'tool.pre',
 			data: {
@@ -200,12 +202,14 @@ describe('renderDetailLines', () => {
 			},
 		});
 		const result = renderDetailLines(event, 80);
-		const text = result.lines.join('\n');
+		const text = stripAnsi(result.lines.join('\n'));
+		// Subject line shows file path
+		expect(text).toContain('/foo.ts');
 		expect(text).not.toContain('Tool: Read');
 		expect(text).not.toContain('Namespace:');
 	});
 
-	it('shows structured header for MCP tool.post', () => {
+	it('shows compact header for MCP tool.post with response content', () => {
 		const event = makeEvent({
 			kind: 'tool.post',
 			data: {
@@ -216,14 +220,15 @@ describe('renderDetailLines', () => {
 			},
 		});
 		const result = renderDetailLines(event, 80);
-		const text = result.lines.join('\n');
-		expect(text).toContain('Tool Result');
+		const text = stripAnsi(result.lines.join('\n'));
+		// Header shows server name
 		expect(text).toContain('agent-web-interface');
-		expect(text).toContain('Request');
-		expect(text).toContain('Response');
+		// No verbose labels
+		expect(text).not.toContain('Request');
+		expect(text).not.toContain('Response');
 	});
 
-	it('shows request and response sections for merged built-in tool details', () => {
+	it('shows subject and content for merged built-in Read tool', () => {
 		const pre = makeEvent({
 			kind: 'tool.pre',
 			data: {
@@ -242,14 +247,17 @@ describe('renderDetailLines', () => {
 			},
 		});
 		const result = renderDetailLines(pre, 80, post);
-		const text = result.lines.join('\n');
-		expect(text).toContain('Request');
-		expect(text).toContain('Response');
-		expect(text).toContain('file_path');
+		const text = stripAnsi(result.lines.join('\n'));
+		// Subject line shows file path (no JSON request)
+		expect(text).toContain('/tmp/sample.ts');
+		// Response content shown directly
 		expect(text).toContain('const x = 1;');
+		// No explicit "Request" / "Response" labels
+		expect(text).not.toContain('Request');
+		expect(text).not.toContain('Response');
 	});
 
-	it('keeps request payload for merged MCP tool details', () => {
+	it('shows compact view for merged MCP tool details', () => {
 		const pre = makeEvent({
 			kind: 'tool.pre',
 			data: {
@@ -270,15 +278,15 @@ describe('renderDetailLines', () => {
 			},
 		});
 		const result = renderDetailLines(pre, 80, post);
-		const text = result.lines.join('\n');
-		expect(text).toContain('Tool Result');
+		const text = stripAnsi(result.lines.join('\n'));
+		// Header identifies the tool
 		expect(text).toContain('agent-web-interface');
-		expect(text).toContain('"kind"');
-		expect(text).toContain('"button"');
-		expect(text).toContain('Response');
+		// No verbose labels
+		expect(text).not.toContain('Request');
+		expect(text).not.toContain('Response');
 	});
 
-	it('hides request payload for merged built-in Bash tool details', () => {
+	it('shows command as subject for merged Bash tool', () => {
 		const pre = makeEvent({
 			kind: 'tool.pre',
 			data: {
@@ -297,12 +305,14 @@ describe('renderDetailLines', () => {
 			},
 		});
 		const result = renderDetailLines(pre, 80, post);
-		const text = result.lines.join('\n');
-		expect(text).toContain('"command"');
+		const text = stripAnsi(result.lines.join('\n'));
+		// Subject shows the command with $ prefix
+		expect(text).toContain('$ echo "hello world"');
+		// Response output shown directly
 		expect(text).toContain('hello world');
 	});
 
-	it('hides request section for merged Write tool details', () => {
+	it('shows file path as subject for merged Write tool', () => {
 		const pre = makeEvent({
 			kind: 'tool.pre',
 			data: {
@@ -328,12 +338,15 @@ describe('renderDetailLines', () => {
 		});
 		const result = renderDetailLines(pre, 80, post);
 		const text = stripAnsi(result.lines.join('\n'));
-		expect(text).not.toContain('\nRequest\n');
-		expect(text).toContain('Response');
+		// Subject shows file path
+		expect(text).toContain('/tmp/out.md');
+		// Content shown directly, no labels
 		expect(text).toContain('File created successfully');
+		expect(text).not.toContain('Request');
+		expect(text).not.toContain('Response');
 	});
 
-	it('hides request section for merged Edit tool details and keeps diff', () => {
+	it('shows file path as subject and diff for merged Edit tool', () => {
 		const pre = makeEvent({
 			kind: 'tool.pre',
 			data: {
@@ -361,13 +374,16 @@ describe('renderDetailLines', () => {
 		});
 		const result = renderDetailLines(pre, 80, post);
 		const text = stripAnsi(result.lines.join('\n'));
-		expect(text).not.toContain('\nRequest\n');
-		expect(text).toContain('Response');
+		// Subject shows file path
+		expect(text).toContain('/tmp/out.ts');
+		// Diff content shown directly, no labels
 		expect(text).toContain('- foo');
 		expect(text).toContain('+ bar');
+		expect(text).not.toContain('Request');
+		expect(text).not.toContain('Response');
 	});
 
-	it('renders subagent prompt and response as markdown sections', () => {
+	it('renders subagent prompt and response as markdown', () => {
 		const stop = makeEvent({
 			kind: 'subagent.stop',
 			data: {
@@ -380,14 +396,15 @@ describe('renderDetailLines', () => {
 		});
 		const result = renderDetailLines(stop, 100);
 		const text = stripAnsi(result.lines.join('\n'));
-		expect(text).toContain('Subagent Stop · Explore');
-		expect(text).toContain('Prompt');
-		expect(text).toContain('Response');
+		// Compact header with agent type
+		expect(text).toContain('Subagent · Explore');
+		// Prompt content rendered (without bold markdown syntax)
 		expect(text).toContain('Investigate failed tests');
+		// Response content rendered
 		expect(text).toContain('fixed flaky selector');
 	});
 
-	it('shows full IDs in detail header without truncation', () => {
+	it('uses compact header without verbose IDs', () => {
 		const event = makeEvent({
 			event_id: 'evt_very_long_id_abcdefghijklmnopqrstuvwxyz_0123456789',
 			session_id: 'sess_very_long_id_abcdefghijklmnopqrstuvwxyz_0123456789',
@@ -397,15 +414,12 @@ describe('renderDetailLines', () => {
 		});
 		const result = renderDetailLines(event, 120);
 		const text = stripAnsi(result.lines.join('\n'));
-		expect(text).toContain(
-			'Event ID: evt_very_long_id_abcdefghijklmnopqrstuvwxyz_0123456789',
-		);
-		expect(text).toContain(
-			'Session ID: sess_very_long_id_abcdefghijklmnopqrstuvwxyz_0123456789',
-		);
-		expect(text).toContain(
-			'Run ID: run_very_long_id_abcdefghijklmnopqrstuvwxyz_0123456789',
-		);
+		// Compact header — no IDs shown
+		expect(text).not.toContain('Event ID:');
+		expect(text).not.toContain('Session ID:');
+		expect(text).not.toContain('Run ID:');
+		// Content is still shown
+		expect(text).toContain('hello');
 	});
 
 	it('splits multiline tool.failure error into individual lines', () => {
@@ -465,5 +479,71 @@ describe('renderDetailLines', () => {
 		const result = renderDetailLines(event, 80);
 		expect(result.showLineNumbers).toBe(true);
 		expect(result.lines.length).toBeGreaterThan(0);
+	});
+
+	it('shows Glob pattern as subject line', () => {
+		const pre = makeEvent({
+			kind: 'tool.pre',
+			data: {
+				tool_name: 'Glob',
+				tool_input: {pattern: 'tests/**/*.spec.{ts,js}'},
+				tool_use_id: 'glob-1',
+			},
+		});
+		const post = makeEvent({
+			kind: 'tool.post',
+			data: {
+				tool_name: 'Glob',
+				tool_input: {pattern: 'tests/**/*.spec.{ts,js}'},
+				tool_response: {
+					filenames: ['tests/add-ticket.spec.ts', 'tests/filter.spec.ts'],
+				},
+				tool_use_id: 'glob-1',
+			},
+		});
+		const result = renderDetailLines(pre, 80, post);
+		const text = stripAnsi(result.lines.join('\n'));
+		// Subject shows pattern directly
+		expect(text).toContain('tests/**/*.spec.{ts,js}');
+		// Results shown directly
+		expect(text).toContain('add-ticket.spec.ts');
+		expect(text).toContain('filter.spec.ts');
+	});
+
+	it('shows Grep pattern as subject line', () => {
+		const pre = makeEvent({
+			kind: 'tool.pre',
+			data: {
+				tool_name: 'Grep',
+				tool_input: {
+					pattern: 'TC-[A-Z]+-\\d+',
+					glob: '*.spec.ts',
+					path: '/project/tests',
+				},
+				tool_use_id: 'grep-1',
+			},
+		});
+		const result = renderDetailLines(pre, 80);
+		const text = stripAnsi(result.lines.join('\n'));
+		// Subject shows pattern and glob
+		expect(text).toContain('"TC-[A-Z]+-\\d+"');
+		expect(text).toContain('*.spec.ts');
+	});
+
+	it('shows FAILED indicator in header for tool failures', () => {
+		const event = makeEvent({
+			kind: 'tool.failure',
+			data: {
+				tool_name: 'Read',
+				tool_input: {file_path: '/missing.ts'},
+				error: 'File not found',
+				is_interrupt: false,
+			},
+		});
+		const result = renderDetailLines(event, 80);
+		const text = stripAnsi(result.lines.join('\n'));
+		expect(text).toContain('FAILED');
+		expect(text).toContain('/missing.ts');
+		expect(text).toContain('File not found');
 	});
 });
