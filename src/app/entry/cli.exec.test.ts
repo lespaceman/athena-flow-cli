@@ -5,10 +5,17 @@ const runExecMock = vi.fn();
 const bootstrapRuntimeConfigMock = vi.fn();
 const readConfigMock = vi.fn();
 const readGlobalConfigMock = vi.fn();
+const writeGlobalConfigMock = vi.fn();
 const getMostRecentAthenaSessionMock = vi.fn();
 const getSessionMetaMock = vi.fn();
 const shouldShowSetupMock = vi.fn();
 const resolveThemeMock = vi.fn(() => ({name: 'dark'}));
+const initTelemetryMock = vi.fn();
+const shutdownTelemetryMock = vi.fn().mockResolvedValue(undefined);
+const generateDeviceIdMock = vi.fn(() => 'generated-device-id');
+const trackAppLaunchedMock = vi.fn();
+const trackErrorMock = vi.fn();
+const trackTelemetryOptedOutMock = vi.fn();
 
 const EXEC_EXIT_CODE = {
 	SUCCESS: 0,
@@ -37,6 +44,10 @@ vi.mock('../../infra/plugins/index', () => ({
 	readGlobalConfig: readGlobalConfigMock,
 }));
 
+vi.mock('../../infra/plugins/config', () => ({
+	writeGlobalConfig: writeGlobalConfigMock,
+}));
+
 vi.mock('../bootstrap/bootstrapConfig', () => ({
 	bootstrapRuntimeConfig: bootstrapRuntimeConfigMock,
 }));
@@ -63,6 +74,15 @@ vi.mock('../../ui/theme/index', () => ({
 	resolveTheme: resolveThemeMock,
 }));
 
+vi.mock('../../infra/telemetry/index', () => ({
+	initTelemetry: initTelemetryMock,
+	shutdownTelemetry: shutdownTelemetryMock,
+	generateDeviceId: generateDeviceIdMock,
+	trackAppLaunched: trackAppLaunchedMock,
+	trackError: trackErrorMock,
+	trackTelemetryOptedOut: trackTelemetryOptedOutMock,
+}));
+
 vi.mock('../../shared/utils/processRegistry', () => ({
 	processRegistry: {
 		registerCleanupHandlers: vi.fn(),
@@ -72,6 +92,7 @@ vi.mock('../../shared/utils/processRegistry', () => ({
 type CliRunResult = {
 	exitSpy: ReturnType<typeof vi.spyOn>;
 	errorSpy: ReturnType<typeof vi.spyOn>;
+	logSpy: ReturnType<typeof vi.spyOn>;
 	restore: () => void;
 };
 
@@ -79,6 +100,7 @@ const BASE_CONFIG = {
 	plugins: [] as string[],
 	additionalDirectories: [] as string[],
 	setupComplete: true,
+	deviceId: 'device-id-1',
 };
 
 const BASE_RUNTIME_BOOTSTRAP = {
@@ -102,6 +124,7 @@ async function runCli(args: string[]): Promise<CliRunResult> {
 		.spyOn(process, 'exit')
 		.mockImplementation((() => undefined) as never);
 	const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+	const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
 	await import('./cli.tsx');
 	await new Promise(resolve => setImmediate(resolve));
@@ -109,10 +132,12 @@ async function runCli(args: string[]): Promise<CliRunResult> {
 	return {
 		exitSpy,
 		errorSpy,
+		logSpy,
 		restore: () => {
 			process.argv = previousArgv;
 			exitSpy.mockRestore();
 			errorSpy.mockRestore();
+			logSpy.mockRestore();
 		},
 	};
 }
@@ -124,10 +149,17 @@ describe('cli exec mode', () => {
 		bootstrapRuntimeConfigMock.mockReset();
 		readConfigMock.mockReset();
 		readGlobalConfigMock.mockReset();
+		writeGlobalConfigMock.mockReset();
 		getMostRecentAthenaSessionMock.mockReset();
 		getSessionMetaMock.mockReset();
 		shouldShowSetupMock.mockReset();
 		resolveThemeMock.mockReset();
+		initTelemetryMock.mockReset();
+		shutdownTelemetryMock.mockClear();
+		generateDeviceIdMock.mockClear();
+		trackAppLaunchedMock.mockReset();
+		trackErrorMock.mockReset();
+		trackTelemetryOptedOutMock.mockReset();
 
 		readConfigMock.mockReturnValue(BASE_CONFIG);
 		readGlobalConfigMock.mockReturnValue(BASE_CONFIG);
@@ -234,6 +266,46 @@ describe('cli exec mode', () => {
 			expect(renderMock).toHaveBeenCalledTimes(1);
 			expect(cli.exitSpy).not.toHaveBeenCalled();
 			expect(shouldShowSetupMock).toHaveBeenCalled();
+		} finally {
+			cli.restore();
+		}
+	});
+
+	it('suppresses the first-run telemetry notice in exec mode', async () => {
+		readGlobalConfigMock.mockReturnValue({
+			...BASE_CONFIG,
+			deviceId: undefined,
+		});
+
+		const cli = await runCli(['exec', 'hello from test', '--json']);
+		try {
+			expect(writeGlobalConfigMock).toHaveBeenCalledWith({
+				deviceId: 'generated-device-id',
+			});
+			expect(cli.logSpy).not.toHaveBeenCalledWith(
+				expect.stringContaining('Athena collects anonymous usage data'),
+			);
+			expect(cli.exitSpy).toHaveBeenCalledWith(EXEC_EXIT_CODE.SUCCESS);
+		} finally {
+			cli.restore();
+		}
+	});
+
+	it('tracks telemetry opt-out for the CLI disable command', async () => {
+		readGlobalConfigMock.mockReturnValue({
+			...BASE_CONFIG,
+			telemetry: true,
+		});
+
+		const cli = await runCli(['telemetry', 'disable']);
+		try {
+			expect(initTelemetryMock).toHaveBeenCalledWith({
+				deviceId: 'device-id-1',
+				telemetryEnabled: true,
+			});
+			expect(trackTelemetryOptedOutMock).toHaveBeenCalledTimes(1);
+			expect(shutdownTelemetryMock).toHaveBeenCalled();
+			expect(writeGlobalConfigMock).toHaveBeenCalledWith({telemetry: false});
 		} finally {
 			cli.restore();
 		}
