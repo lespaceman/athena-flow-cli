@@ -5,13 +5,27 @@ import {
 } from '../eventTranslator';
 
 describe('translateNotification', () => {
-	it('maps turn/started to session.start', () => {
+	it('maps turn/started to user.prompt', () => {
 		const result = translateNotification({
 			method: 'turn/started',
 			params: {turn: {id: 't1', model: 'gpt-5.3-codex'}},
 		});
-		expect(result.kind).toBe('session.start');
+		expect(result.kind).toBe('user.prompt');
 		expect(result.expectsDecision).toBe(false);
+	});
+
+	it('maps item/agentMessage/delta to notification', () => {
+		const result = translateNotification({
+			method: 'item/agentMessage/delta',
+			params: {delta: 'Hello world'},
+		});
+		expect(result.kind).toBe('notification');
+		expect(result.data).toEqual(
+			expect.objectContaining({
+				notification_type: 'agent_message_delta',
+				message: 'Hello world',
+			}),
+		);
 	});
 
 	it('maps turn/completed to stop.request', () => {
@@ -82,6 +96,17 @@ describe('translateServerRequest', () => {
 		expect(result.kind).toBe('permission.request');
 		expect(result.expectsDecision).toBe(true);
 		expect(result.toolName).toBe('command_execution');
+	});
+
+	it('maps fileRead approval to permission.request', () => {
+		const result = translateServerRequest({
+			method: 'item/fileRead/requestApproval',
+			id: 7,
+			params: {path: '/etc/passwd', reason: 'needs config'},
+		});
+		expect(result.kind).toBe('permission.request');
+		expect(result.expectsDecision).toBe(true);
+		expect(result.toolName).toBe('file_read');
 	});
 
 	it('maps fileChange approval to permission.request', () => {

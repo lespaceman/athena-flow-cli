@@ -5,17 +5,12 @@ import {detectClaudeVersion} from './detectVersion';
 import {resolveClaudeBinary} from './resolveBinary';
 import {resolveHookForwarderCommand} from '../hooks/generateHookSettings';
 
-export type HarnessVerificationCheck = {
-	label: string;
-	status: 'pass' | 'fail' | 'warn';
-	message: string;
-};
+import type {
+	HarnessVerificationCheck,
+	HarnessVerificationResult,
+} from '../../types';
 
-export type HarnessVerificationResult = {
-	ok: boolean;
-	summary: string;
-	checks: HarnessVerificationCheck[];
-};
+export type {HarnessVerificationCheck, HarnessVerificationResult};
 
 export type VerifyClaudeHarnessOptions = {
 	pathValue?: string;

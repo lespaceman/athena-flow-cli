@@ -8,7 +8,7 @@ import {
 	listHarnessCapabilities,
 	type HarnessCapability,
 } from '../../harnesses/registry';
-import type {HarnessVerificationCheck} from '../../harnesses/claude/system/verifyHarness';
+import type {HarnessVerificationCheck} from '../../harnesses/types';
 
 type Props = {
 	onComplete: (harness: AthenaHarness) => void;

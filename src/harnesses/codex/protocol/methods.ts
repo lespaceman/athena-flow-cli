@@ -23,6 +23,7 @@ export const THREAD_NAME_UPDATED = 'thread/name/updated';
 // Server → client requests (need response)
 export const CMD_EXEC_REQUEST_APPROVAL =
 	'item/commandExecution/requestApproval';
+export const FILE_READ_REQUEST_APPROVAL = 'item/fileRead/requestApproval';
 export const FILE_CHANGE_REQUEST_APPROVAL = 'item/fileChange/requestApproval';
 export const PERMISSIONS_REQUEST_APPROVAL = 'item/permissions/requestApproval';
 export const TOOL_REQUEST_USER_INPUT = 'item/tool/requestUserInput';

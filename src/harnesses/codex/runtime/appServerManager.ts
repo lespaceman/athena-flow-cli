@@ -70,8 +70,11 @@ export class AppServerManager extends EventEmitter<AppServerManagerEvents> {
 			this.emit('exit', code, signal);
 		});
 
-		this.process.stderr?.on('data', (_chunk: Buffer) => {
-			// Diagnostic logging — skip for now
+		this.process.stderr?.on('data', (chunk: Buffer) => {
+			const line = chunk.toString().trim();
+			if (line && !this.isBenignStderr(line)) {
+				this.emit('error', new Error(`[codex stderr] ${line}`));
+			}
 		});
 
 		this.readline = createInterface({input: this.process.stdout!});
@@ -187,6 +190,17 @@ export class AppServerManager extends EventEmitter<AppServerManagerEvents> {
 			this.emit('notification', parsed as JsonRpcNotification);
 			return;
 		}
+	}
+
+	private isBenignStderr(line: string): boolean {
+		// Filter noisy but harmless log lines from codex app-server
+		return (
+			line.startsWith('RUST_LOG') ||
+			line.startsWith('DEBUG') ||
+			line.startsWith('TRACE') ||
+			line.includes('tracing_subscriber') ||
+			line.length === 0
+		);
 	}
 
 	private rejectAllPending(reason: string): void {

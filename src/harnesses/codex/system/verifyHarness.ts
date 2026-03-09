@@ -2,7 +2,7 @@ import {execFileSync} from 'node:child_process';
 import type {
 	HarnessVerificationCheck,
 	HarnessVerificationResult,
-} from '../../claude/system/verifyHarness';
+} from '../../types';
 
 const MIN_VERSION = '0.37.0';
 

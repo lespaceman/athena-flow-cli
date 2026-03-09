@@ -35,15 +35,17 @@ export function translateNotification(
 				expectsDecision: false,
 			};
 
-		case M.TURN_STARTED:
+		case M.TURN_STARTED: {
+			const turn = asRecord(params['turn']);
 			return {
-				kind: 'session.start',
+				kind: 'user.prompt',
 				data: {
-					source: 'turn',
-					model: asRecord(params['turn'])['model'] as string | undefined,
+					prompt: turn['input'] as string | undefined,
+					permission_mode: undefined,
 				},
 				expectsDecision: false,
 			};
+		}
 
 		case M.TURN_COMPLETED: {
 			const turn = asRecord(params['turn']);
@@ -162,15 +164,30 @@ export function translateNotification(
 			};
 		}
 
-		case M.THREAD_TOKEN_USAGE_UPDATED:
+		case M.ITEM_AGENT_MESSAGE_DELTA: {
+			const delta = params['delta'] as string | undefined;
+			return {
+				kind: 'notification',
+				data: {
+					message: delta ?? '',
+					notification_type: 'agent_message_delta',
+				},
+				expectsDecision: false,
+			};
+		}
+
+		case M.THREAD_TOKEN_USAGE_UPDATED: {
+			const usage = asRecord(params['usage'] ?? params);
 			return {
 				kind: 'notification',
 				data: {
 					message: 'Token usage updated',
 					notification_type: 'token_usage',
+					...usage,
 				},
 				expectsDecision: false,
 			};
+		}
 
 		case M.THREAD_NAME_UPDATED:
 			return {
@@ -205,6 +222,17 @@ export function translateServerRequest(
 					tool_input: {command: params['command'], cwd: params['cwd']},
 				},
 				toolName: 'command_execution',
+				expectsDecision: true,
+			};
+
+		case M.FILE_READ_REQUEST_APPROVAL:
+			return {
+				kind: 'permission.request',
+				data: {
+					tool_name: 'file_read',
+					tool_input: {path: params['path'], reason: params['reason']},
+				},
+				toolName: 'file_read',
 				expectsDecision: true,
 			};
 
