@@ -262,6 +262,7 @@ function AppContent({
 	const messagesRef = useRef(messages);
 	messagesRef.current = messages;
 	const startupAttemptRef = useRef<StartupAttemptState | null>(null);
+	const runtimeStartupDiagnosticsSignatureRef = useRef<string | null>(null);
 	const inputMode = uiState.inputMode;
 	const hintsForced = uiState.hintsForced;
 	const showRunOverlay = uiState.showRunOverlay;
@@ -480,15 +481,58 @@ function AppContent({
 
 	useEffect(() => {
 		setPendingStartupDiagnostics(current => {
-			if (
-				!current ||
-				!shouldDismissPendingStartupDiagnostics(current, feedEvents.length)
-			) {
+			if (!current) {
+				return current;
+			}
+
+			const isActiveHookServerStartupFailure =
+				current.failureStage === 'startup_timeout' &&
+				!!runtimeError &&
+				!isServerRunning &&
+				current.message === runtimeError.message;
+			if (isActiveHookServerStartupFailure) {
+				return current;
+			}
+
+			if (!shouldDismissPendingStartupDiagnostics(current, feedEvents.length)) {
 				return current;
 			}
 			return null;
 		});
-	}, [feedEvents.length]);
+	}, [feedEvents.length, isServerRunning, runtimeError]);
+
+	useEffect(() => {
+		if (!shouldTrackClaudeStartup || !isTelemetryEnabled()) return;
+		if (!runtimeError || isServerRunning) {
+			runtimeStartupDiagnosticsSignatureRef.current = null;
+			return;
+		}
+
+		const signature = `${runtimeError.code}:${runtimeError.message}`;
+		if (signature === runtimeStartupDiagnosticsSignatureRef.current) {
+			return;
+		}
+		runtimeStartupDiagnosticsSignatureRef.current = signature;
+
+		const diagnosticsEvent = createPendingStartupDiagnosticsEvent({
+			failureStage: 'startup_timeout',
+			message: runtimeError.message,
+			feedEventCount: feedEvents.length,
+		});
+
+		if (diagnosticsConsent === true) {
+			emitClaudeStartupDiagnostics(diagnosticsEvent);
+		} else if (diagnosticsConsent === undefined) {
+			setPendingStartupDiagnostics(current => current ?? diagnosticsEvent);
+		}
+	}, [
+		diagnosticsConsent,
+		emitClaudeStartupDiagnostics,
+		feedEvents.length,
+		isServerRunning,
+		runtimeError,
+		shouldTrackClaudeStartup,
+	]);
 
 	useEffect(() => {
 		if (!shouldTrackClaudeStartup) return;

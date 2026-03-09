@@ -56,6 +56,45 @@ describe('telemetry client', () => {
 		});
 	});
 
+	it('capture includes super properties from init options', async () => {
+		initTelemetry({
+			deviceId: 'test-device-456',
+			appVersion: '0.3.10',
+			os: 'linux-x64',
+		});
+		capture('test.event', {key: 'value'});
+
+		const {PostHog} = await import('posthog-node');
+		const mockResults = vi.mocked(PostHog).mock.results;
+		const mockInstance = mockResults[mockResults.length - 1]?.value;
+		expect(mockInstance.capture).toHaveBeenCalledWith({
+			distinctId: 'test-device-456',
+			event: 'test.event',
+			properties: {
+				app_version: '0.3.10',
+				os: 'linux-x64',
+				key: 'value',
+			},
+		});
+	});
+
+	it('event properties override super properties', async () => {
+		initTelemetry({
+			deviceId: 'test-device-789',
+			os: 'linux-x64',
+		});
+		capture('test.event', {os: 'darwin-arm64'});
+
+		const {PostHog} = await import('posthog-node');
+		const mockResults = vi.mocked(PostHog).mock.results;
+		const mockInstance = mockResults[mockResults.length - 1]?.value;
+		expect(mockInstance.capture).toHaveBeenCalledWith({
+			distinctId: 'test-device-789',
+			event: 'test.event',
+			properties: {os: 'darwin-arm64'},
+		});
+	});
+
 	it('capture is a no-op when telemetry is disabled', () => {
 		initTelemetry({deviceId: 'test-id', telemetryEnabled: false});
 		// Should not throw, just silently no-op
