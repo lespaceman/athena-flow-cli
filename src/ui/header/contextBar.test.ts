@@ -29,7 +29,7 @@ describe('renderContextBar', () => {
 
 	it('renders empty bar when used is null', () => {
 		const result = renderContextBar(null, 200000, 24, false);
-		expect(result).toContain('-- / 200k');
+		expect(result).toContain('Context --');
 	});
 
 	it('renders color bar with ANSI codes', () => {
@@ -57,7 +57,7 @@ describe('renderContextBar', () => {
 
 	it('renders an empty bar when max is non-positive', () => {
 		const result = renderContextBar(1000, 0, 30, false);
-		expect(result).toContain('1k / 0');
+		expect(result).toContain('Context --');
 		expect(result).not.toContain('=');
 	});
 });

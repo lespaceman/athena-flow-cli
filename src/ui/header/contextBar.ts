@@ -43,25 +43,25 @@ export function renderContextBar(
 	const colors = {...DEFAULT_PALETTE, ...palette};
 	const usedStr = formatTokenCount(used);
 	const maxStr = formatTokenCount(max);
-	const rawPct =
-		used !== null && max !== null && max > 0
-			? Math.round((Math.max(0, used) / max) * 100)
-			: null;
+	const hasValidContextWindow = used !== null && max !== null && max > 0;
+	const rawPct = hasValidContextWindow
+		? Math.round((Math.max(0, used) / max) * 100)
+		: null;
 	const pct = rawPct === null ? null : Math.max(0, Math.min(999, rawPct));
 	const label = 'Context';
-	const countText = max === null ? `${usedStr}` : `${usedStr} / ${maxStr}`;
 	const pctText = pct !== null ? ` · ${pct}%` : '';
 
-	if (used === null || max === null) {
+	if (!hasValidContextWindow) {
 		if (hasColor) {
 			const labelStyled = chalk.hex(colors.label)(label);
-			const countsStyled = chalk.hex(colors.numbers)(` ${countText}`);
+			const countsStyled = chalk.hex(colors.numbers)(' --');
 			return `${labelStyled}${countsStyled}`;
 		}
-		return `${label} ${countText}`;
+		return `${label} --`;
 	}
 
 	const bracketOverhead = hasColor ? 0 : 2;
+	const countText = `${usedStr} / ${maxStr}`;
 	const numbersWidth = 1 + countText.length + pctText.length;
 	const barWidth = Math.max(
 		MIN_BAR_WIDTH,
