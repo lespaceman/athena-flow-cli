@@ -133,6 +133,7 @@ describe('SetupWizard', () => {
 		expect(lastFrame()!).toContain('Select harness');
 
 		act(() => stdin.write('\u001B')); // Esc back
+		act(() => vi.advanceTimersByTime(0)); // flush ink's pending escape
 		expect(lastFrame()!).toContain('Choose your display theme');
 	});
 

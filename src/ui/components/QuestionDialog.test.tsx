@@ -303,7 +303,7 @@ describe('QuestionDialog', () => {
 		expect(frame).not.toContain('\u256f'); // no ╯
 	});
 
-	it('calls onSkip when Esc is pressed', () => {
+	it('calls onSkip when Esc is pressed', async () => {
 		const onSkip = vi.fn();
 		const request = makeRequest([
 			{
@@ -324,6 +324,7 @@ describe('QuestionDialog', () => {
 		);
 
 		stdin.write('\x1B');
+		await new Promise(resolve => setImmediate(resolve));
 
 		expect(onSkip).toHaveBeenCalled();
 	});

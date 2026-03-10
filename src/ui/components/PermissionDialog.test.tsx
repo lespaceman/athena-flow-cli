@@ -199,7 +199,7 @@ describe('PermissionDialog', () => {
 			expect(onDecision).toHaveBeenCalledWith('deny');
 		});
 
-		it('calls onDecision with "deny" when Escape is pressed', () => {
+		it('calls onDecision with "deny" when Escape is pressed', async () => {
 			const onDecision = vi.fn();
 			const event = makePermissionEvent('Edit', {file_path: '/test.ts'});
 			const {stdin} = render(
@@ -210,6 +210,7 @@ describe('PermissionDialog', () => {
 				/>,
 			);
 			stdin.write('\x1B');
+			await new Promise(resolve => setImmediate(resolve));
 			expect(onDecision).toHaveBeenCalledWith('deny');
 		});
 

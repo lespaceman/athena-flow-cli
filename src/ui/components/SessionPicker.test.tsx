@@ -158,7 +158,7 @@ describe('SessionPicker', () => {
 		expect(onSelect).toHaveBeenCalledWith('bbb');
 	});
 
-	it('calls onCancel on Escape', () => {
+	it('calls onCancel on Escape', async () => {
 		const onCancel = vi.fn();
 		const {stdin} = render(
 			<SessionPicker
@@ -168,6 +168,7 @@ describe('SessionPicker', () => {
 			/>,
 		);
 		stdin.write('\x1B');
+		await new Promise(resolve => setImmediate(resolve));
 		expect(onCancel).toHaveBeenCalled();
 	});
 
