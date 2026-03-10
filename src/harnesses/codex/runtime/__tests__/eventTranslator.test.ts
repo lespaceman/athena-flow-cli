@@ -5,41 +5,84 @@ import {
 } from '../eventTranslator';
 
 describe('translateNotification', () => {
-	it('maps turn/started to user.prompt', () => {
+	it('maps thread/started to session.start without inventing a model id', () => {
+		const result = translateNotification({
+			method: 'thread/started',
+			params: {
+				thread: {
+					id: 'th1',
+					preview: 'hello',
+					ephemeral: false,
+					modelProvider: 'openai',
+					createdAt: 0,
+					updatedAt: 0,
+					status: 'idle',
+					path: null,
+					cwd: '/tmp',
+					cliVersion: '0.0.0',
+					source: {type: 'appServer'},
+					agentNickname: null,
+					agentRole: null,
+					gitInfo: null,
+					name: null,
+					turns: [],
+				},
+			},
+		});
+		expect(result.kind).toBe('session.start');
+		expect(result.data).toEqual({source: 'codex'});
+	});
+
+	it('maps turn/started to turn.start', () => {
 		const result = translateNotification({
 			method: 'turn/started',
-			params: {turn: {id: 't1', model: 'gpt-5.3-codex'}},
+			params: {
+				threadId: 'th1',
+				turn: {id: 't1', items: [], status: 'inProgress'},
+			},
 		});
-		expect(result.kind).toBe('user.prompt');
+		expect(result.kind).toBe('turn.start');
 		expect(result.expectsDecision).toBe(false);
 	});
 
-	it('maps item/agentMessage/delta to notification', () => {
+	it('maps item/agentMessage/delta to message.delta', () => {
 		const result = translateNotification({
 			method: 'item/agentMessage/delta',
-			params: {delta: 'Hello world'},
+			params: {
+				threadId: 'th1',
+				turnId: 't1',
+				itemId: 'i1',
+				delta: 'Hello world',
+			},
 		});
-		expect(result.kind).toBe('notification');
+		expect(result.kind).toBe('message.delta');
 		expect(result.data).toEqual(
 			expect.objectContaining({
-				notification_type: 'agent_message_delta',
-				message: 'Hello world',
+				thread_id: 'th1',
+				turn_id: 't1',
+				item_id: 'i1',
+				delta: 'Hello world',
 			}),
 		);
 	});
 
-	it('maps turn/completed to stop.request', () => {
+	it('maps turn/completed to turn.complete', () => {
 		const result = translateNotification({
 			method: 'turn/completed',
-			params: {turn: {id: 't1', status: 'completed'}},
+			params: {
+				threadId: 'th1',
+				turn: {id: 't1', items: [], status: 'completed'},
+			},
 		});
-		expect(result.kind).toBe('stop.request');
+		expect(result.kind).toBe('turn.complete');
 	});
 
 	it('maps item/started (commandExecution) to tool.pre', () => {
 		const result = translateNotification({
 			method: 'item/started',
 			params: {
+				threadId: 'th1',
+				turnId: 't1',
 				item: {id: 'i1', type: 'commandExecution', command: 'ls -la'},
 			},
 		});
@@ -51,6 +94,8 @@ describe('translateNotification', () => {
 		const result = translateNotification({
 			method: 'item/completed',
 			params: {
+				threadId: 'th1',
+				turnId: 't1',
 				item: {
 					id: 'i1',
 					type: 'commandExecution',
@@ -66,6 +111,8 @@ describe('translateNotification', () => {
 		const result = translateNotification({
 			method: 'item/completed',
 			params: {
+				threadId: 'th1',
+				turnId: 't1',
 				item: {
 					id: 'i1',
 					type: 'commandExecution',
@@ -91,31 +138,92 @@ describe('translateServerRequest', () => {
 		const result = translateServerRequest({
 			method: 'item/commandExecution/requestApproval',
 			id: 5,
-			params: {command: 'rm -rf /', cwd: '/home'},
+			params: {
+				threadId: 'th1',
+				turnId: 't1',
+				itemId: 'i1',
+				command: 'rm -rf /',
+				cwd: '/home',
+			},
 		});
 		expect(result.kind).toBe('permission.request');
 		expect(result.expectsDecision).toBe(true);
 		expect(result.toolName).toBe('command_execution');
 	});
 
-	it('maps fileRead approval to permission.request', () => {
-		const result = translateServerRequest({
-			method: 'item/fileRead/requestApproval',
-			id: 7,
-			params: {path: '/etc/passwd', reason: 'needs config'},
-		});
-		expect(result.kind).toBe('permission.request');
-		expect(result.expectsDecision).toBe(true);
-		expect(result.toolName).toBe('file_read');
-	});
-
 	it('maps fileChange approval to permission.request', () => {
 		const result = translateServerRequest({
 			method: 'item/fileChange/requestApproval',
 			id: 6,
-			params: {changes: [{path: 'foo.ts', kind: 'modify'}]},
+			params: {
+				threadId: 'th1',
+				turnId: 't1',
+				itemId: 'i1',
+				reason: 'needs write access',
+				grantRoot: '/home/user/project',
+			},
 		});
 		expect(result.kind).toBe('permission.request');
 		expect(result.expectsDecision).toBe(true);
+		expect(result.toolName).toBe('file_change');
+		expect(result.data).toEqual(
+			expect.objectContaining({
+				tool_input: {
+					reason: 'needs write access',
+					grantRoot: '/home/user/project',
+				},
+			}),
+		);
+	});
+
+	it('maps applyPatchApproval to permission.request', () => {
+		const result = translateServerRequest({
+			method: 'applyPatchApproval',
+			id: 9,
+			params: {
+				conversationId: 'th1',
+				callId: 'patch-1',
+				fileChanges: {},
+				reason: 'legacy patch approval',
+				grantRoot: '/home/user/project',
+			},
+		});
+		expect(result.kind).toBe('permission.request');
+		expect(result.toolName).toBe('file_change');
+		expect(result.toolUseId).toBe('patch-1');
+	});
+
+	it('maps execCommandApproval to permission.request', () => {
+		const result = translateServerRequest({
+			method: 'execCommandApproval',
+			id: 10,
+			params: {
+				conversationId: 'th1',
+				callId: 'exec-1',
+				approvalId: null,
+				command: ['git', 'status'],
+				cwd: '/home/user/project',
+				reason: 'legacy exec approval',
+				parsedCmd: [],
+			},
+		});
+		expect(result.kind).toBe('permission.request');
+		expect(result.toolName).toBe('command_execution');
+		expect(result.toolUseId).toBe('exec-1');
+	});
+
+	it('marks removed permissions approval requests as unknown', () => {
+		const result = translateServerRequest({
+			method: 'item/permissions/requestApproval',
+			id: 8,
+			params: {
+				threadId: 'th1',
+				turnId: 't1',
+				itemId: 'i1',
+				permissions: {network: {enabled: true}},
+			},
+		});
+		expect(result.kind).toBe('unknown');
+		expect(result.expectsDecision).toBe(false);
 	});
 });

@@ -167,6 +167,104 @@ describe('FeedMapper', () => {
 			expect(userPrompt!.data.prompt).toBe('Fix the bug');
 			expect(userPrompt!.actor_id).toBe('user');
 		});
+
+		it('collapses Codex message deltas into agent.message on turn.complete', () => {
+			const mapper = createFeedMapper();
+			const startResults = mapper.mapEvent(
+				makeRuntimeEvent('turn/started', {
+					kind: 'turn.start',
+					hookName: 'turn/started',
+					data: {
+						thread_id: 'th-1',
+						turn_id: 'turn-1',
+						status: 'inProgress',
+						prompt: 'Hello Codex',
+					},
+					payload: {
+						threadId: 'th-1',
+						turn: {id: 'turn-1', status: 'inProgress'},
+					},
+				}),
+			);
+
+			expect(startResults).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						kind: 'run.start',
+						data: expect.objectContaining({
+							trigger: expect.objectContaining({type: 'user_prompt_submit'}),
+						}),
+					}),
+					expect.objectContaining({
+						kind: 'user.prompt',
+						data: expect.objectContaining({prompt: 'Hello Codex'}),
+					}),
+				]),
+			);
+
+			const deltaResults = mapper.mapEvent(
+				makeRuntimeEvent('item/agentMessage/delta', {
+					kind: 'message.delta',
+					hookName: 'item/agentMessage/delta',
+					data: {
+						thread_id: 'th-1',
+						turn_id: 'turn-1',
+						item_id: 'msg-1',
+						delta: 'Hello from Codex',
+					},
+					payload: {
+						threadId: 'th-1',
+						turnId: 'turn-1',
+						itemId: 'msg-1',
+						delta: 'Hello from Codex',
+					},
+				}),
+			);
+
+			expect(deltaResults).toEqual([]);
+
+			const completeResults = mapper.mapEvent(
+				makeRuntimeEvent('turn/completed', {
+					kind: 'turn.complete',
+					hookName: 'turn/completed',
+					data: {thread_id: 'th-1', turn_id: 'turn-1', status: 'completed'},
+					payload: {
+						threadId: 'th-1',
+						turn: {id: 'turn-1', status: 'completed'},
+					},
+				}),
+			);
+
+			expect(completeResults.some(r => r.kind === 'stop.request')).toBe(true);
+			expect(completeResults.some(r => r.kind === 'run.end')).toBe(true);
+			expect(completeResults).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						kind: 'agent.message',
+						data: expect.objectContaining({message: 'Hello from Codex'}),
+					}),
+				]),
+			);
+			expect(mapper.getCurrentRun()).toBeNull();
+		});
+
+		it('does not create a phantom run on turn.complete without a turn.start', () => {
+			const mapper = createFeedMapper();
+			const results = mapper.mapEvent(
+				makeRuntimeEvent('turn/completed', {
+					kind: 'turn.complete',
+					hookName: 'turn/completed',
+					data: {thread_id: 'th-1', turn_id: 'turn-1', status: 'completed'},
+					payload: {
+						threadId: 'th-1',
+						turn: {id: 'turn-1', status: 'completed'},
+					},
+				}),
+			);
+
+			expect(results).toEqual([]);
+			expect(mapper.getCurrentRun()).toBeNull();
+		});
 	});
 
 	describe('tool mapping', () => {

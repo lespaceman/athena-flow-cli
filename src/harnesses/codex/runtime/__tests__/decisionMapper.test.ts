@@ -1,12 +1,10 @@
 import {describe, it, expect} from 'vitest';
-import {
-	mapDecisionToCodexResult,
-	extractCodexRequestId,
-} from '../decisionMapper';
+import {mapDecisionToCodexResult} from '../decisionMapper';
 import type {
 	RuntimeEvent,
 	RuntimeDecision,
 } from '../../../../core/runtime/types';
+import * as M from '../../protocol/methods';
 
 const MOCK_EVENT: RuntimeEvent = {
 	id: 'codex-req-5',
@@ -22,6 +20,12 @@ const MOCK_EVENT: RuntimeEvent = {
 		canBlock: true,
 	},
 	payload: {},
+};
+
+const MOCK_QUESTION_EVENT: RuntimeEvent = {
+	...MOCK_EVENT,
+	hookName: M.TOOL_REQUEST_USER_INPUT,
+	data: {tool_name: 'user_input'},
 };
 
 describe('mapDecisionToCodexResult', () => {
@@ -71,8 +75,8 @@ describe('mapDecisionToCodexResult', () => {
 			source: 'user',
 			intent: {kind: 'question_answer', answers: {q1: 'a1'}},
 		};
-		expect(mapDecisionToCodexResult(MOCK_EVENT, decision)).toEqual({
-			answers: {q1: 'a1'},
+		expect(mapDecisionToCodexResult(MOCK_QUESTION_EVENT, decision)).toEqual({
+			answers: {q1: {answers: ['a1']}},
 		});
 	});
 
@@ -92,15 +96,5 @@ describe('mapDecisionToCodexResult', () => {
 		expect(mapDecisionToCodexResult(MOCK_EVENT, decision)).toEqual({
 			decision: 'accept',
 		});
-	});
-});
-
-describe('extractCodexRequestId', () => {
-	it('extracts numeric id', () => {
-		expect(extractCodexRequestId('codex-req-42')).toBe(42);
-	});
-
-	it('returns null for non-codex ids', () => {
-		expect(extractCodexRequestId('abc-123')).toBeNull();
 	});
 });

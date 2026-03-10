@@ -12,11 +12,21 @@ import {
 	mapServerRequestToRuntimeEvent,
 } from './mapper';
 import {mapDecisionToCodexResult} from './decisionMapper';
+import {asRecord} from './eventTranslator';
+import * as M from '../protocol/methods';
 
-type CodexServerOptions = {
+export type CodexServerOptions = {
 	projectDir: string;
 	instanceId: number;
 	binaryPath?: string;
+};
+
+export type CodexRuntime = Runtime & {
+	/** Send a user prompt. Starts a thread if needed. Resolves on turn completion. */
+	sendPrompt(prompt: string, threadIdToResume?: string): Promise<void>;
+	/** Interrupt the currently running turn. */
+	sendInterrupt(): void;
+	_getPendingCount(): number;
 };
 
 type PendingApproval = {
@@ -25,7 +35,63 @@ type PendingApproval = {
 	timer: ReturnType<typeof setTimeout> | undefined;
 };
 
-export function createCodexServer(opts: CodexServerOptions) {
+type PendingTurnCompletion = {
+	promise: Promise<void>;
+	resolve: () => void;
+	reject: (error: Error) => void;
+};
+
+/**
+ * Item types whose ITEM_STARTED / ITEM_COMPLETED lifecycle notifications
+ * are suppressed because they are either accumulated (agentMessage) or
+ * redundant (userMessage is already shown as user.prompt).
+ */
+const SUPPRESSED_ITEM_TYPES = new Set([
+	'agentMessage',
+	'userMessage',
+	'plan',
+	'reasoning',
+]);
+
+const IGNORED_NOTIFICATION_METHODS = new Set([
+	M.THREAD_STATUS_CHANGED,
+	M.TURN_DIFF_UPDATED,
+]);
+
+function shouldIgnoreNotificationMethod(method: string): boolean {
+	return (
+		method.startsWith('codex/event/') ||
+		IGNORED_NOTIFICATION_METHODS.has(method)
+	);
+}
+
+function getUnsupportedServerRequestResponse(
+	method: string,
+): {result?: unknown; error?: {code: number; message: string}} {
+	switch (method) {
+		case M.MCP_SERVER_ELICITATION_REQUEST:
+			return {result: {action: 'decline', content: null}};
+		case M.DYNAMIC_TOOL_CALL:
+			return {result: {contentItems: [], success: false}};
+		case M.CHATGPT_AUTH_TOKENS_REFRESH:
+			return {
+				error: {
+					code: -32601,
+					message:
+						'Athena does not implement ChatGPT auth token refresh for Codex app-server',
+				},
+			};
+		default:
+			return {
+				error: {
+					code: -32601,
+					message: `Unsupported Codex server request: ${method}`,
+				},
+			};
+	}
+}
+
+export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 	const {projectDir, binaryPath} = opts;
 	const handlers = new Set<RuntimeEventHandler>();
 	const decisionHandlers = new Set<RuntimeDecisionHandler>();
@@ -34,6 +100,36 @@ export function createCodexServer(opts: CodexServerOptions) {
 	let status: 'stopped' | 'running' = 'stopped';
 	let lastError: RuntimeStartupError | null = null;
 	let threadId: string | null = null;
+	let turnId: string | null = null;
+	let threadModel: string | null = null;
+	let pendingTurnPrompt: string | null = null;
+	let pendingTurnCompletion: PendingTurnCompletion | null = null;
+
+	function createPendingTurnCompletion(): PendingTurnCompletion {
+		let settleResolve: (() => void) | null = null;
+		let settleReject: ((error: Error) => void) | null = null;
+		const promise = new Promise<void>((resolve, reject) => {
+			settleResolve = resolve;
+			settleReject = reject;
+		});
+		return {
+			promise,
+			resolve: () => {
+				if (!settleResolve) return;
+				const resolve = settleResolve;
+				settleResolve = null;
+				settleReject = null;
+				resolve();
+			},
+			reject: (error: Error) => {
+				if (!settleReject) return;
+				const reject = settleReject;
+				settleResolve = null;
+				settleReject = null;
+				reject(error);
+			},
+		};
+	}
 
 	function emit(event: RuntimeEvent): void {
 		for (const handler of handlers) {
@@ -61,7 +157,98 @@ export function createCodexServer(opts: CodexServerOptions) {
 		}
 	}
 
-	const runtime: Runtime & {_getPendingCount: () => number} = {
+	function clearPendingApprovals(): void {
+		for (const req of pending.values()) {
+			if (req.timer) clearTimeout(req.timer);
+		}
+		pending.clear();
+	}
+
+	function clearPendingTurn(error?: Error): void {
+		pendingTurnPrompt = null;
+		if (error) {
+			pendingTurnCompletion?.reject(error);
+		}
+		pendingTurnCompletion = null;
+	}
+
+	function trackNotificationState(msg: {method: string; params?: unknown}): void {
+		if (msg.method === M.THREAD_STARTED) {
+			const params = asRecord(msg.params);
+			const thread = asRecord(params['thread']);
+			if (thread['id']) {
+				threadId = String(thread['id']);
+			}
+			return;
+		}
+
+		if (msg.method === M.TURN_STARTED) {
+			const params = asRecord(msg.params);
+			const turn = asRecord(params['turn']);
+			if (turn['id']) {
+				turnId = String(turn['id']);
+			}
+			return;
+		}
+
+		if (msg.method === M.TURN_COMPLETED) {
+			turnId = null;
+		}
+	}
+
+	function shouldSuppressItemLifecycle(msg: {
+		method: string;
+		params?: unknown;
+	}): boolean {
+		if (msg.method !== M.ITEM_STARTED && msg.method !== M.ITEM_COMPLETED) {
+			return false;
+		}
+
+		const params = asRecord(msg.params);
+		const item = asRecord(params['item']);
+		return SUPPRESSED_ITEM_TYPES.has(item['type'] as string);
+	}
+
+	function augmentNotificationEvent(
+		msg: {method: string},
+		event: RuntimeEvent,
+	): RuntimeEvent {
+		if (typeof event.data !== 'object' || event.data === null) {
+			return event;
+		}
+
+		const data = event.data as Record<string, unknown>;
+		if (msg.method === M.THREAD_STARTED && threadModel) {
+			event.data = {...data, model: threadModel};
+			return event;
+		}
+
+		if (msg.method === M.TURN_STARTED && pendingTurnPrompt) {
+			event.data = {...data, prompt: pendingTurnPrompt};
+		}
+
+		return event;
+	}
+
+	function resolveUnsupportedServerRequest(msg: {
+		id: number;
+		method: string;
+	}): void {
+		const response = getUnsupportedServerRequestResponse(msg.method);
+		if (response.result !== undefined) {
+			manager?.respondToServerRequest(msg.id, response.result);
+			return;
+		}
+		if (response.error) {
+			manager?.respondToServerRequestError(
+				msg.id,
+				response.error.code,
+				response.error.message,
+			);
+		}
+	}
+
+	const runtime: CodexRuntime = {
 		async start(): Promise<void> {
 			if (status === 'running') return;
 
@@ -69,12 +256,24 @@ export function createCodexServer(opts: CodexServerOptions) {
 				manager = new AppServerManager(binaryPath ?? 'codex', projectDir);
 
 				manager.on('notification', msg => {
-					const event = mapNotificationToRuntimeEvent(
+					if (shouldIgnoreNotificationMethod(msg.method)) {
+						return;
+					}
+					trackNotificationState(msg);
+
+					if (shouldSuppressItemLifecycle(msg)) {
+						return;
+					}
+
+					const event = augmentNotificationEvent(
 						msg,
-						threadId ?? '',
-						projectDir,
+						mapNotificationToRuntimeEvent(msg, threadId ?? '', projectDir),
 					);
 					emit(event);
+					if (msg.method === M.TURN_COMPLETED) {
+						pendingTurnCompletion?.resolve();
+						clearPendingTurn();
+					}
 				});
 
 				manager.on('serverRequest', msg => {
@@ -83,6 +282,12 @@ export function createCodexServer(opts: CodexServerOptions) {
 						threadId ?? '',
 						projectDir,
 					);
+
+					if (event.kind === 'unknown') {
+						emit(event);
+						resolveUnsupportedServerRequest(msg);
+						return;
+					}
 
 					let timer: ReturnType<typeof setTimeout> | undefined;
 					if (event.interaction.defaultTimeoutMs) {
@@ -108,6 +313,8 @@ export function createCodexServer(opts: CodexServerOptions) {
 				});
 
 				manager.on('exit', (_code, _signal) => {
+					clearPendingApprovals();
+					clearPendingTurn(new Error('Codex process exited during turn'));
 					status = 'stopped';
 				});
 
@@ -125,18 +332,19 @@ export function createCodexServer(opts: CodexServerOptions) {
 		},
 
 		stop(): void {
-			for (const req of pending.values()) {
-				if (req.timer) clearTimeout(req.timer);
-			}
-			pending.clear();
+			clearPendingApprovals();
 
 			if (manager) {
+				manager.removeAllListeners();
 				manager.stop().catch(() => {});
 				manager = null;
 			}
 			status = 'stopped';
 			lastError = null;
 			threadId = null;
+			turnId = null;
+			threadModel = null;
+			clearPendingTurn(new Error('Codex runtime stopped'));
 		},
 
 		getStatus() {
@@ -167,6 +375,71 @@ export function createCodexServer(opts: CodexServerOptions) {
 			const result = mapDecisionToCodexResult(req.event, decision);
 			manager?.respondToServerRequest(req.codexRequestId, result);
 			notifyDecision(eventId, decision);
+		},
+
+		async sendPrompt(prompt: string, threadIdToResume?: string): Promise<void> {
+			if (!manager || status !== 'running') {
+				throw new Error('Codex runtime not running');
+			}
+			if (pendingTurnCompletion) {
+				throw new Error('Codex turn already in progress');
+			}
+
+			try {
+				// Resume a thread or start a new one
+				if (threadIdToResume) {
+					const result = await manager.sendRequest(M.THREAD_RESUME, {
+						threadId: threadIdToResume,
+						approvalPolicy: 'on-request',
+						sandbox: 'workspace-write',
+						cwd: projectDir,
+					});
+					const response = asRecord(result);
+					const thread = asRecord(response['thread'] ?? result);
+					if (thread['id']) {
+						threadId = String(thread['id']);
+					}
+					threadModel =
+						typeof response['model'] === 'string'
+							? response['model']
+							: threadModel;
+				} else if (!threadId) {
+					const result = await manager.sendRequest(M.THREAD_START, {
+						approvalPolicy: 'on-request',
+						sandbox: 'workspace-write',
+						cwd: projectDir,
+					});
+					const response = asRecord(result);
+					const thread = asRecord(response['thread'] ?? result);
+					if (thread['id']) {
+						threadId = String(thread['id']);
+					}
+					threadModel =
+						typeof response['model'] === 'string'
+							? response['model']
+							: threadModel;
+				}
+
+				const turnCompletion = createPendingTurnCompletion();
+				pendingTurnCompletion = turnCompletion;
+				pendingTurnPrompt = prompt;
+
+				// Start a turn with the user prompt
+				await manager.sendRequest(M.TURN_START, {
+					threadId,
+					input: [{type: 'text', text: prompt, text_elements: []}],
+				});
+
+				await turnCompletion.promise;
+			} catch (error) {
+				clearPendingTurn();
+				throw error;
+			}
+		},
+
+		sendInterrupt(): void {
+			if (!manager || !threadId || !turnId) return;
+			manager.sendNotification(M.TURN_INTERRUPT, {threadId, turnId});
 		},
 
 		_getPendingCount() {

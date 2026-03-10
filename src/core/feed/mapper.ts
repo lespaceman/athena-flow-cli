@@ -227,6 +227,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 	const activeSubagentStack: string[] = []; // LIFO stack of active subagent actor IDs
 	let lastTaskDescription: string | undefined;
 	const subagentDescriptions = new Map<string, string>(); // agent_id → description
+	let pendingRootMessage = '';
 	const transcriptReader = createTranscriptReader();
 
 	/**
@@ -357,6 +358,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 
 		switch (eventKind) {
 			case 'session.start': {
+				pendingRootMessage = '';
 				const source = readString(d['source']) ?? 'startup';
 				currentSession = {
 					session_id: event.sessionId,
@@ -387,6 +389,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 			}
 
 			case 'session.end': {
+				pendingRootMessage = '';
 				if (currentRun) {
 					const closeEvt = closeRun(event, 'completed');
 					if (closeEvt) results.push(closeEvt);
@@ -428,6 +431,84 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 						event,
 					),
 				);
+				break;
+			}
+
+			case 'turn.start': {
+				pendingRootMessage = '';
+				const prompt = readString(d['prompt']);
+				results.push(
+					...ensureRunArray(
+						event,
+						prompt ? 'user_prompt_submit' : 'other',
+						prompt?.slice(0, 80),
+					),
+				);
+				if (prompt) {
+					results.push(
+						makeEvent(
+							'user.prompt',
+							'info',
+							'user',
+							{
+								prompt,
+								cwd: event.context.cwd,
+								permission_mode: event.context.permissionMode,
+							} satisfies import('./types').UserPromptData,
+							event,
+						),
+					);
+				}
+				break;
+			}
+
+			case 'message.delta': {
+				pendingRootMessage += readString(d['delta']) ?? '';
+				break;
+			}
+
+			case 'turn.complete': {
+				if (!currentRun) {
+					pendingRootMessage = '';
+					break;
+				}
+				const stopEvt = makeEvent(
+					'stop.request',
+					'info',
+					'agent:root',
+					{
+						stop_hook_active: false,
+					} satisfies import('./types').StopRequestData,
+					event,
+				);
+				results.push(stopEvt);
+				if (pendingRootMessage) {
+					results.push(
+						makeEvent(
+							'agent.message',
+							'info',
+							'agent:root',
+							{
+								message: pendingRootMessage,
+								source: 'hook',
+								scope: 'root',
+							} satisfies import('./types').AgentMessageData,
+							event,
+							{parent_event_id: stopEvt.event_id},
+						),
+					);
+				}
+				pendingRootMessage = '';
+				const closeEvt = closeRun(event, 'completed');
+				if (closeEvt) {
+					results.push(closeEvt);
+				}
+				break;
+			}
+
+			case 'plan.delta':
+			case 'reasoning.delta':
+			case 'usage.update': {
 				break;
 			}
 

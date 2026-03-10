@@ -1,14 +1,31 @@
 import type {RuntimeEvent, RuntimeDecision} from '../../../core/runtime/types';
 import type {CodexApprovalDecision} from '../protocol/items';
+import type {CodexToolRequestUserInputResponse} from '../protocol';
+import * as M from '../protocol/methods';
 
 /**
  * Maps a RuntimeDecision to a Codex JSON-RPC approval response result object.
  * Returns the `result` field to send in the JSON-RPC response.
  */
 export function mapDecisionToCodexResult(
-	_event: RuntimeEvent,
+	event: RuntimeEvent,
 	decision: RuntimeDecision,
-): {decision: CodexApprovalDecision} | Record<string, unknown> {
+): {decision: CodexApprovalDecision} | CodexToolRequestUserInputResponse {
+	if (event.hookName === M.TOOL_REQUEST_USER_INPUT) {
+		if (decision.intent?.kind !== 'question_answer') {
+			return {answers: {}};
+		}
+
+		return {
+			answers: Object.fromEntries(
+				Object.entries(decision.intent.answers).map(([id, answer]) => [
+					id,
+					{answers: [answer]},
+				]),
+			),
+		};
+	}
+
 	if (decision.type === 'passthrough') {
 		return {decision: 'accept'};
 	}
@@ -32,7 +49,7 @@ export function mapDecisionToCodexResult(
 			return {decision: 'decline'};
 
 		case 'question_answer':
-			return {answers: decision.intent.answers};
+			return {answers: {}};
 
 		case 'stop_block':
 			return {decision: 'cancel'};
@@ -40,13 +57,4 @@ export function mapDecisionToCodexResult(
 		default:
 			return {decision: 'accept'};
 	}
-}
-
-/**
- * Extract the Codex server-request ID from a RuntimeEvent ID.
- * Codex events use "codex-req-{id}" format for server requests.
- */
-export function extractCodexRequestId(eventId: string): number | null {
-	const match = eventId.match(/^codex-req-(\d+)$/);
-	return match ? parseInt(match[1]!, 10) : null;
 }

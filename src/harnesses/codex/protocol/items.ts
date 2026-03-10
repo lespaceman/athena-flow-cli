@@ -1,43 +1,14 @@
-export type CodexItemType =
-	| 'userMessage'
-	| 'agentMessage'
-	| 'plan'
-	| 'reasoning'
-	| 'commandExecution'
-	| 'fileChange'
-	| 'mcpToolCall'
-	| 'webSearch'
-	| 'imageView'
-	| 'contextCompaction';
+import type {
+	CodexCommandExecutionApprovalDecision,
+	CodexFileChangeApprovalDecision,
+	CodexItem as GeneratedCodexItem,
+	CodexThread as GeneratedCodexThread,
+	CodexTurn as GeneratedCodexTurn,
+} from './index';
 
-export type CodexItemStatus =
-	| 'pending'
-	| 'inProgress'
-	| 'completed'
-	| 'failed'
-	| 'cancelled';
-
-export type CodexItem = {
-	id: string;
-	type: CodexItemType;
-	status?: CodexItemStatus;
-	[key: string]: unknown;
-};
-
-export type CodexTurn = {
-	id: string;
-	status: 'inProgress' | 'completed' | 'interrupted' | 'failed';
-	[key: string]: unknown;
-};
-
-export type CodexThread = {
-	id: string;
-	name?: string;
-	[key: string]: unknown;
-};
-
+export type CodexItem = GeneratedCodexItem;
+export type CodexTurn = GeneratedCodexTurn;
+export type CodexThread = GeneratedCodexThread;
 export type CodexApprovalDecision =
-	| 'accept'
-	| 'acceptForSession'
-	| 'decline'
-	| 'cancel';
+	| Extract<CodexCommandExecutionApprovalDecision, string>
+	| CodexFileChangeApprovalDecision;

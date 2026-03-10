@@ -34,6 +34,11 @@ export function handleEvent(
 			? eventData['tool_name']
 			: undefined);
 
+	if (eventKind === 'permission.request' && toolName === 'user_input') {
+		cb.enqueueQuestion(event.id);
+		return {handled: true};
+	}
+
 	// ── PermissionRequest: check rules, enqueue if no match ──
 	if (eventKind === 'permission.request' && toolName) {
 		const rule = matchRule(cb.getRules(), toolName);

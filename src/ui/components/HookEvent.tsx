@@ -36,7 +36,12 @@ export default function HookEvent({
 		return <SessionEndEvent event={event} />;
 	}
 
-	if (event.kind === 'tool.pre' && event.data.tool_name === 'AskUserQuestion') {
+	if (
+		(event.kind === 'tool.pre' &&
+			event.data.tool_name === 'AskUserQuestion') ||
+		(event.kind === 'permission.request' &&
+			event.data.tool_name === 'user_input')
+	) {
 		return <AskUserQuestionEvent event={event} />;
 	}
 

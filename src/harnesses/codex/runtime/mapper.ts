@@ -5,7 +5,7 @@ import type {
 } from '../protocol/jsonrpc';
 import {translateNotification, translateServerRequest} from './eventTranslator';
 import {getCodexInteractionHints} from './interactionRules';
-import {randomUUID} from 'node:crypto';
+import {generateId} from '../../../shared/utils/id';
 
 export function mapNotificationToRuntimeEvent(
 	msg: JsonRpcNotification,
@@ -14,7 +14,7 @@ export function mapNotificationToRuntimeEvent(
 ): RuntimeEvent {
 	const translated = translateNotification(msg);
 	return {
-		id: randomUUID(),
+		id: `codex-ntf-${generateId()}`,
 		timestamp: Date.now(),
 		kind: translated.kind,
 		data: translated.data,

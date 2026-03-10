@@ -123,8 +123,10 @@ export default function StepSelector({
 							{isCursor ? ' ' : ''}
 						</Text>
 						{isCursor && opt.description && !opt.disabled ? (
-							<Box paddingLeft={3}>
-								<Text dimColor>{opt.description}</Text>
+							<Box paddingLeft={5}>
+								<Text dimColor italic>
+									↳ {opt.description}
+								</Text>
 							</Box>
 						) : null}
 					</Box>

@@ -73,6 +73,36 @@ const RULES: Record<RuntimeEventKind, InteractionHints> = {
 		defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
 		canBlock: true,
 	},
+	'turn.start': {
+		expectsDecision: false,
+		defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
+		canBlock: false,
+	},
+	'turn.complete': {
+		expectsDecision: false,
+		defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
+		canBlock: false,
+	},
+	'message.delta': {
+		expectsDecision: false,
+		defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
+		canBlock: false,
+	},
+	'plan.delta': {
+		expectsDecision: false,
+		defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
+		canBlock: false,
+	},
+	'reasoning.delta': {
+		expectsDecision: false,
+		defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
+		canBlock: false,
+	},
+	'usage.update': {
+		expectsDecision: false,
+		defaultTimeoutMs: DEFAULT_TIMEOUT_MS,
+		canBlock: false,
+	},
 	setup: {
 		expectsDecision: false,
 		defaultTimeoutMs: DEFAULT_TIMEOUT_MS,

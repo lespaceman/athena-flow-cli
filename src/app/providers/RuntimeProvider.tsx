@@ -14,6 +14,7 @@ import {createRuntime} from '../runtime/createRuntime';
 import type {Runtime} from '../../core/runtime/types';
 
 const HookContext = createContext<HookContextValue | null>(null);
+const RuntimeRefContext = createContext<Runtime | null>(null);
 const EMPTY_MESSAGES: never[] = [];
 const MISSING_CONTEXT = Symbol('missing-hook-context');
 
@@ -94,13 +95,15 @@ export function HookProvider({
 	}
 
 	return (
-		<HookProviderContent
-			runtime={runtime}
-			allowedTools={allowedTools}
-			sessionStore={sessionStore}
-		>
-			{children}
-		</HookProviderContent>
+		<RuntimeRefContext.Provider value={runtime}>
+			<HookProviderContent
+				runtime={runtime}
+				allowedTools={allowedTools}
+				sessionStore={sessionStore}
+			>
+				{children}
+			</HookProviderContent>
+		</RuntimeRefContext.Provider>
 	);
 }
 
@@ -129,4 +132,14 @@ export function useHookContextSelector<T>(
 // Optional hook that doesn't throw if used outside provider
 export function useOptionalHookContext(): HookContextValue | null {
 	return useContext(HookContext);
+}
+
+/**
+ * Access the Runtime instance created by HookProvider.
+ *
+ * Harness-specific session hooks use this to project the shared runtime into
+ * shell-facing state and prompt execution helpers.
+ */
+export function useRuntime(): Runtime | null {
+	return useContext(RuntimeRefContext);
 }

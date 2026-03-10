@@ -227,8 +227,10 @@ export function useFeed(
 		return (
 			feedEvents.find(
 				e =>
-					e.kind === 'tool.pre' &&
-					e.data.tool_name === 'AskUserQuestion' &&
+					((e.kind === 'tool.pre' &&
+						e.data.tool_name === 'AskUserQuestion') ||
+						(e.kind === 'permission.request' &&
+							e.data.tool_name === 'user_input')) &&
 					e.cause?.hook_request_id === questionQueue[0],
 			) ?? null
 		);

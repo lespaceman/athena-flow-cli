@@ -1,34 +1,28 @@
 /** @vitest-environment jsdom */
 import {describe, it, expect, vi, beforeEach} from 'vitest';
 import {renderHook} from '@testing-library/react';
-import type {TokenUsageParserFactory} from '../../core/runtime/process';
 
-const useProcessMock = vi.fn();
-const tokenParserFactoryMock = vi.fn();
-const resolveHarnessProcessProfileMock = vi.fn(() => ({
-	useProcess: useProcessMock,
-	tokenParserFactory:
-		tokenParserFactoryMock as unknown as TokenUsageParserFactory,
+const useSessionControllerMock = vi.fn();
+const resolveHarnessAdapterMock = vi.fn(() => ({
+	useSessionController: useSessionControllerMock,
 }));
 
-vi.mock('../../harnesses/processProfiles', () => ({
-	resolveHarnessProcessProfile: (harness: string) =>
-		resolveHarnessProcessProfileMock(harness),
+vi.mock('../../harnesses/registry', () => ({
+	resolveHarnessAdapter: (harness: string) => resolveHarnessAdapterMock(harness),
 }));
 
 const {useHarnessProcess} = await import('./useHarnessProcess');
 
 describe('useHarnessProcess', () => {
 	beforeEach(() => {
-		useProcessMock.mockReset();
-		tokenParserFactoryMock.mockReset();
-		resolveHarnessProcessProfileMock.mockClear();
-		useProcessMock.mockReturnValue({
+		useSessionControllerMock.mockReset();
+		resolveHarnessAdapterMock.mockClear();
+		useSessionControllerMock.mockReturnValue({
 			spawn: vi.fn(),
 			isRunning: false,
-			sendInterrupt: vi.fn(),
+			interrupt: vi.fn(),
 			kill: vi.fn().mockResolvedValue(undefined),
-			tokenUsage: {
+			usage: {
 				input: null,
 				output: null,
 				cacheRead: null,
@@ -55,13 +49,13 @@ describe('useHarnessProcess', () => {
 		expect(result.current.usage).toEqual(result.current.tokenUsage);
 	});
 
-	it('injects token parser strategy from the resolved harness profile', () => {
-		useProcessMock.mockReturnValue({
+	it('delegates controller creation to the resolved harness adapter', () => {
+		useSessionControllerMock.mockReturnValue({
 			spawn: vi.fn(),
 			isRunning: true,
-			sendInterrupt: vi.fn(),
+			interrupt: vi.fn(),
 			kill: vi.fn().mockResolvedValue(undefined),
-			tokenUsage: {
+			usage: {
 				input: 1,
 				output: 2,
 				cacheRead: 3,
@@ -80,20 +74,16 @@ describe('useHarnessProcess', () => {
 			}),
 		);
 
-		expect(resolveHarnessProcessProfileMock).toHaveBeenCalledWith(
-			'claude-code',
-		);
-		expect(useProcessMock).toHaveBeenCalledWith(
-			'/tmp/project',
-			99,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			expect.objectContaining({
-				tokenUpdateMs: 250,
-				tokenParserFactory: tokenParserFactoryMock,
-			}),
-		);
+		expect(resolveHarnessAdapterMock).toHaveBeenCalledWith('claude-code');
+		expect(useSessionControllerMock).toHaveBeenCalledWith({
+			projectDir: '/tmp/project',
+			instanceId: 99,
+			processConfig: undefined,
+			pluginMcpConfig: undefined,
+			verbose: undefined,
+			workflow: undefined,
+			options: {tokenUpdateMs: 250},
+			runtime: null,
+		});
 	});
 });

@@ -1,11 +1,35 @@
 import type {
-	RuntimeEventKind,
 	RuntimeEventData,
+	RuntimeEventKind,
 } from '../../../core/runtime/events';
 import type {
 	JsonRpcNotification,
 	JsonRpcServerRequest,
 } from '../protocol/jsonrpc';
+import type {
+	CodexApplyPatchApprovalParams,
+	CodexAgentMessageDeltaNotification,
+	CodexCommandExecutionRequestApprovalParams,
+	CodexExecCommandApprovalParams,
+	CodexFileChangeRequestApprovalParams,
+	CodexItemCompletedNotification,
+	CodexItemStartedNotification,
+	CodexPlanDeltaNotification,
+	CodexReasoningSummaryPartAddedNotification,
+	CodexReasoningSummaryTextDeltaNotification,
+	CodexReasoningTextDeltaNotification,
+	CodexThreadNameUpdatedNotification,
+	CodexThreadStartedNotification,
+	CodexThreadTokenUsageUpdatedNotification,
+	CodexToolRequestUserInputParams,
+	CodexTurnCompletedNotification,
+	CodexTurnPlanUpdatedNotification,
+	CodexTurnStartedNotification,
+} from '../protocol';
+import {
+	getCodexUsageDelta,
+	getCodexUsageTotals,
+} from './tokenUsage';
 import * as M from '../protocol/methods';
 
 export type CodexTranslatedEvent = {
@@ -16,87 +40,210 @@ export type CodexTranslatedEvent = {
 	expectsDecision: boolean;
 };
 
-function asRecord(v: unknown): Record<string, unknown> {
+export function asRecord(v: unknown): Record<string, unknown> {
 	return typeof v === 'object' && v !== null
 		? (v as Record<string, unknown>)
 		: {};
 }
 
+function resolveToolName(
+	itemType: string,
+	item: Record<string, unknown>,
+): string {
+	switch (itemType) {
+		case 'commandExecution':
+			return 'command_execution';
+		case 'fileChange':
+			return 'file_change';
+		case 'mcpToolCall':
+			return `mcp:${item['server'] ?? 'unknown'}/${item['tool'] ?? 'unknown'}`;
+		default:
+			return itemType;
+	}
+}
+
+function resolveToolInput(
+	itemType: string,
+	item: Record<string, unknown>,
+): Record<string, unknown> {
+	switch (itemType) {
+		case 'commandExecution':
+			return {command: item['command'], cwd: item['cwd']};
+		case 'fileChange':
+			return {changes: item['changes']};
+		case 'mcpToolCall':
+			return asRecord(item['arguments']);
+		default:
+			return item;
+	}
+}
+
+function permissionRequestEvent(
+	toolName: string,
+	toolInput: Record<string, unknown>,
+	extra?: {toolUseId?: string},
+): CodexTranslatedEvent {
+	return {
+		kind: 'permission.request',
+		data: {
+			tool_name: toolName,
+			tool_input: toolInput,
+			...(extra?.toolUseId ? {tool_use_id: extra.toolUseId} : {}),
+		},
+		toolName,
+		toolUseId: extra?.toolUseId,
+		expectsDecision: true,
+	};
+}
+
 export function translateNotification(
 	msg: JsonRpcNotification,
 ): CodexTranslatedEvent {
-	const params = asRecord(msg.params);
-
 	switch (msg.method) {
-		case M.THREAD_STARTED:
+		case M.THREAD_STARTED: {
+			const params = msg.params as CodexThreadStartedNotification;
 			return {
 				kind: 'session.start',
-				data: {source: 'codex'},
+				data: {
+					source: 'codex',
+				},
 				expectsDecision: false,
 			};
+		}
 
 		case M.TURN_STARTED: {
-			const turn = asRecord(params['turn']);
+			const params = msg.params as CodexTurnStartedNotification;
 			return {
-				kind: 'user.prompt',
+				kind: 'turn.start',
 				data: {
-					prompt: turn['input'] as string | undefined,
-					permission_mode: undefined,
+					thread_id: params.threadId,
+					turn_id: params.turn.id,
+					status: params.turn.status,
 				},
 				expectsDecision: false,
 			};
 		}
 
 		case M.TURN_COMPLETED: {
-			const turn = asRecord(params['turn']);
+			const params = msg.params as CodexTurnCompletedNotification;
 			return {
-				kind: 'stop.request',
+				kind: 'turn.complete',
 				data: {
-					stop_hook_active: false,
-					last_assistant_message: turn['status'] as string | undefined,
+					thread_id: params.threadId,
+					turn_id: params.turn.id,
+					status: params.turn.status,
+				},
+				expectsDecision: false,
+			};
+		}
+
+		case M.TURN_PLAN_UPDATED: {
+			const params = msg.params as CodexTurnPlanUpdatedNotification;
+			return {
+				kind: 'plan.delta',
+				data: {
+					thread_id: params.threadId,
+					turn_id: params.turnId,
+					explanation: params.explanation,
+					plan: params.plan,
+				},
+				expectsDecision: false,
+			};
+		}
+
+		case M.ITEM_PLAN_DELTA: {
+			const params = msg.params as CodexPlanDeltaNotification;
+			return {
+				kind: 'plan.delta',
+				data: {
+					thread_id: params.threadId,
+					turn_id: params.turnId,
+					item_id: params.itemId,
+					delta: params.delta,
+				},
+				expectsDecision: false,
+			};
+		}
+
+		case M.ITEM_AGENT_MESSAGE_DELTA: {
+			const params = msg.params as CodexAgentMessageDeltaNotification;
+			return {
+				kind: 'message.delta',
+				data: {
+					thread_id: params.threadId,
+					turn_id: params.turnId,
+					item_id: params.itemId,
+					delta: params.delta,
+				},
+				expectsDecision: false,
+			};
+		}
+
+		case M.ITEM_REASONING_TEXT_DELTA: {
+			const params = msg.params as CodexReasoningTextDeltaNotification;
+			return {
+				kind: 'reasoning.delta',
+				data: {
+					thread_id: params.threadId,
+					turn_id: params.turnId,
+					item_id: params.itemId,
+					delta: params.delta,
+					content_index: params.contentIndex,
+					phase: 'text',
+				},
+				expectsDecision: false,
+			};
+		}
+
+		case M.ITEM_REASONING_SUMMARY_TEXT_DELTA: {
+			const params = msg.params as CodexReasoningSummaryTextDeltaNotification;
+			return {
+				kind: 'reasoning.delta',
+				data: {
+					thread_id: params.threadId,
+					turn_id: params.turnId,
+					item_id: params.itemId,
+					delta: params.delta,
+					content_index: params.summaryIndex,
+					phase: 'summary',
+				},
+				expectsDecision: false,
+			};
+		}
+
+		case M.ITEM_REASONING_SUMMARY_PART_ADDED: {
+			const params = msg.params as CodexReasoningSummaryPartAddedNotification;
+			return {
+				kind: 'reasoning.delta',
+				data: {
+					thread_id: params.threadId,
+					turn_id: params.turnId,
+					item_id: params.itemId,
+					summary_index: params.summaryIndex,
+					phase: 'summary',
 				},
 				expectsDecision: false,
 			};
 		}
 
 		case M.ITEM_STARTED: {
-			const item = asRecord(params['item']);
+			const params = msg.params as CodexItemStartedNotification;
+			const item = asRecord(params.item);
 			const itemType = item['type'] as string;
-			if (itemType === 'commandExecution') {
+			const toolName = resolveToolName(itemType, item);
+			if (
+				itemType === 'commandExecution' ||
+				itemType === 'fileChange' ||
+				itemType === 'mcpToolCall'
+			) {
 				return {
 					kind: 'tool.pre',
 					data: {
-						tool_name: 'command_execution',
-						tool_input: {command: item['command'], cwd: item['cwd']},
+						tool_name: toolName,
+						tool_input: resolveToolInput(itemType, item),
 						tool_use_id: item['id'] as string | undefined,
 					},
-					toolName: 'command_execution',
-					toolUseId: item['id'] as string | undefined,
-					expectsDecision: false,
-				};
-			}
-			if (itemType === 'fileChange') {
-				return {
-					kind: 'tool.pre',
-					data: {
-						tool_name: 'file_change',
-						tool_input: {changes: item['changes']},
-						tool_use_id: item['id'] as string | undefined,
-					},
-					toolName: 'file_change',
-					toolUseId: item['id'] as string | undefined,
-					expectsDecision: false,
-				};
-			}
-			if (itemType === 'mcpToolCall') {
-				return {
-					kind: 'tool.pre',
-					data: {
-						tool_name: `mcp:${item['server'] ?? 'unknown'}/${item['tool'] ?? 'unknown'}`,
-						tool_input: asRecord(item['arguments']),
-						tool_use_id: item['id'] as string | undefined,
-					},
-					toolName: `mcp:${item['server']}/${item['tool']}`,
+					toolName,
 					toolUseId: item['id'] as string | undefined,
 					expectsDecision: false,
 				};
@@ -112,26 +259,22 @@ export function translateNotification(
 		}
 
 		case M.ITEM_COMPLETED: {
-			const item = asRecord(params['item']);
+			const params = msg.params as CodexItemCompletedNotification;
+			const item = asRecord(params.item);
 			const itemType = item['type'] as string;
+			const toolName = resolveToolName(itemType, item);
 			if (
 				itemType === 'commandExecution' ||
 				itemType === 'fileChange' ||
 				itemType === 'mcpToolCall'
 			) {
-				const status = item['status'] as string;
-				const toolName =
-					itemType === 'commandExecution'
-						? 'command_execution'
-						: itemType === 'fileChange'
-							? 'file_change'
-							: `mcp:${item['server']}/${item['tool']}`;
-				if (status === 'failed' || status === 'cancelled') {
+				const itemStatus = item['status'] as string;
+				if (itemStatus === 'failed' || itemStatus === 'cancelled') {
 					return {
 						kind: 'tool.failure',
 						data: {
 							tool_name: toolName,
-							tool_input: {},
+							tool_input: resolveToolInput(itemType, item),
 							tool_use_id: item['id'] as string | undefined,
 							error: item['error'] as string | undefined,
 						},
@@ -144,7 +287,7 @@ export function translateNotification(
 					kind: 'tool.post',
 					data: {
 						tool_name: toolName,
-						tool_input: {},
+						tool_input: resolveToolInput(itemType, item),
 						tool_use_id: item['id'] as string | undefined,
 						tool_response:
 							item['aggregatedOutput'] ?? item['result'] ?? item['changes'],
@@ -164,40 +307,31 @@ export function translateNotification(
 			};
 		}
 
-		case M.ITEM_AGENT_MESSAGE_DELTA: {
-			const delta = params['delta'] as string | undefined;
-			return {
-				kind: 'notification',
-				data: {
-					message: delta ?? '',
-					notification_type: 'agent_message_delta',
-				},
-				expectsDecision: false,
-			};
-		}
-
 		case M.THREAD_TOKEN_USAGE_UPDATED: {
-			const usage = asRecord(params['usage'] ?? params);
+			const params = msg.params as CodexThreadTokenUsageUpdatedNotification;
 			return {
-				kind: 'notification',
+				kind: 'usage.update',
 				data: {
-					message: 'Token usage updated',
-					notification_type: 'token_usage',
-					...usage,
+					thread_id: params.threadId,
+					turn_id: params.turnId,
+					usage: getCodexUsageTotals(params.tokenUsage),
+					delta: getCodexUsageDelta(params.tokenUsage),
 				},
 				expectsDecision: false,
 			};
 		}
 
-		case M.THREAD_NAME_UPDATED:
+		case M.THREAD_NAME_UPDATED: {
+			const params = msg.params as CodexThreadNameUpdatedNotification;
 			return {
 				kind: 'notification',
 				data: {
-					message: `Thread renamed: ${params['name']}`,
+					message: `Thread renamed: ${params.name}`,
 					notification_type: 'thread_name',
 				},
 				expectsDecision: false,
 			};
+		}
 
 		default:
 			return {
@@ -211,68 +345,69 @@ export function translateNotification(
 export function translateServerRequest(
 	msg: JsonRpcServerRequest,
 ): CodexTranslatedEvent {
-	const params = asRecord(msg.params);
-
 	switch (msg.method) {
-		case M.CMD_EXEC_REQUEST_APPROVAL:
-			return {
-				kind: 'permission.request',
-				data: {
-					tool_name: 'command_execution',
-					tool_input: {command: params['command'], cwd: params['cwd']},
-				},
-				toolName: 'command_execution',
-				expectsDecision: true,
-			};
+		case M.CMD_EXEC_REQUEST_APPROVAL: {
+			const params = msg.params as CodexCommandExecutionRequestApprovalParams;
+			return permissionRequestEvent('command_execution', {
+				command: params.command,
+				cwd: params.cwd,
+				reason: params.reason,
+				commandActions: params.commandActions,
+				additionalPermissions: params.additionalPermissions,
+			});
+		}
 
-		case M.FILE_READ_REQUEST_APPROVAL:
-			return {
-				kind: 'permission.request',
-				data: {
-					tool_name: 'file_read',
-					tool_input: {path: params['path'], reason: params['reason']},
-				},
-				toolName: 'file_read',
-				expectsDecision: true,
-			};
+		case M.FILE_CHANGE_REQUEST_APPROVAL: {
+			const params = msg.params as CodexFileChangeRequestApprovalParams;
+			return permissionRequestEvent('file_change', {
+				reason: params.reason,
+				grantRoot: params.grantRoot,
+			});
+		}
 
-		case M.FILE_CHANGE_REQUEST_APPROVAL:
-			return {
-				kind: 'permission.request',
-				data: {
-					tool_name: 'file_change',
-					tool_input: {changes: params['changes']},
-				},
-				toolName: 'file_change',
-				expectsDecision: true,
-			};
+		case M.TOOL_REQUEST_USER_INPUT: {
+			const params = msg.params as CodexToolRequestUserInputParams;
+			return permissionRequestEvent('user_input', params);
+		}
 
-		case M.PERMISSIONS_REQUEST_APPROVAL:
-			return {
-				kind: 'permission.request',
-				data: {
-					tool_name: 'filesystem_permissions',
-					tool_input: {roots: params['roots']},
+		case M.APPLY_PATCH_APPROVAL: {
+			const params = msg.params as CodexApplyPatchApprovalParams;
+			return permissionRequestEvent(
+				'file_change',
+				{
+					fileChanges: params.fileChanges,
+					reason: params.reason,
+					grantRoot: params.grantRoot,
+					callId: params.callId,
 				},
-				toolName: 'filesystem_permissions',
-				expectsDecision: true,
-			};
+				{toolUseId: params.callId},
+			);
+		}
 
-		case M.TOOL_REQUEST_USER_INPUT:
-			return {
-				kind: 'permission.request',
-				data: {
-					tool_name: 'user_input',
-					tool_input: params,
+		case M.EXEC_COMMAND_APPROVAL: {
+			const params = msg.params as CodexExecCommandApprovalParams;
+			return permissionRequestEvent(
+				'command_execution',
+				{
+					command: params.command,
+					cwd: params.cwd,
+					reason: params.reason,
+					parsedCmd: params.parsedCmd,
+					approvalId: params.approvalId,
+					callId: params.callId,
 				},
-				toolName: 'user_input',
-				expectsDecision: true,
-			};
+				{toolUseId: params.callId},
+			);
+		}
 
 		default:
 			return {
 				kind: 'unknown',
-				data: {source_event_name: msg.method, payload: msg.params},
+				data: {
+					source_event_name: msg.method,
+					payload: msg.params,
+					unsupported: true,
+				},
 				expectsDecision: false,
 			};
 	}

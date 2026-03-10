@@ -15,6 +15,17 @@ import {
 } from '../protocol/jsonrpc.js';
 
 const REQUEST_TIMEOUT_MS = 20_000;
+const LEGACY_COMPAT_NOTIFICATION_METHODS = [
+	'codex/event/agent_message_delta',
+	'codex/event/agent_message_content_delta',
+	'codex/event/item_started',
+	'codex/event/item_completed',
+	'codex/event/plan_delta',
+	'codex/event/reasoning_content_delta',
+	'codex/event/task_started',
+	'codex/event/task_complete',
+	'codex/event/token_count',
+] as const;
 
 export type AppServerManagerEvents = {
 	notification: [JsonRpcNotification];
@@ -71,22 +82,18 @@ export class AppServerManager extends EventEmitter<AppServerManagerEvents> {
 		});
 
 		this.process.stderr?.on('data', (chunk: Buffer) => {
-			const line = chunk.toString().trim();
-			if (line && !this.isBenignStderr(line)) {
-				this.emit('error', new Error(`[codex stderr] ${line}`));
+			for (const line of chunk.toString().split('\n')) {
+				const trimmed = line.trim();
+				if (trimmed && this.isErrorStderr(trimmed)) {
+					this.emit('error', new Error(`[codex stderr] ${trimmed}`));
+				}
 			}
 		});
 
 		this.readline = createInterface({input: this.process.stdout!});
 		this.readline.on('line', (line: string) => this.handleLine(line));
 
-		await this.sendRequest('initialize', {
-			clientInfo: {
-				name: 'athena-cli',
-				title: 'Athena CLI',
-				version: '0.1.0',
-			},
-		});
+		await this.sendRequest('initialize', this.buildInitializeParams());
 		this.sendNotification('initialized');
 		this._ready = true;
 		this.emit('ready');
@@ -101,12 +108,16 @@ export class AppServerManager extends EventEmitter<AppServerManagerEvents> {
 			this.process.kill('SIGTERM');
 			await new Promise<void>(resolve => {
 				const timer = setTimeout(() => {
-					if (this.process && !this.process.killed) {
-						this.process.kill('SIGKILL');
+					try {
+						if (this.process && !this.process.killed) {
+							this.process.kill('SIGKILL');
+						}
+					} catch {
+						/* ESRCH — process already exited */
 					}
 					resolve();
 				}, 3000);
-				this.process!.on('exit', () => {
+				this.process!.once('exit', () => {
 					clearTimeout(timer);
 					resolve();
 				});
@@ -154,6 +165,26 @@ export class AppServerManager extends EventEmitter<AppServerManagerEvents> {
 		this.process.stdin.write(JSON.stringify(msg) + '\n');
 	}
 
+	respondToServerRequestError(id: number, code: number, message: string): void {
+		if (!this.process?.stdin?.writable) return;
+		const msg: JsonRpcResponse = {id, error: {code, message}};
+		this.process.stdin.write(JSON.stringify(msg) + '\n');
+	}
+
+	private buildInitializeParams(): Record<string, unknown> {
+		return {
+			clientInfo: {
+				name: 'athena-cli',
+				title: 'Athena CLI',
+				version: '0.1.0',
+			},
+			capabilities: {
+				experimentalApi: true,
+				optOutNotificationMethods: [...LEGACY_COMPAT_NOTIFICATION_METHODS],
+			},
+		};
+	}
+
 	private handleLine(line: string): void {
 		const trimmed = line.trim();
 		if (!trimmed) return;
@@ -192,15 +223,20 @@ export class AppServerManager extends EventEmitter<AppServerManagerEvents> {
 		}
 	}
 
-	private isBenignStderr(line: string): boolean {
-		// Filter noisy but harmless log lines from codex app-server
-		return (
-			line.startsWith('RUST_LOG') ||
-			line.startsWith('DEBUG') ||
-			line.startsWith('TRACE') ||
-			line.includes('tracing_subscriber') ||
-			line.length === 0
+	private isErrorStderr(line: string): boolean {
+		// Codex app-server emits structured logs: "YYYY-MM-DDTHH:MM:SS LEVEL module: msg"
+		// Only surface ERROR-level lines; filter INFO, WARN, DEBUG, TRACE.
+		// Strip ANSI escape codes first.
+		// eslint-disable-next-line no-control-regex
+		const clean = line.replace(/\x1b\[[0-9;]*m/g, '');
+		const match = clean.match(
+			/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\S*\s+(\w+)\s/,
 		);
+		if (match) {
+			return match[1] === 'ERROR';
+		}
+		// Unstructured line — surface it (could be a crash/panic)
+		return true;
 	}
 
 	private rejectAllPending(reason: string): void {

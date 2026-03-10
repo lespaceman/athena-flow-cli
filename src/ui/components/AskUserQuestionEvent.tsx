@@ -22,7 +22,12 @@ export default function AskUserQuestionEvent({event}: Props): React.ReactNode {
 	const color = statusColors.passthrough;
 	const symbol = STATUS_SYMBOLS.passthrough;
 
-	if (event.kind !== 'tool.pre') return null;
+	if (
+		event.kind !== 'tool.pre' &&
+		event.kind !== 'permission.request'
+	) {
+		return null;
+	}
 
 	const toolInput = event.data.tool_input;
 	const questions = toolInput.questions as
