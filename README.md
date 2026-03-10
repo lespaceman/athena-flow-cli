@@ -1,4 +1,4 @@
-# athena-flow
+# Athenaflow CLI
 
 [![npm version](https://img.shields.io/npm/v/@athenaflow/cli)](https://www.npmjs.com/package/@athenaflow/cli)
 [![license](https://img.shields.io/npm/l/@athenaflow/cli)](https://github.com/lespaceman/athena-flow-cli/blob/main/LICENSE)
@@ -7,9 +7,9 @@
 [![Dependabot](https://img.shields.io/badge/dependabot-enabled-025e8c?logo=dependabot)](https://github.com/lespaceman/athena-flow-cli/security/dependabot)
 [![Vulnerabilities](https://snyk.io/test/github/lespaceman/athena-flow-cli/badge.svg)](https://snyk.io/test/github/lespaceman/athena-flow-cli)
 
-Athena is a workflow runtime for [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
-Today it runs on Claude Code hooks, orchestrates workflow and plugin execution, and provides an interactive terminal runtime for observability and control.
-The harness architecture is expanding: Codex support will run through `codex-app-server`, with more harness integrations coming.
+Athenaflow CLI is a workflow runtime for AI coding harnesses.
+It currently supports both [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and OpenAI Codex, orchestrates workflows and plugins, and provides an interactive terminal runtime for observability and control.
+The runtime normalizes harness-specific events into a shared feed so the same Athena session UX works across supported backends.
 
 ## Install
 
@@ -18,6 +18,11 @@ npm install -g @athenaflow/cli
 ```
 
 Requires Node.js >= 20.
+
+Install at least one supported harness:
+
+- `claude-code`: install Claude Code and make sure `claude` is on `PATH`
+- `openai-codex`: install the Codex CLI and make sure `codex` is on `PATH`
 
 ## Quick Start
 
@@ -29,7 +34,7 @@ athena
 athena-flow
 ```
 
-On first run, a setup wizard guides theme selection, harness configuration, and workflow activation. The workflow step discovers published workflows from the Athena marketplace dynamically.
+On first run, a setup wizard guides theme selection, harness verification, and workflow activation. The workflow step discovers published workflows from the Athena marketplace dynamically.
 
 ## Usage
 
@@ -52,29 +57,31 @@ athena-flow --version                   # Print CLI version
 
 ## What Athena Does
 
-Athena runs as a workflow runtime around Claude Code execution:
+Athena runs as a workflow runtime around supported coding harnesses:
 
-1. Registers Claude Code [hooks](https://docs.anthropic.com/en/docs/claude-code/hooks) to forward runtime events.
-2. Receives event streams over Unix Domain Sockets using NDJSON.
+1. Connects to the selected harness event stream.
+2. Normalizes runtime events into a shared Athena feed model.
 3. Applies workflow, plugin, and isolation policy.
 4. Persists session state and renders live runtime state in the terminal.
 
 ```
-Claude Code -> hook-forwarder (stdin) -> UDS -> athena-flow runtime
+Claude Code hooks / Codex app-server -> athena-flow runtime -> terminal UI + session store
 ```
 
 ## Harness Support
 
-- `claude-code` (current): integrated via Claude Code hooks and forwarded runtime events.
-- `openai-codex`: integrated via `codex app-server`.
-- Additional harness support is in progress.
+| Harness        | Status    | Integration                                                 |
+| -------------- | --------- | ----------------------------------------------------------- |
+| `claude-code`  | Supported | Claude Code hooks forwarded into Athena over a local socket |
+| `openai-codex` | Supported | OpenAI Codex runtime integrated through `codex app-server`  |
+| `opencode`     | Planned   | Adapter placeholder only; not yet enabled                   |
 
 ## CLI Options
 
 | Flag            | Description                                                   |
 | --------------- | ------------------------------------------------------------- |
 | `--project-dir` | Project directory for hook socket (default: cwd)              |
-| `--plugin`      | Path to a Claude Code plugin directory (repeatable)           |
+| `--plugin`      | Path to a plugin directory (repeatable)                       |
 | `--isolation`   | Isolation preset: `strict` (default), `minimal`, `permissive` |
 | `--theme`       | Color theme: `dark` (default), `light`, `high-contrast`       |
 | `--ascii`       | Use ASCII-only UI glyphs for compatibility                    |
@@ -239,6 +246,7 @@ athena_exec:
 
 ## Features
 
+- Multi-harness runtime for Claude Code and OpenAI Codex
 - Live event feed for tools, permissions, results, and errors
 - Session persistence in SQLite with resume support
 - Plugin system for commands, hooks, MCP servers, and agents
@@ -257,6 +265,8 @@ Config files are merged in order: global -> project -> CLI flags.
 
 ```json
 {
+	"harness": "openai-codex",
+	"model": "gpt-5.3-codex",
 	"plugins": ["/path/to/plugin"],
 	"additionalDirectories": ["/path/to/allow"],
 	"activeWorkflow": "e2e-test-builder",
@@ -269,6 +279,11 @@ Config files are merged in order: global -> project -> CLI flags.
 	}
 }
 ```
+
+Notes:
+
+- `harness` can be `claude-code` or `openai-codex`. If unset, Athena defaults to `claude-code`.
+- `model` is harness-specific. For example, Claude aliases such as `sonnet` or Codex model IDs such as `gpt-5.3-codex`.
 
 ## Workflow Marketplace Resolution
 
