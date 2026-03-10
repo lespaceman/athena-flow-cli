@@ -22,7 +22,7 @@ athena
 athena-flow
 ```
 
-On first run, a setup wizard guides theme selection, harness configuration, and workflow activation.
+On first run, a setup wizard guides theme selection, harness configuration, and workflow activation. The workflow step discovers published workflows from the Athena marketplace dynamically.
 
 ## Usage
 
@@ -34,8 +34,11 @@ athena-flow sessions                    # Pick a session interactively
 athena-flow resume                      # Resume most recent session
 athena-flow resume <sessionId>          # Resume specific session
 athena-flow exec "summarize repo state" # Non-interactive run (CI/script)
-athena-flow workflow list               # List available workflows
-athena-flow workflow install <source>   # Install workflow from marketplace/repo
+athena-flow workflow list               # List installed workflows
+athena-flow workflow install <source>   # Install workflow from configured marketplace name, marketplace ref, or local workflow.json
+athena-flow workflow use-marketplace <source>  # Set workflow marketplace source (owner/repo or local path)
+athena-flow workflow update [name]      # Re-sync a workflow from its recorded source
+athena-flow workflow update-marketplace # Refresh the current workflow marketplace source
 athena-flow --help                      # Show full command/flag manual
 athena-flow --version                   # Print CLI version
 ```
@@ -56,7 +59,7 @@ Claude Code -> hook-forwarder (stdin) -> UDS -> athena-flow runtime
 ## Harness Support
 
 - `claude-code` (current): integrated via Claude Code hooks and forwarded runtime events.
-- `codex` (planned): integration path is `codex-app-server`.
+- `openai-codex`: integrated via `codex app-server`.
 - Additional harness support is in progress.
 
 ## CLI Options
@@ -77,7 +80,7 @@ Claude Code -> hook-forwarder (stdin) -> UDS -> athena-flow runtime
 | `--continue`            | Resume most recent exec session (or `--continue=<id>`)     |
 | `--json`                | Emit JSONL lifecycle events to stdout                      |
 | `--output-last-message` | Write the final assistant message to a file                |
-| `--ephemeral`           | Disable durable session persistence (`--continue` invalid) |
+| `--ephemeral`           | Disable durable session persistence for the current exec run (`--continue` invalid) |
 | `--on-permission`       | `allow`, `deny`, or `fail` (default) for permission hooks  |
 | `--on-question`         | `empty` or `fail` (default) for `AskUserQuestion`          |
 | `--timeout-ms`          | Hard timeout for the full exec run                         |
@@ -90,7 +93,47 @@ Claude Code -> hook-forwarder (stdin) -> UDS -> athena-flow runtime
 | `sessions`           | Launch interactive session picker                     |
 | `resume [sessionId]` | Resume most recent session, or a specific one         |
 | `exec "<prompt>"`    | Run Athena without Ink/TUI (automation mode)          |
-| `workflow <sub>`     | Manage workflows (`install`, `list`, `remove`, `use`) |
+| `workflow <sub>`     | Manage workflows (`install`, `list`, `update`, `use-marketplace`, `update-marketplace`, `remove`, `use`) |
+
+## Workflow Commands
+
+```bash
+# Install by workflow name using the configured marketplace source
+athena-flow workflow install e2e-test-builder
+
+# Install from marketplace
+athena-flow workflow install e2e-test-builder@lespaceman/athena-workflow-marketplace
+
+# Install from a local workflow file
+athena-flow workflow install /path/to/workflow-marketplace/workflows/e2e-test-builder/workflow.json
+
+# Use a local workflow marketplace for setup and discovery
+athena-flow workflow use-marketplace /path/to/workflow-marketplace
+
+# Switch back to the default git-backed marketplace
+athena-flow workflow use-marketplace lespaceman/athena-workflow-marketplace
+
+# Update the active workflow from its recorded source
+athena-flow workflow update
+
+# Update a specific installed workflow
+athena-flow workflow update e2e-test-builder
+
+# Refresh the current workflow marketplace source
+athena-flow workflow update-marketplace
+
+# Refresh a specific marketplace cache
+athena-flow workflow update-marketplace owner/custom-marketplace
+```
+
+Source behavior:
+
+- Marketplace installs store the original marketplace ref and re-sync from the cached git marketplace on update.
+- Local installs store the original workflow file path and, when installed from a local workflow marketplace checkout, resolve plugin refs from that same local repo.
+- `workflow install` uses the interactive install path, including MCP option selection when the workflow exposes configurable MCP servers. `<source>` can be a bare workflow name resolved from the current marketplace, a marketplace ref, or a local `workflow.json` path.
+- `workflow use-marketplace <source>` changes which marketplace the setup wizard uses for workflow discovery. `source` can be an `owner/repo` slug or a local marketplace path.
+- `workflow update-marketplace` refreshes the configured marketplace source by default. For local marketplaces, it validates the local checkout instead of running `git pull`.
+- `--ephemeral` disables Athena session persistence for exec runs and is also passed through to Codex thread start, so Codex exec runs request upstream ephemeral sessions as well.
 
 ## Non-Interactive Exec Mode
 
@@ -225,6 +268,7 @@ Config files are merged in order: global -> project -> CLI flags.
 - Workflow refs (`name@owner/repo`) are resolved from `.athena-workflow/marketplace.json` (preferred).
 - Legacy workflow manifests at `.claude-plugin/marketplace.json` are still supported as fallback.
 - Workflow `plugins[]` should use marketplace refs.
+- Workflows installed from a local marketplace checkout keep resolving their plugin refs from that same local repo for testing.
 
 ## Development
 

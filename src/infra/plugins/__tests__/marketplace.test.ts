@@ -26,8 +26,17 @@ vi.mock('node:child_process', () => ({
 	execFileSync: (...args: unknown[]) => execFileSyncMock(...args),
 }));
 
-const {isMarketplaceRef, resolveMarketplacePlugin, resolveMarketplaceWorkflow} =
-	await import('../marketplace');
+const {
+	isMarketplaceRef,
+	findMarketplaceRepoDir,
+	isMarketplaceSlug,
+	listMarketplaceWorkflows,
+	listMarketplaceWorkflowsFromRepo,
+	resolveWorkflowMarketplaceSource,
+	resolveMarketplacePlugin,
+	resolveMarketplacePluginFromRepo,
+	resolveMarketplaceWorkflow,
+} = await import('../marketplace');
 
 beforeEach(() => {
 	for (const key of Object.keys(files)) {
@@ -63,6 +72,23 @@ describe('isMarketplaceRef', () => {
 		expect(isMarketplaceRef('@owner/repo')).toBe(false);
 		expect(isMarketplaceRef('plugin@/repo')).toBe(false);
 		expect(isMarketplaceRef('plugin@owner/')).toBe(false);
+	});
+});
+
+describe('isMarketplaceSlug', () => {
+	it('returns true for owner/repo slugs', () => {
+		expect(isMarketplaceSlug('lespaceman/athena-workflow-marketplace')).toBe(
+			true,
+		);
+	});
+
+	it('returns false for workflow refs and absolute paths', () => {
+		expect(
+			isMarketplaceSlug(
+				'e2e-test-builder@lespaceman/athena-workflow-marketplace',
+			),
+		).toBe(false);
+		expect(isMarketplaceSlug('/tmp/workflow-marketplace')).toBe(false);
 	});
 });
 
@@ -228,9 +254,7 @@ describe('resolveMarketplacePlugin', () => {
 			resolveMarketplacePlugin(
 				'web-testing-toolkit@lespaceman/athena-workflow-marketplace',
 			),
-		).toThrow(
-			'Plugin "web-testing-toolkit" not found in marketplace lespaceman/athena-workflow-marketplace. Available plugins: other-plugin',
-		);
+		).toThrow(/Plugin "web-testing-toolkit" not found/);
 	});
 
 	it('throws when plugin source directory does not exist', () => {
@@ -358,6 +382,143 @@ describe('resolveMarketplacePlugin', () => {
 	});
 });
 
+describe('resolveMarketplacePluginFromRepo', () => {
+	it('resolves a plugin directly from a local marketplace repo', () => {
+		const repoDir = '/tmp/workflow-marketplace';
+		files[`${repoDir}/.claude-plugin/marketplace.json`] = JSON.stringify({
+			name: 'athena-workflow-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [{name: 'local-plugin', source: './plugins/local-plugin'}],
+		});
+		dirs.add(`${repoDir}/plugins/local-plugin`);
+
+		const result = resolveMarketplacePluginFromRepo(
+			'local-plugin@owner/repo',
+			repoDir,
+		);
+
+		expect(result).toBe(`${repoDir}/plugins/local-plugin`);
+	});
+});
+
+describe('findMarketplaceRepoDir', () => {
+	it('finds the repo root from a nested workflow path', () => {
+		const repoDir = '/tmp/workflow-marketplace';
+		files[`${repoDir}/.athena-workflow/marketplace.json`] = JSON.stringify({
+			name: 'athena-workflow-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [],
+			workflows: [],
+		});
+
+		expect(
+			findMarketplaceRepoDir(
+				`${repoDir}/workflows/e2e-test-builder/workflow.json`,
+			),
+		).toBe(repoDir);
+	});
+});
+
+describe('resolveWorkflowMarketplaceSource', () => {
+	it('parses a remote marketplace slug', () => {
+		expect(
+			resolveWorkflowMarketplaceSource(
+				'lespaceman/athena-workflow-marketplace',
+			),
+		).toEqual({
+			kind: 'remote',
+			slug: 'lespaceman/athena-workflow-marketplace',
+			owner: 'lespaceman',
+			repo: 'athena-workflow-marketplace',
+		});
+	});
+
+	it('resolves a local marketplace repo path', () => {
+		const repoDir = '/tmp/workflow-marketplace';
+		files[`${repoDir}/.athena-workflow/marketplace.json`] = JSON.stringify({
+			name: 'athena-workflow-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [],
+			workflows: [],
+		});
+
+		expect(resolveWorkflowMarketplaceSource(repoDir)).toEqual({
+			kind: 'local',
+			path: repoDir,
+			repoDir,
+		});
+	});
+});
+
+describe('listMarketplaceWorkflows', () => {
+	it('lists workflow refs from the cached marketplace manifest', () => {
+		const cacheBase =
+			'/home/testuser/.config/athena/marketplaces/lespaceman/athena-workflow-marketplace';
+		dirs.add(cacheBase);
+		files[`${cacheBase}/.athena-workflow/marketplace.json`] = JSON.stringify({
+			name: 'athena-workflow-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [],
+			workflows: [
+				{
+					name: 'e2e-test-builder',
+					source: './workflows/e2e-test-builder/workflow.json',
+					description: 'Playwright-based browser test generation',
+				},
+			],
+		});
+		dirs.add(`${cacheBase}/workflows/e2e-test-builder`);
+		files[`${cacheBase}/workflows/e2e-test-builder/workflow.json`] = '{}';
+
+		execFileSyncMock.mockImplementation(() => {});
+
+		expect(
+			listMarketplaceWorkflows(
+				'lespaceman',
+				'athena-workflow-marketplace',
+			),
+		).toEqual([
+			{
+				name: 'e2e-test-builder',
+				description: 'Playwright-based browser test generation',
+				version: undefined,
+				ref: 'e2e-test-builder@lespaceman/athena-workflow-marketplace',
+				workflowPath: `${cacheBase}/workflows/e2e-test-builder/workflow.json`,
+			},
+		]);
+	});
+});
+
+describe('listMarketplaceWorkflowsFromRepo', () => {
+	it('lists workflows from a local marketplace checkout', () => {
+		const repoDir = '/tmp/workflow-marketplace';
+		files[`${repoDir}/.athena-workflow/marketplace.json`] = JSON.stringify({
+			name: 'athena-workflow-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [],
+			workflows: [
+				{
+					name: 'local-workflow',
+					source: './workflows/local-workflow/workflow.json',
+					description: 'Local workflow',
+				},
+			],
+		});
+		dirs.add(`${repoDir}/workflows/local-workflow`);
+		files[`${repoDir}/workflows/local-workflow/workflow.json`] = '{}';
+
+		expect(listMarketplaceWorkflowsFromRepo(repoDir)).toEqual([
+			{
+				name: 'local-workflow',
+				description: 'Local workflow',
+				version: undefined,
+				ref: 'local-workflow@local/workflow-marketplace',
+				workflowPath: `${repoDir}/workflows/local-workflow/workflow.json`,
+			},
+		]);
+	});
+});
+
 describe('resolveMarketplaceWorkflow', () => {
 	const cacheBase =
 		'/home/testuser/.config/athena/marketplaces/lespaceman/athena-workflow-marketplace';
@@ -436,6 +597,61 @@ describe('resolveMarketplaceWorkflow', () => {
 		);
 	});
 
+	it('prefers canonical workflows/ over legacy .workflows/ when both exist', () => {
+		dirs.add(cacheBase);
+		files[athenaWorkflowManifestPath] = JSON.stringify({
+			name: 'athena-workflow-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [],
+			metadata: {workflowRoot: './.workflows'},
+			workflows: [
+				{
+					name: 'e2e-test-builder',
+					source: 'e2e-test-builder/workflow.json',
+				},
+			],
+		});
+		files[`${cacheBase}/.workflows/e2e-test-builder/workflow.json`] = '{}';
+		files[`${cacheBase}/workflows/e2e-test-builder/workflow.json`] = '{}';
+
+		execFileSyncMock.mockImplementation(() => {});
+
+		const result = resolveMarketplaceWorkflow(
+			'e2e-test-builder@lespaceman/athena-workflow-marketplace',
+		);
+
+		expect(result).toBe(
+			`${cacheBase}/workflows/e2e-test-builder/workflow.json`,
+		);
+	});
+
+	it('falls back to legacy .workflows/ when canonical workflows/ does not exist', () => {
+		dirs.add(cacheBase);
+		files[athenaWorkflowManifestPath] = JSON.stringify({
+			name: 'athena-workflow-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [],
+			metadata: {workflowRoot: './.workflows'},
+			workflows: [
+				{
+					name: 'e2e-test-builder',
+					source: 'e2e-test-builder/workflow.json',
+				},
+			],
+		});
+		files[`${cacheBase}/.workflows/e2e-test-builder/workflow.json`] = '{}';
+
+		execFileSyncMock.mockImplementation(() => {});
+
+		const result = resolveMarketplaceWorkflow(
+			'e2e-test-builder@lespaceman/athena-workflow-marketplace',
+		);
+
+		expect(result).toBe(
+			`${cacheBase}/.workflows/e2e-test-builder/workflow.json`,
+		);
+	});
+
 	it('does not prepend workflowRoot when source starts with ./', () => {
 		dirs.add(cacheBase);
 		files[athenaWorkflowManifestPath] = JSON.stringify({
@@ -473,9 +689,7 @@ describe('resolveMarketplaceWorkflow', () => {
 			resolveMarketplaceWorkflow(
 				'nonexistent@lespaceman/athena-workflow-marketplace',
 			),
-		).toThrow(
-			'Workflow "nonexistent" not found in marketplace lespaceman/athena-workflow-marketplace. Available workflows: e2e-test-builder',
-		);
+		).toThrow(/Workflow "nonexistent" not found/);
 	});
 
 	it('throws when manifest has no workflows array', () => {

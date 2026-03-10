@@ -13,17 +13,29 @@ import {
 } from './mapper';
 import {mapDecisionToCodexResult} from './decisionMapper';
 import {asRecord} from './eventTranslator';
+import {resolveCodexSkillInstructions} from './skillInstructions';
 import * as M from '../protocol/methods';
 
 export type CodexServerOptions = {
 	projectDir: string;
 	instanceId: number;
 	binaryPath?: string;
+	env?: Record<string, string>;
 };
 
 export type CodexRuntime = Runtime & {
 	/** Send a user prompt. Starts a thread if needed. Resolves on turn completion. */
-	sendPrompt(prompt: string, threadIdToResume?: string): Promise<void>;
+	sendPrompt(
+		prompt: string,
+		options?: {
+			threadIdToResume?: string;
+			model?: string;
+			developerInstructions?: string;
+			skillRoots?: string[];
+			config?: Record<string, unknown>;
+			ephemeral?: boolean;
+		},
+	): Promise<void>;
 	/** Interrupt the currently running turn. */
 	sendInterrupt(): void;
 	_getPendingCount(): number;
@@ -40,6 +52,14 @@ type PendingTurnCompletion = {
 	resolve: () => void;
 	reject: (error: Error) => void;
 };
+
+function requireThreadId(value: unknown, method: string): string {
+	if (typeof value === 'string' && value.length > 0) {
+		return value;
+	}
+
+	throw new Error(`Codex ${method} did not return a thread id`);
+}
 
 /**
  * Item types whose ITEM_STARTED / ITEM_COMPLETED lifecycle notifications
@@ -92,7 +112,7 @@ function getUnsupportedServerRequestResponse(
 }
 
 export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
-	const {projectDir, binaryPath} = opts;
+	const {projectDir, binaryPath, env} = opts;
 	const handlers = new Set<RuntimeEventHandler>();
 	const decisionHandlers = new Set<RuntimeDecisionHandler>();
 	const pending = new Map<string, PendingApproval>();
@@ -248,12 +268,23 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 		}
 	}
 
+	function combineDeveloperInstructions(
+		base: string | undefined,
+		skills: string | undefined,
+	): string | undefined {
+		if (base && skills) {
+			return `${base}\n\n${skills}`;
+		}
+
+		return base ?? skills;
+	}
+
 	const runtime: CodexRuntime = {
 		async start(): Promise<void> {
 			if (status === 'running') return;
 
 			try {
-				manager = new AppServerManager(binaryPath ?? 'codex', projectDir);
+				manager = new AppServerManager(binaryPath ?? 'codex', projectDir, env);
 
 				manager.on('notification', msg => {
 					if (shouldIgnoreNotificationMethod(msg.method)) {
@@ -377,7 +408,16 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 			notifyDecision(eventId, decision);
 		},
 
-		async sendPrompt(prompt: string, threadIdToResume?: string): Promise<void> {
+		async sendPrompt(
+			prompt: string,
+			options?: {
+				threadIdToResume?: string;
+				model?: string;
+				developerInstructions?: string;
+				skillRoots?: string[];
+				config?: Record<string, unknown>;
+			},
+		): Promise<void> {
 			if (!manager || status !== 'running') {
 				throw new Error('Codex runtime not running');
 			}
@@ -386,37 +426,71 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 			}
 
 			try {
+				const threadIdToResume = options?.threadIdToResume;
+				const shouldConfigureThread = Boolean(threadIdToResume) || !threadId;
+				let skillInstructions: string | undefined;
+				if (shouldConfigureThread) {
+					try {
+						skillInstructions = await resolveCodexSkillInstructions({
+							manager,
+							projectDir,
+							skillRoots: options?.skillRoots,
+						});
+					} catch (error) {
+						console.error(
+							`[athena:codex] failed to scan workflow skills: ${
+								error instanceof Error ? error.message : String(error)
+							}`,
+						);
+					}
+				}
+				const developerInstructions = shouldConfigureThread
+					? combineDeveloperInstructions(
+							options?.developerInstructions,
+							skillInstructions,
+						)
+					: options?.developerInstructions;
 				// Resume a thread or start a new one
-				if (threadIdToResume) {
-					const result = await manager.sendRequest(M.THREAD_RESUME, {
+					if (threadIdToResume) {
+						const result = await manager.sendRequest(M.THREAD_RESUME, {
 						threadId: threadIdToResume,
 						approvalPolicy: 'on-request',
 						sandbox: 'workspace-write',
 						cwd: projectDir,
-					});
-					const response = asRecord(result);
-					const thread = asRecord(response['thread'] ?? result);
-					if (thread['id']) {
-						threadId = String(thread['id']);
-					}
-					threadModel =
-						typeof response['model'] === 'string'
-							? response['model']
+						...(options?.model ? {model: options.model} : {}),
+						...(developerInstructions
+							? {developerInstructions}
+							: {}),
+							...(options?.config ? {config: options.config} : {}),
+							persistExtendedHistory: !options?.ephemeral,
+						});
+						const response = asRecord(result);
+						const thread = asRecord(response['thread'] ?? result);
+						threadId = requireThreadId(thread['id'], M.THREAD_RESUME);
+						threadModel =
+							typeof response['model'] === 'string'
+								? response['model']
 							: threadModel;
 				} else if (!threadId) {
 					const result = await manager.sendRequest(M.THREAD_START, {
 						approvalPolicy: 'on-request',
 						sandbox: 'workspace-write',
 						cwd: projectDir,
-					});
-					const response = asRecord(result);
-					const thread = asRecord(response['thread'] ?? result);
-					if (thread['id']) {
-						threadId = String(thread['id']);
-					}
-					threadModel =
-						typeof response['model'] === 'string'
-							? response['model']
+						...(options?.model ? {model: options.model} : {}),
+						...(developerInstructions
+							? {developerInstructions}
+							: {}),
+							...(options?.config ? {config: options.config} : {}),
+							experimentalRawEvents: false,
+							...(options?.ephemeral ? {ephemeral: true} : {}),
+							persistExtendedHistory: !options?.ephemeral,
+						});
+						const response = asRecord(result);
+						const thread = asRecord(response['thread'] ?? result);
+						threadId = requireThreadId(thread['id'], M.THREAD_START);
+						threadModel =
+							typeof response['model'] === 'string'
+								? response['model']
 							: threadModel;
 				}
 
@@ -428,6 +502,9 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 				await manager.sendRequest(M.TURN_START, {
 					threadId,
 					input: [{type: 'text', text: prompt, text_elements: []}],
+					cwd: projectDir,
+					approvalPolicy: 'on-request',
+					...(options?.model ? {model: options.model} : {}),
 				});
 
 				await turnCompletion.promise;

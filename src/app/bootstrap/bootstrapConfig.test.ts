@@ -20,6 +20,23 @@ vi.mock('../../core/workflows/index', () => ({
 	resolveWorkflow: (name: string) => resolveWorkflowMock(name),
 	installWorkflowPlugins: (workflow: unknown) =>
 		installWorkflowPluginsMock(workflow),
+	compileWorkflowPlan: ({
+		workflow,
+		pluginDirs,
+		pluginMcpConfig,
+	}: {
+		workflow?: unknown;
+		pluginDirs?: string[];
+		pluginMcpConfig?: string;
+	}) =>
+		workflow
+			? {
+					workflow,
+					pluginDirs:
+						pluginDirs ?? installWorkflowPluginsMock(workflow),
+					pluginMcpConfig,
+				}
+			: undefined,
 }));
 
 vi.mock('../../harnesses/claude/config/readSettingsModel', () => ({
@@ -40,6 +57,7 @@ describe('bootstrapRuntimeConfig', () => {
 		registerPluginsMock.mockReset();
 		resolveWorkflowMock.mockReset();
 		installWorkflowPluginsMock.mockReset();
+		installWorkflowPluginsMock.mockReturnValue([]);
 		readClaudeSettingsModelMock.mockReset();
 	});
 
@@ -101,6 +119,11 @@ describe('bootstrapRuntimeConfig', () => {
 		);
 		expect(result.workflow?.name).toBe('e2e-test-builder');
 		expect(result.workflowRef).toBe('e2e-test-builder');
+		expect(result.workflowPlan).toEqual({
+			workflow: result.workflow,
+			pluginDirs: ['/workflow-plugin'],
+			pluginMcpConfig: '/tmp/mcp.json',
+		});
 		expect(result.harness).toBe('claude-code');
 		expect(result.isolationConfig.preset).toBe('minimal');
 		expect(result.isolationConfig.additionalDirectories).toEqual([
@@ -142,6 +165,11 @@ describe('bootstrapRuntimeConfig', () => {
 		expect(resolveWorkflowMock).not.toHaveBeenCalled();
 		expect(result.workflow?.name).toBe('plugin-workflow');
 		expect(result.workflowRef).toBe('plugin-workflow');
+		expect(result.workflowPlan).toEqual({
+			workflow: result.workflow,
+			pluginDirs: [],
+			pluginMcpConfig: undefined,
+		});
 		expect(result.harness).toBe('claude-code');
 		expect(result.modelName).toBe('claude-settings-model');
 	});

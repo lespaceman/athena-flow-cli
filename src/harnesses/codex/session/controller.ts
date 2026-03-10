@@ -1,4 +1,5 @@
 import type {Runtime} from '../../../core/runtime/types';
+import type {HarnessProcessConfig} from '../../../core/runtime/process';
 import type {
 	CreateSessionControllerInput,
 	SessionController,
@@ -9,16 +10,19 @@ import {
 	NULL_TOKENS,
 	readTokenUsage,
 } from '../runtime/tokenUsage';
+import {buildCodexPromptOptions} from './promptOptions';
 
 export function createCodexSessionController(
 	input: CreateSessionControllerInput,
 ): SessionController {
 	const runtime = input.runtime as (Runtime & Partial<CodexRuntime>) | null;
+	const processConfig = input.processConfig as HarnessProcessConfig | undefined;
 
 	return {
 		async startTurn({
 			prompt,
 			sessionId,
+			configOverride,
 		}): Promise<SessionControllerTurnResult> {
 			if (!runtime || typeof runtime.sendPrompt !== 'function') {
 				return {
@@ -48,7 +52,16 @@ export function createCodexSessionController(
 			});
 
 			try {
-				await runtime.sendPrompt(prompt, sessionId);
+				await runtime.sendPrompt(
+					prompt,
+					buildCodexPromptOptions({
+						processConfig,
+						sessionId,
+						configOverride,
+						workflowPlan: input.workflowPlan,
+						ephemeral: input.ephemeral,
+					}),
+				);
 				return {
 					exitCode: 0,
 					error: null,

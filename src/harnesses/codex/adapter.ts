@@ -24,10 +24,17 @@ export const codexHarnessAdapter: HarnessAdapter = {
 		createCodexRuntime({
 			projectDir: input.projectDir,
 			instanceId: input.instanceId,
+			env: input.workflow?.env,
 		}),
 	createSessionController: input => createCodexSessionController(input),
 	useSessionController: input => {
-		const process = useCodexSessionController(input.runtime ?? null, input.options);
+		const process = useCodexSessionController(
+			input.runtime ?? null,
+			input.processConfig,
+			input.workflowPlan,
+			input.ephemeral,
+			input.options,
+		);
 		const controller: UseSessionControllerResult = {
 			spawn: process.spawn,
 			isRunning: process.isRunning,

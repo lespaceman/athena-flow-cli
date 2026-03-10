@@ -82,6 +82,7 @@ describe('useHarnessProcess', () => {
 			pluginMcpConfig: undefined,
 			verbose: undefined,
 			workflow: undefined,
+			workflowPlan: undefined,
 			options: {tokenUpdateMs: 250},
 			runtime: null,
 		});

@@ -2,9 +2,11 @@ import {EventEmitter} from 'node:events';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import {createCodexServer} from '../server';
 import type {RuntimeEvent} from '../../../../core/runtime/types';
+import * as M from '../../protocol/methods';
 
 const mockState = vi.hoisted(() => ({
 	current: null as {
+		requests: Array<{method: string; params?: Record<string, unknown>}>;
 		responses: Array<{id: number; result: unknown}>;
 		errors: Array<{id: number; code: number; message: string}>;
 		emit: (event: string, payload: unknown) => boolean;
@@ -13,6 +15,8 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock('../appServerManager', () => ({
 	AppServerManager: class MockAppServerManager extends EventEmitter {
+		readonly requests: Array<{method: string; params?: Record<string, unknown>}> =
+			[];
 		readonly responses: Array<{id: number; result: unknown}> = [];
 		readonly errors: Array<{id: number; code: number; message: string}> = [];
 
@@ -45,10 +49,45 @@ vi.mock('../appServerManager', () => ({
 
 		async sendRequest(
 			method: string,
-			_params?: Record<string, unknown>,
+			params?: Record<string, unknown>,
 		): Promise<unknown> {
+			this.requests.push({method, params});
+
 			if (method === 'initialize') {
 				return {};
+			}
+
+			if (method === 'skills/list') {
+				return {
+					data: [
+						{
+							cwd: '/project',
+							skills: [
+								{
+									name: 'workflow-skill',
+									description: 'Handle workflow tasks.',
+									path: '/workflow/plugins/e2e-test-builder/skills/workflow-skill/SKILL.md',
+									enabled: true,
+									dependencies: {
+										tools: [
+											{
+												type: 'mcp',
+												value: 'agent-web-interface',
+											},
+										],
+									},
+								},
+								{
+									name: 'global-skill',
+									description: 'Do not include this.',
+									path: '/elsewhere/global-skill/SKILL.md',
+									enabled: true,
+								},
+							],
+							errors: [],
+						},
+					],
+				};
 			}
 
 			if (method === 'thread/start') {
@@ -137,6 +176,132 @@ describe('createCodexServer', () => {
 				expect.objectContaining({kind: 'turn.complete'}),
 			]),
 		);
+	});
+
+	it('hydrates thread startup with workflow skill roots and mcp config', async () => {
+		const runtime = createCodexServer({
+			projectDir: '/project',
+			instanceId: 1,
+			binaryPath: 'codex',
+		});
+
+		await runtime.start();
+		await runtime.sendPrompt('Hello Codex', {
+			developerInstructions: 'Use the workflow tracker.',
+			skillRoots: ['/workflow/plugins/e2e-test-builder/skills'],
+			config: {
+				mcp_servers: {
+					'agent-web-interface': {
+						command: 'npx',
+						args: ['-y', 'agent-web-interface@latest'],
+					},
+				},
+			},
+		});
+
+		const manager = mockState.current;
+		expect(manager).not.toBeNull();
+		expect(manager!.requests).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					method: 'skills/list',
+					params: {
+						cwds: ['/project'],
+						forceReload: true,
+						perCwdExtraUserRoots: [
+							{
+								cwd: '/project',
+								extraUserRoots: ['/workflow/plugins/e2e-test-builder/skills'],
+							},
+						],
+					},
+				}),
+				expect.objectContaining({
+					method: 'thread/start',
+					params: expect.objectContaining({
+						config: {
+							mcp_servers: {
+								'agent-web-interface': {
+									command: 'npx',
+									args: ['-y', 'agent-web-interface@latest'],
+								},
+							},
+						},
+						developerInstructions: expect.stringContaining(
+							'Use the workflow tracker.',
+						),
+					}),
+				}),
+			]),
+		);
+		expect(
+			manager!.requests.find(request => request.method === 'thread/start')?.params
+				?.['developerInstructions'],
+		).toEqual(expect.stringContaining('workflow-skill'));
+		expect(
+			manager!.requests.find(request => request.method === 'thread/start')?.params
+				?.['developerInstructions'],
+		).not.toEqual(expect.stringContaining('global-skill'));
+	});
+
+	it('starts ephemeral Codex threads without extended history persistence', async () => {
+		const runtime = createCodexServer({
+			projectDir: '/project',
+			instanceId: 1,
+			binaryPath: 'codex',
+		});
+
+		await runtime.start();
+		await runtime.sendPrompt('Hello Codex', {
+			ephemeral: true,
+		});
+
+		const manager = mockState.current;
+		expect(manager).not.toBeNull();
+		expect(
+			manager!.requests.find(request => request.method === 'thread/start')?.params,
+		).toEqual(
+			expect.objectContaining({
+				ephemeral: true,
+				persistExtendedHistory: false,
+			}),
+		);
+	});
+
+	it('fails fast when thread/start does not return a thread id', async () => {
+		const runtime = createCodexServer({
+			projectDir: '/project',
+			instanceId: 1,
+			binaryPath: 'codex',
+		});
+
+		await runtime.start();
+		const manager = mockState.current as
+			| (typeof mockState.current & {
+					sendRequest: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+			  })
+			| null;
+		expect(manager).not.toBeNull();
+
+		const originalSendRequest = manager!.sendRequest.bind(manager);
+		manager!.sendRequest = vi.fn(async (method, params) => {
+			if (method === M.THREAD_START) {
+				manager!.requests.push({method, params});
+				return {thread: {}};
+			}
+			if (method === M.TURN_START) {
+				manager!.requests.push({method, params});
+				throw new Error('turn/start should not be called');
+			}
+			return originalSendRequest(method, params);
+		});
+
+		await expect(runtime.sendPrompt('Hello Codex')).rejects.toThrow(
+			/Codex thread\/start did not return a thread id/,
+		);
+		expect(
+			manager!.requests.some(request => request.method === M.TURN_START),
+		).toBe(false);
 	});
 
 	it('returns typed fallback results for known unsupported Codex server requests', async () => {

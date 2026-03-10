@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import {progressGlyphs} from '../glyphs/index';
 
 export function formatTokenCount(value: number | null): string {
-	if (value === null) return '0';
+	if (value === null) return '--';
 	if (value < 1000) return String(value);
 	const k = value / 1000;
 	if (Number.isInteger(k)) return `${k}k`;

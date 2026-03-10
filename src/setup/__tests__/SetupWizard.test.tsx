@@ -20,6 +20,10 @@ vi.mock('../../core/workflows/index', () => ({
 }));
 vi.mock('../../infra/plugins/config', () => ({
 	writeGlobalConfig: vi.fn(),
+	readGlobalConfig: vi.fn(() => ({
+		plugins: [],
+		additionalDirectories: [],
+	})),
 }));
 vi.mock('../../infra/plugins/mcpOptions', () => ({
 	collectMcpServersWithOptions: vi.fn(() => []),

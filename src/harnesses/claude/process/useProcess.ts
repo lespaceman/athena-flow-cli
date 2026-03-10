@@ -1,6 +1,5 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {type ChildProcess} from 'node:child_process';
-import fs from 'node:fs';
 import {spawnClaude} from './spawn';
 import {type UseClaudeProcessResult} from './types';
 import {
@@ -11,14 +10,6 @@ import {
 import type {TokenUsage} from '../../../shared/types/headerMetrics';
 import {createTokenAccumulator} from './tokenAccumulator';
 import type {WorkflowConfig} from '../../../core/workflows/types';
-import {
-	applyPromptTemplate,
-	createLoopManager,
-	buildContinuePrompt,
-	cleanupTrackerFile,
-	type LoopManager,
-} from '../../../core/workflows/index';
-import path from 'node:path';
 import type {
 	HarnessProcessLifecycleEvent,
 	HarnessProcessFailureCode,
@@ -145,7 +136,6 @@ export function useClaudeProcess(
 	const tokenAccRef = useRef(
 		(options?.tokenParserFactory ?? createTokenAccumulator)(),
 	);
-	const loopManagerRef = useRef<LoopManager | null>(null);
 	const tokenBaseRef = useRef({
 		input: options?.initialTokens?.input ?? 0,
 		output: options?.initialTokens?.output ?? 0,
@@ -220,8 +210,6 @@ export function useClaudeProcess(
 			return;
 		}
 
-		const loopManager = loopManagerRef.current;
-
 		// Create promise to wait for process exit
 		const exitPromise = new Promise<void>(resolve => {
 			exitResolverRef.current = resolve;
@@ -235,18 +223,11 @@ export function useClaudeProcess(
 
 		processRef.current.kill();
 
-		loopManager?.deactivate();
-		loopManagerRef.current = null;
-
 		// Wait for exit or timeout
 		await Promise.race([exitPromise, timeoutPromise]);
 
 		// Clean up timeout to prevent memory leak
 		clearTimeout(timeoutId!);
-
-		if (loopManager) {
-			cleanupTrackerFile(loopManager.trackerPath);
-		}
 
 		// Clean up
 		exitResolverRef.current = null;
@@ -287,68 +268,16 @@ export function useClaudeProcess(
 				cacheWrite: current.cacheWrite ?? 0,
 			};
 
-			// Apply workflow: transform prompt and arm loop
-			let effectivePrompt = prompt;
-			if (workflow) {
-				if (
-					workflow.loop &&
-					loopManagerRef.current &&
-					loopManagerRef.current.getState().iteration > 0
-				) {
-					// Iteration 2+: use continue prompt instead of original template
-					effectivePrompt = buildContinuePrompt(workflow.loop);
-				} else {
-					effectivePrompt = applyPromptTemplate(
-						workflow.promptTemplate,
-						prompt,
-					);
-				}
-
-				if (workflow.loop?.enabled && !loopManagerRef.current) {
-					const trackerPath = path.resolve(
-						projectDir,
-						workflow.loop.trackerPath ?? 'tracker.md',
-					);
-					loopManagerRef.current = createLoopManager(
-						trackerPath,
-						workflow.loop,
-					);
-				}
-			}
-
-			// Thread workflow's systemPromptFile into isolation config
-			const resolvedSystemPromptFile = workflow?.systemPromptFile
-				? path.resolve(projectDir, workflow.systemPromptFile)
-				: undefined;
-			const appendSystemPromptFile =
-				resolvedSystemPromptFile && fs.existsSync(resolvedSystemPromptFile)
-					? resolvedSystemPromptFile
-					: undefined;
-			if (workflow?.systemPromptFile && !appendSystemPromptFile) {
-				console.error(
-					`[athena] Workflow "${workflow.name}" system prompt file not found: ${workflow.systemPromptFile}. Continuing without --append-system-prompt-file.`,
-				);
-			}
-			const effectivePerCallIsolation: Partial<IsolationConfig> | undefined =
-				perCallIsolation || appendSystemPromptFile
-					? {
-							...perCallIsolation,
-							...(appendSystemPromptFile && {
-								appendSystemPromptFile,
-							}),
-						}
-					: undefined;
-
 			try {
 				const child = spawnClaude({
-					prompt: effectivePrompt,
+					prompt,
 					projectDir,
 					instanceId,
 					sessionId,
 					isolation: mergeIsolation(
 						isolation,
 						pluginMcpConfig,
-						effectivePerCallIsolation,
+						perCallIsolation,
 					),
 					env: workflow?.env,
 					...(verbose
@@ -443,43 +372,6 @@ export function useClaudeProcess(
 						if (abortRef.current.signal.aborted) return;
 						processRef.current = null;
 
-						// Loop respawn: spawn next iteration if not terminal and the workflow
-						// actually started (tracker file exists). This prevents accidental
-						// "continue task" loops for non-workflow prompts.
-						// Never respawn on non-zero exit (process error) to avoid infinite loops.
-						const loopManager = loopManagerRef.current;
-						const loopConfig = workflow?.loop;
-						const canContinueLoop =
-							loopConfig &&
-							loopManager &&
-							code === 0 &&
-							fs.existsSync(loopManager.trackerPath) &&
-							!loopManager.isTerminal();
-						if (canContinueLoop) {
-							loopManager.incrementIteration();
-							spawn(buildContinuePrompt(loopConfig)).catch(() => {
-								loopManagerRef.current?.deactivate();
-								loopManagerRef.current = null;
-								if (!abortRef.current.signal.aborted) {
-									setIsRunning(false);
-								}
-							});
-							return;
-						}
-
-						// Loop reached terminal state — deactivate
-						if (loopManagerRef.current) {
-							if (
-								code === 0 &&
-								fs.existsSync(loopManagerRef.current.trackerPath) &&
-								loopManagerRef.current.isTerminal()
-							) {
-								cleanupTrackerFile(loopManagerRef.current.trackerPath);
-							}
-							loopManagerRef.current.deactivate();
-							loopManagerRef.current = null;
-						}
-
 						setIsRunning(false);
 						if (trackOutputRef.current && code !== 0 && code !== null) {
 							setOutput(prev => [...prev, `[exit code: ${code}]`]);
@@ -570,11 +462,6 @@ export function useClaudeProcess(
 		return () => {
 			abortRef.current.abort();
 			clearTokenUsageTimer();
-			if (loopManagerRef.current) {
-				cleanupTrackerFile(loopManagerRef.current.trackerPath);
-				loopManagerRef.current.deactivate();
-				loopManagerRef.current = null;
-			}
 			if (processRef.current) {
 				processRef.current.kill();
 				processRef.current = null;

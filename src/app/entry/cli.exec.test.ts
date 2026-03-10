@@ -16,6 +16,7 @@ const generateDeviceIdMock = vi.fn(() => 'generated-device-id');
 const trackAppLaunchedMock = vi.fn();
 const trackErrorMock = vi.fn();
 const trackTelemetryOptedOutMock = vi.fn();
+const resolveWorkflowInstallSourceMock = vi.fn((source: string) => source);
 
 const EXEC_EXIT_CODE = {
 	SUCCESS: 0,
@@ -32,6 +33,10 @@ vi.mock('ink', () => ({
 }));
 
 vi.mock('../shell/AppShell', () => ({
+	default: () => null,
+}));
+
+vi.mock('../../setup/steps/WorkflowInstallWizard', () => ({
 	default: () => null,
 }));
 
@@ -74,6 +79,11 @@ vi.mock('../../ui/theme/index', () => ({
 	resolveTheme: resolveThemeMock,
 }));
 
+vi.mock('../../infra/plugins/marketplace', () => ({
+	resolveWorkflowInstallSource: (...args: unknown[]) =>
+		resolveWorkflowInstallSourceMock(...args),
+}));
+
 vi.mock('../../infra/telemetry/index', () => ({
 	initTelemetry: initTelemetryMock,
 	shutdownTelemetry: shutdownTelemetryMock,
@@ -111,6 +121,7 @@ const BASE_RUNTIME_BOOTSTRAP = {
 	pluginMcpConfig: undefined,
 	workflowRef: undefined,
 	workflow: undefined,
+	workflowPlan: undefined,
 	modelName: null,
 	warnings: [] as string[],
 };
@@ -145,6 +156,9 @@ async function runCli(args: string[]): Promise<CliRunResult> {
 describe('cli exec mode', () => {
 	beforeEach(() => {
 		renderMock.mockReset();
+		renderMock.mockReturnValue({
+			waitUntilExit: vi.fn().mockResolvedValue(undefined),
+		});
 		runExecMock.mockReset();
 		bootstrapRuntimeConfigMock.mockReset();
 		readConfigMock.mockReset();
@@ -160,6 +174,8 @@ describe('cli exec mode', () => {
 		trackAppLaunchedMock.mockReset();
 		trackErrorMock.mockReset();
 		trackTelemetryOptedOutMock.mockReset();
+		resolveWorkflowInstallSourceMock.mockReset();
+		resolveWorkflowInstallSourceMock.mockImplementation((source: string) => source);
 
 		readConfigMock.mockReturnValue(BASE_CONFIG);
 		readGlobalConfigMock.mockReturnValue(BASE_CONFIG);
@@ -341,6 +357,25 @@ describe('cli exec mode', () => {
 			expect(runExecMock).not.toHaveBeenCalled();
 			expect(renderMock).not.toHaveBeenCalled();
 			expect(cli.exitSpy).toHaveBeenCalledWith(1);
+		} finally {
+			cli.restore();
+		}
+	});
+
+	it('routes workflow install through the interactive install wizard path', async () => {
+		const cli = await runCli([
+			'workflow',
+			'install',
+			'e2e-test-builder',
+		]);
+		try {
+			await new Promise(resolve => setImmediate(resolve));
+			expect(renderMock).toHaveBeenCalledTimes(1);
+			expect(resolveWorkflowInstallSourceMock).toHaveBeenCalledWith(
+				'e2e-test-builder',
+				'lespaceman/athena-workflow-marketplace',
+			);
+			expect(cli.exitSpy).not.toHaveBeenCalled();
 		} finally {
 			cli.restore();
 		}

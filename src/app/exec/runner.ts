@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
 import {
 	handleEvent,
@@ -11,20 +10,12 @@ import {
 	type RuntimeEvent,
 } from '../../core/runtime/types';
 import {
-	applyPromptTemplate,
-	buildContinuePrompt,
-	cleanupTrackerFile,
-	createLoopManager,
-	type LoopManager,
-} from '../../core/workflows';
-import {
-	createSessionStore,
-	sessionsDir,
-	type SessionStore,
-} from '../../infra/sessions';
-import {
-	type IsolationConfig,
-} from '../../harnesses/claude/config/isolation';
+	cleanupWorkflowRun,
+	createWorkflowRunState,
+	prepareWorkflowTurn,
+	shouldContinueWorkflowRun,
+} from '../../core/workflows/sessionPlan';
+import {createSessionStore, sessionsDir, type SessionStore} from '../../infra/sessions';
 import {resolveHarnessAdapter} from '../../harnesses/registry';
 import type {TokenUsage} from '../../shared/types/headerMetrics';
 import {createRuntime} from '../runtime/createRuntime';
@@ -76,28 +67,6 @@ function mergeTokenUsage(base: TokenUsage, next: TokenUsage): TokenUsage {
 		cacheWrite,
 		total: input + output + cacheRead + cacheWrite,
 		contextSize: next.contextSize ?? base.contextSize,
-	};
-}
-
-function selectOutputIsolation(
-	projectDir: string,
-	workflowSystemPromptFile: string | undefined,
-): {overrides?: Partial<IsolationConfig>; warning?: string} {
-	if (!workflowSystemPromptFile) {
-		return {};
-	}
-
-	const resolvedPath = path.resolve(projectDir, workflowSystemPromptFile);
-	if (!fs.existsSync(resolvedPath)) {
-		return {
-			warning: `Workflow system prompt file not found: ${workflowSystemPromptFile}. Continuing without --append-system-prompt-file.`,
-		};
-	}
-
-	return {
-		overrides: {
-			appendSystemPromptFile: resolvedPath,
-		},
 	};
 }
 
@@ -180,6 +149,7 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 	let mappedFinalMessage: string | null = null;
 	let adapterSessionId: string | null = null;
 	let currentIteration = 0;
+	let workflowState: ReturnType<typeof createWorkflowRunState> | null = null;
 
 	let store: SessionStore;
 	try {
@@ -216,6 +186,7 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 			harness: options.harness,
 			projectDir: options.projectDir,
 			instanceId,
+			workflow: options.workflow,
 		});
 	} catch (error) {
 		const message = `Failed to initialize runtime: ${
@@ -240,6 +211,8 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 		pluginMcpConfig: options.pluginMcpConfig,
 		verbose,
 		workflow: options.workflow,
+		workflowPlan: options.workflowPlan,
+		ephemeral: options.ephemeral,
 		runtime,
 		spawnProcess: options.spawnProcess,
 	});
@@ -366,24 +339,13 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 		});
 
 		const workflow = options.workflow;
-		const basePrompt = workflow
-			? applyPromptTemplate(workflow.promptTemplate, options.prompt)
-			: options.prompt;
-
-		let loopManager: LoopManager | null = null;
-		if (workflow?.loop?.enabled) {
-			const trackerPath = path.resolve(
-				options.projectDir,
-				workflow.loop.trackerPath ?? 'tracker.md',
-			);
-			loopManager = createLoopManager(trackerPath, workflow.loop);
-		}
-
-		const {overrides: systemPromptOverrides, warning: systemPromptWarning} =
-			selectOutputIsolation(options.projectDir, workflow?.systemPromptFile);
-		if (systemPromptWarning) {
-			output.warn(systemPromptWarning);
-			output.emitJsonEvent('exec.warning', {message: systemPromptWarning});
+		workflowState = createWorkflowRunState({
+			projectDir: options.projectDir,
+			workflow,
+		});
+		for (const warning of workflowState.warnings) {
+			output.warn(warning);
+			output.emitJsonEvent('exec.warning', {message: warning});
 		}
 
 		output.emitJsonEvent('run.started', {
@@ -391,20 +353,25 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 			loopEnabled: workflow?.loop?.enabled ?? false,
 		});
 
-		let nextPrompt = basePrompt;
+		let nextPrompt = options.prompt;
 		let nextSessionId = options.adapterResumeSessionId;
 
 		while (!hasFailure()) {
 			currentIteration += 1;
+			const preparedTurn = prepareWorkflowTurn(workflowState, {
+				prompt: nextPrompt,
+				configOverride: undefined,
+			});
+
 			output.emitJsonEvent('process.started', {
 				iteration: currentIteration,
 				resumeSessionId: nextSessionId ?? null,
 			});
 
 			const turnResult = await sessionController.startTurn({
-				prompt: nextPrompt,
+				prompt: preparedTurn.prompt,
 				sessionId: nextSessionId,
-				configOverride: systemPromptOverrides,
+				configOverride: preparedTurn.configOverride,
 				onStderrLine: message => output.log(message),
 			});
 			finalExitCode = turnResult.exitCode;
@@ -449,20 +416,16 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 				break;
 			}
 
-			if (!loopManager || !workflow?.loop?.enabled) {
+			if (!workflow?.loop?.enabled) {
+				cleanupWorkflowRun(workflowState);
 				break;
 			}
 
-			const continueLoop =
-				fs.existsSync(loopManager.trackerPath) && !loopManager.isTerminal();
-			if (!continueLoop) {
-				cleanupTrackerFile(loopManager.trackerPath);
-				loopManager.deactivate();
+			if (!shouldContinueWorkflowRun(workflowState)) {
 				break;
 			}
 
-			loopManager.incrementIteration();
-			nextPrompt = buildContinuePrompt(workflow.loop);
+			nextPrompt = options.prompt;
 			nextSessionId = undefined;
 		}
 	} catch (error) {
@@ -481,6 +444,9 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 			runtime.stop();
 		}
 		store.close();
+		if (workflowState) {
+			cleanupWorkflowRun(workflowState);
+		}
 	}
 
 	const resolvedFinalMessage = resolveFinalMessage({

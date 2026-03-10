@@ -7,6 +7,7 @@ export const TURN_START = 'turn/start';
 export const TURN_INTERRUPT = 'turn/interrupt';
 export const ACCOUNT_READ = 'account/read';
 export const MODEL_LIST = 'model/list';
+export const SKILLS_LIST = 'skills/list';
 
 // Server → client notifications
 export const TURN_STARTED = 'turn/started';

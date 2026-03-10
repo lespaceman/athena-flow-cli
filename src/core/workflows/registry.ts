@@ -10,12 +10,33 @@ import os from 'node:os';
 import path from 'node:path';
 import {
 	isMarketplaceRef,
+	findMarketplaceRepoDir,
 	resolveMarketplaceWorkflow,
 } from '../../infra/plugins/marketplace';
-import type {WorkflowConfig} from './types';
+import type {
+	ResolvedWorkflowConfig,
+	WorkflowConfig,
+	WorkflowSourceMetadata,
+} from './types';
 
 function registryDir(): string {
 	return path.join(os.homedir(), '.config', 'athena', 'workflows');
+}
+
+function ensurePathWithinRoot(
+	rootDir: string,
+	targetPath: string,
+	label: string,
+): void {
+	const relative = path.relative(rootDir, targetPath);
+	if (
+		relative === '' ||
+		(!relative.startsWith('..') && !path.isAbsolute(relative))
+	) {
+		return;
+	}
+
+	throw new Error(`${label} resolves outside the workflow root: ${targetPath}`);
 }
 
 /**
@@ -23,20 +44,53 @@ function registryDir(): string {
  * re-copy files from the marketplace cache (which ensureRepo already pulled).
  * Fails silently so offline/broken marketplace doesn't block startup.
  */
-function syncFromMarketplace(workflowDir: string): void {
+function readStoredWorkflowSource(
+	workflowDir: string,
+): WorkflowSourceMetadata | undefined {
 	const sourceFile = path.join(workflowDir, 'source.json');
 	if (!fs.existsSync(sourceFile)) return;
 
 	try {
-		const {ref} = JSON.parse(fs.readFileSync(sourceFile, 'utf-8')) as {
-			ref: string;
-		};
-		if (!isMarketplaceRef(ref)) return;
+		const source = JSON.parse(
+			fs.readFileSync(sourceFile, 'utf-8'),
+		) as WorkflowSourceMetadata | {ref?: string; path?: string};
+		if (typeof source.ref === 'string') {
+			return {kind: 'marketplace', ref: source.ref};
+		}
+		if (typeof source.path === 'string' && !('kind' in source)) {
+			return {kind: 'local', path: source.path};
+		}
+		if (
+			source &&
+			((source.kind === 'marketplace' && typeof source.ref === 'string') ||
+				(source.kind === 'local' && typeof source.path === 'string'))
+		) {
+			return source;
+		}
+	} catch {
+		// Ignore malformed source metadata and use the installed copy.
+	}
 
-		const sourcePath = resolveMarketplaceWorkflow(ref);
-		copyWorkflowFiles(sourcePath, workflowDir);
+	return undefined;
+}
+
+function syncFromSource(workflowDir: string): WorkflowSourceMetadata | undefined {
+	const source = readStoredWorkflowSource(workflowDir);
+	if (!source) return undefined;
+
+	try {
+		if (source.kind === 'marketplace') {
+			const sourcePath = resolveMarketplaceWorkflow(source.ref);
+			copyWorkflowFiles(sourcePath, workflowDir);
+			return source;
+		}
+		return {
+			...source,
+			repoDir: source.repoDir ?? findMarketplaceRepoDir(source.path),
+		};
 	} catch {
 		// Graceful degradation: use installed copy if sync fails (e.g. offline)
+		return source;
 	}
 }
 
@@ -44,7 +98,7 @@ function syncFromMarketplace(workflowDir: string): void {
  * Resolve a workflow by name from the registry.
  * Throws if the workflow is not installed.
  */
-export function resolveWorkflow(name: string): WorkflowConfig {
+export function resolveWorkflow(name: string): ResolvedWorkflowConfig {
 	const workflowDir = path.join(registryDir(), name);
 	const workflowPath = path.join(workflowDir, 'workflow.json');
 
@@ -54,8 +108,8 @@ export function resolveWorkflow(name: string): WorkflowConfig {
 		);
 	}
 
-	// Re-sync from marketplace if this workflow was installed from one.
-	syncFromMarketplace(workflowDir);
+	// Re-sync from the recorded source if this workflow was installed from one.
+	const source = syncFromSource(workflowDir);
 
 	const raw = JSON.parse(fs.readFileSync(workflowPath, 'utf-8')) as Record<
 		string,
@@ -120,7 +174,10 @@ export function resolveWorkflow(name: string): WorkflowConfig {
 		loop!['trackerTemplate'] = fs.readFileSync(tmplPath, 'utf-8');
 	}
 
-	return raw as unknown as WorkflowConfig;
+	return {
+		...(raw as WorkflowConfig),
+		...(source ? {__source: source} : {}),
+	};
 }
 
 /**
@@ -140,17 +197,21 @@ function readWorkflowSource(sourcePath: string): {
  */
 function copyWorkflowFiles(sourcePath: string, destDir: string): void {
 	const {content, workflow} = readWorkflowSource(sourcePath);
+	const absoluteSourcePath = path.resolve(sourcePath);
+	const sourceDir = path.dirname(absoluteSourcePath);
+	const absoluteDestDir = path.resolve(destDir);
 
-	fs.mkdirSync(destDir, {recursive: true});
-	fs.writeFileSync(path.join(destDir, 'workflow.json'), content, 'utf-8');
+	fs.mkdirSync(absoluteDestDir, {recursive: true});
+	fs.writeFileSync(path.join(absoluteDestDir, 'workflow.json'), content, 'utf-8');
 
 	// Copy referenced local assets next to workflow.json when available.
-	const sourceDir = path.dirname(sourcePath);
 	const copyRelativeAsset = (assetPath: string | undefined) => {
 		if (!assetPath || path.isAbsolute(assetPath)) return;
 		const sourceAssetPath = path.resolve(sourceDir, assetPath);
+		ensurePathWithinRoot(sourceDir, sourceAssetPath, 'Workflow asset');
 		if (!fs.existsSync(sourceAssetPath)) return;
-		const destAssetPath = path.join(destDir, assetPath);
+		const destAssetPath = path.resolve(absoluteDestDir, assetPath);
+		ensurePathWithinRoot(absoluteDestDir, destAssetPath, 'Workflow asset');
 		fs.mkdirSync(path.dirname(destAssetPath), {recursive: true});
 		fs.copyFileSync(sourceAssetPath, destAssetPath);
 	};
@@ -187,16 +248,35 @@ export function installWorkflow(source: string, name?: string): string {
 	const destDir = path.join(registryDir(), workflowName);
 	copyWorkflowFiles(sourcePath, destDir);
 
-	// Persist the marketplace source ref so resolveWorkflow can re-sync on startup.
-	if (isMarketplace) {
-		fs.writeFileSync(
-			path.join(destDir, 'source.json'),
-			JSON.stringify({ref: source}),
-			'utf-8',
+	const sourceMetadata: WorkflowSourceMetadata = isMarketplace
+		? {kind: 'marketplace', ref: source}
+		: {
+				kind: 'local',
+				path: path.resolve(sourcePath),
+				repoDir: findMarketplaceRepoDir(sourcePath),
+			};
+
+	fs.writeFileSync(
+		path.join(destDir, 'source.json'),
+		JSON.stringify(sourceMetadata),
+		'utf-8',
+	);
+
+	return workflowName;
+}
+
+export function updateWorkflow(name: string): string {
+	const workflowDir = path.join(registryDir(), name);
+	const source = readStoredWorkflowSource(workflowDir);
+
+	if (!source) {
+		throw new Error(
+			`Workflow "${name}" has no recorded source. Reinstall it with: athena-flow workflow install <source>`,
 		);
 	}
 
-	return workflowName;
+	const installSource = source.kind === 'marketplace' ? source.ref : source.path;
+	return installWorkflow(installSource, name);
 }
 
 /**

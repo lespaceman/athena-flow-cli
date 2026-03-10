@@ -1,7 +1,7 @@
 import type {ChildProcess} from 'node:child_process';
 import type {Writable} from 'node:stream';
 import type {AthenaHarness} from '../../infra/plugins/config';
-import type {WorkflowConfig} from '../../core/workflows/types';
+import type {WorkflowConfig, WorkflowPlan} from '../../core/workflows';
 import type {HarnessProcessConfig} from '../../core/runtime/process';
 import type {TokenUsage} from '../../shared/types/headerMetrics';
 import type {SessionStore} from '../../infra/sessions/store';
@@ -44,6 +44,7 @@ export type ExecRunOptions = {
 	isolationConfig: HarnessProcessConfig;
 	pluginMcpConfig?: string;
 	workflow?: WorkflowConfig;
+	workflowPlan?: WorkflowPlan;
 	verbose?: boolean;
 	json?: boolean;
 	outputLastMessagePath?: string;

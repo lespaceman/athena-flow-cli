@@ -16,12 +16,10 @@ function fromBreakdown(
 		| CodexThreadTokenUsage['last']
 		| null
 		| undefined,
-	contextSize: number | null,
 ): TokenUsage {
 	if (!breakdown) {
 		return {
 			...NULL_TOKENS,
-			contextSize,
 		};
 	}
 
@@ -31,7 +29,9 @@ function fromBreakdown(
 		cacheRead: breakdown.cachedInputTokens,
 		cacheWrite: null,
 		total: breakdown.totalTokens,
-		contextSize,
+		// Codex reports the model window separately (`modelContextWindow`), but it
+		// does not expose the current in-context occupancy in this payload.
+		contextSize: null,
 	};
 }
 
@@ -39,14 +39,14 @@ export function getCodexUsageTotals(
 	usage: CodexThreadTokenUsage | null | undefined,
 ): TokenUsage {
 	if (!usage) return {...NULL_TOKENS};
-	return fromBreakdown(usage.total, usage.modelContextWindow);
+	return fromBreakdown(usage.total);
 }
 
 export function getCodexUsageDelta(
 	usage: CodexThreadTokenUsage | null | undefined,
 ): TokenUsage {
 	if (!usage) return {...NULL_TOKENS};
-	return fromBreakdown(usage.last, usage.modelContextWindow);
+	return fromBreakdown(usage.last);
 }
 
 export function readTokenUsage(value: unknown): TokenUsage {

@@ -1,17 +1,21 @@
 import {describe, it, expect, vi, beforeEach} from 'vitest';
 
 const resolveMarketplacePluginMock = vi.fn();
+const resolveMarketplacePluginFromRepoMock = vi.fn();
 
 vi.mock('../../../infra/plugins/marketplace', () => ({
 	isMarketplaceRef: (entry: string) =>
 		/^[a-zA-Z0-9_-]+@[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(entry),
 	resolveMarketplacePlugin: (ref: string) => resolveMarketplacePluginMock(ref),
+	resolveMarketplacePluginFromRepo: (ref: string, repoDir: string) =>
+		resolveMarketplacePluginFromRepoMock(ref, repoDir),
 }));
 
 const {installWorkflowPlugins} = await import('../installer');
 
 beforeEach(() => {
 	resolveMarketplacePluginMock.mockReset();
+	resolveMarketplacePluginFromRepoMock.mockReset();
 });
 
 describe('installWorkflowPlugins', () => {
@@ -52,5 +56,27 @@ describe('installWorkflowPlugins', () => {
 		});
 
 		expect(result).toEqual([]);
+	});
+
+	it('resolves plugin refs from the local source repo when available', () => {
+		resolveMarketplacePluginFromRepoMock.mockReturnValue('/local/plugin-a');
+
+		const result = installWorkflowPlugins({
+			name: 'test-workflow',
+			plugins: ['plugin-a@owner/repo'],
+			promptTemplate: '{input}',
+			__source: {
+				kind: 'local',
+				path: '/tmp/workflow.json',
+				repoDir: '/local/workflow-marketplace',
+			},
+		});
+
+		expect(result).toEqual(['/local/plugin-a']);
+		expect(resolveMarketplacePluginFromRepoMock).toHaveBeenCalledWith(
+			'plugin-a@owner/repo',
+			'/local/workflow-marketplace',
+		);
+		expect(resolveMarketplacePluginMock).not.toHaveBeenCalled();
 	});
 });

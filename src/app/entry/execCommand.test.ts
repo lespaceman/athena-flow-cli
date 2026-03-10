@@ -7,6 +7,7 @@ const BASE_RUNTIME_CONFIG: ExecRuntimeConfig = {
 	isolationConfig: {},
 	pluginMcpConfig: undefined,
 	workflow: undefined,
+	workflowPlan: undefined,
 };
 
 const BASE_FLAGS = {

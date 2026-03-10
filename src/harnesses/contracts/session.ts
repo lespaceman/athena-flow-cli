@@ -6,7 +6,7 @@ import type {
 	HarnessProcessPreset,
 } from '../../core/runtime/process';
 import type {Runtime} from '../../core/runtime/types';
-import type {WorkflowConfig} from '../../core/workflows/types';
+import type {WorkflowConfig, WorkflowPlan} from '../../core/workflows';
 import type {TokenUsage} from '../../shared/types/headerMetrics';
 
 export type SessionControllerTurnInput<
@@ -56,6 +56,8 @@ export type UseSessionControllerInput = {
 	pluginMcpConfig?: string;
 	verbose?: boolean;
 	workflow?: WorkflowConfig;
+	workflowPlan?: WorkflowPlan;
+	ephemeral?: boolean;
 	options?: HarnessProcessOptions;
 	runtime?: Runtime | null;
 };

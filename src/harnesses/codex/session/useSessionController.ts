@@ -1,15 +1,18 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import type {Runtime} from '../../../core/runtime/types';
 import type {
+	HarnessProcessConfig,
 	HarnessProcessOptions,
 	HarnessProcessOverride,
 } from '../../../core/runtime/process';
+import type {WorkflowPlan} from '../../../core/workflows';
 import type {TokenUsage} from '../../../shared/types/headerMetrics';
 import type {CodexRuntime} from '../runtime/server';
 import {
 	NULL_TOKENS,
 	readTokenUsage,
 } from '../runtime/tokenUsage';
+import {buildCodexPromptOptions} from './promptOptions';
 
 /**
  * Hook-backed session controller for Codex.
@@ -19,6 +22,9 @@ import {
  */
 export function useCodexSessionController(
 	runtime: Runtime | null,
+	processConfig?: HarnessProcessConfig,
+	workflowPlan?: WorkflowPlan,
+	ephemeral?: boolean,
 	options?: HarnessProcessOptions,
 ) {
 	const [isRunning, setIsRunning] = useState(false);
@@ -62,7 +68,16 @@ export function useCodexSessionController(
 			setIsRunning(true);
 
 			try {
-				await codexRuntime.sendPrompt(prompt, sessionId);
+				await codexRuntime.sendPrompt(
+					prompt,
+					buildCodexPromptOptions({
+						processConfig,
+						sessionId,
+						configOverride: _configOverride,
+						workflowPlan,
+						ephemeral,
+					}),
+				);
 			} catch (error) {
 				if (!abortRef.current.signal.aborted) {
 					onLifecycleEventRef.current?.({
@@ -80,7 +95,7 @@ export function useCodexSessionController(
 				}
 			}
 		},
-		[codexRuntime],
+		[codexRuntime, processConfig, workflowPlan, ephemeral],
 	);
 
 	useEffect(() => {

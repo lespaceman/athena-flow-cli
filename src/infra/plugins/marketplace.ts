@@ -37,7 +37,198 @@ export type MarketplaceManifest = {
 	workflows?: MarketplaceEntry[];
 };
 
+export type MarketplaceWorkflowListing = {
+	name: string;
+	description?: string;
+	version?: string;
+	ref: string;
+	workflowPath: string;
+};
+
+export type WorkflowMarketplaceSource =
+	| {
+			kind: 'remote';
+			slug: string;
+			owner: string;
+			repo: string;
+	  }
+	| {
+			kind: 'local';
+			path: string;
+			repoDir: string;
+	  };
+
 const MARKETPLACE_REF_RE = /^[a-zA-Z0-9_-]+@[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
+const MARKETPLACE_SLUG_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
+
+function resolvePluginManifestPath(repoDir: string): string {
+	return path.join(repoDir, '.claude-plugin', 'marketplace.json');
+}
+
+function resolveWorkflowManifestPath(repoDir: string): string {
+	const preferredManifestPath = path.join(
+		repoDir,
+		'.athena-workflow',
+		'marketplace.json',
+	);
+	const legacyManifestPath = resolvePluginManifestPath(repoDir);
+	return fs.existsSync(preferredManifestPath)
+		? preferredManifestPath
+		: legacyManifestPath;
+}
+
+function readManifest(manifestPath: string): MarketplaceManifest {
+	if (!fs.existsSync(manifestPath)) {
+		throw new Error(`Marketplace manifest not found: ${manifestPath}`);
+	}
+
+	return JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as MarketplaceManifest;
+}
+
+function resolvePluginDirFromManifest(
+	pluginName: string,
+	repoDir: string,
+	manifestPath: string,
+): string {
+	const manifest = readManifest(manifestPath);
+
+	if (!Array.isArray(manifest.plugins)) {
+		throw new Error(
+			`Invalid marketplace manifest at ${manifestPath}: "plugins" must be an array`,
+		);
+	}
+
+	const entry = manifest.plugins.find(p => p.name === pluginName);
+	if (!entry) {
+		const available = manifest.plugins.map(p => p.name).join(', ');
+		throw new Error(
+			`Plugin "${pluginName}" not found in marketplace manifest ${manifestPath}. Available plugins: ${available}`,
+		);
+	}
+
+	if (typeof entry.source !== 'string') {
+		throw new Error(
+			`Plugin "${pluginName}" uses a remote source type which is not supported by athena-cli. Only relative path sources are supported.`,
+		);
+	}
+
+	const {pluginRoot} = manifest.metadata ?? {};
+	let sourcePath = entry.source;
+	if (
+		pluginRoot &&
+		!sourcePath.startsWith('./') &&
+		!sourcePath.startsWith('../')
+	) {
+		sourcePath = path.join(pluginRoot, sourcePath);
+	}
+
+	const pluginDir = path.resolve(repoDir, sourcePath);
+
+	if (!pluginDir.startsWith(repoDir + path.sep) && pluginDir !== repoDir) {
+		throw new Error(
+			`Plugin "${pluginName}" source resolves outside the marketplace repo: ${pluginDir}`,
+		);
+	}
+
+	if (!fs.existsSync(pluginDir)) {
+		throw new Error(`Plugin source directory not found: ${pluginDir}`);
+	}
+
+	return pluginDir;
+}
+
+function resolveWorkflowPathFromManifest(
+	workflowName: string,
+	repoDir: string,
+	manifestPath: string,
+): string {
+	const manifest = readManifest(manifestPath);
+	const workflows = manifest.workflows ?? [];
+	const entry = workflows.find(w => w.name === workflowName);
+	if (!entry) {
+		const available = workflows.map(w => w.name).join(', ') || '(none)';
+		throw new Error(
+			`Workflow "${workflowName}" not found in marketplace manifest ${manifestPath}. Available workflows: ${available}`,
+		);
+	}
+
+	if (typeof entry.source !== 'string') {
+		throw new Error(
+			`Workflow "${workflowName}" uses a remote source type which is not supported.`,
+		);
+	}
+
+	let sourcePath = entry.source;
+	const {workflowRoot} = manifest.metadata ?? {};
+	if (
+		workflowRoot &&
+		!path.isAbsolute(sourcePath) &&
+		!sourcePath.startsWith('./') &&
+		!sourcePath.startsWith('../')
+	) {
+		sourcePath = path.join(workflowRoot, sourcePath);
+	}
+
+	const workflowPath = path.resolve(repoDir, sourcePath);
+
+	if (
+		!workflowPath.startsWith(repoDir + path.sep) &&
+		workflowPath !== repoDir
+	) {
+		throw new Error(
+			`Workflow "${workflowName}" source resolves outside the marketplace repo: ${workflowPath}`,
+		);
+	}
+
+	const resolvedWorkflowPath = preferCanonicalWorkflowPath(repoDir, workflowPath);
+
+	if (!fs.existsSync(resolvedWorkflowPath)) {
+		throw new Error(`Workflow source not found: ${resolvedWorkflowPath}`);
+	}
+
+	return resolvedWorkflowPath;
+}
+
+function listWorkflowEntriesFromManifest(
+	repoDir: string,
+	manifestPath: string,
+	owner: string,
+	repo: string,
+): MarketplaceWorkflowListing[] {
+	const manifest = readManifest(manifestPath);
+	const workflows = manifest.workflows ?? [];
+
+	return workflows
+		.filter(
+			(entry): entry is MarketplaceEntry & {source: string} =>
+				typeof entry.source === 'string',
+		)
+		.map(entry => ({
+			name: entry.name,
+			description: entry.description,
+			version: entry.version,
+			ref: `${entry.name}@${owner}/${repo}`,
+			workflowPath: resolveWorkflowPathFromManifest(
+				entry.name,
+				repoDir,
+				manifestPath,
+			),
+		}));
+}
+
+function preferCanonicalWorkflowPath(
+	repoDir: string,
+	workflowPath: string,
+): string {
+	const relativePath = path.relative(repoDir, workflowPath);
+	const segments = relativePath.split(path.sep);
+	if (segments[0] !== '.workflows') {
+		return workflowPath;
+	}
+
+	const canonicalPath = path.join(repoDir, 'workflows', ...segments.slice(1));
+	return fs.existsSync(canonicalPath) ? canonicalPath : workflowPath;
+}
 
 /**
  * Test whether a config entry is a marketplace reference
@@ -45,6 +236,10 @@ const MARKETPLACE_REF_RE = /^[a-zA-Z0-9_-]+@[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
  */
 export function isMarketplaceRef(entry: string): boolean {
 	return MARKETPLACE_REF_RE.test(entry);
+}
+
+export function isMarketplaceSlug(entry: string): boolean {
+	return MARKETPLACE_SLUG_RE.test(entry);
 }
 
 /**
@@ -145,64 +340,151 @@ export function resolveMarketplacePlugin(ref: string): string {
 	const {pluginName, owner, repo} = parseRef(ref);
 	const cacheDir = path.join(os.homedir(), '.config', 'athena', 'marketplaces');
 	const repoDir = ensureRepo(cacheDir, owner, repo);
+	return resolvePluginDirFromManifest(
+		pluginName,
+		repoDir,
+		resolvePluginManifestPath(repoDir),
+	);
+}
 
-	// Read marketplace manifest
-	const manifestPath = path.join(repoDir, '.claude-plugin', 'marketplace.json');
-	if (!fs.existsSync(manifestPath)) {
-		throw new Error(`Marketplace manifest not found: ${manifestPath}`);
+export function resolveMarketplacePluginFromRepo(
+	ref: string,
+	repoDir: string,
+): string {
+	const {pluginName} = parseRef(ref);
+	return resolvePluginDirFromManifest(
+		pluginName,
+		repoDir,
+		resolvePluginManifestPath(repoDir),
+	);
+}
+
+export function findMarketplaceRepoDir(startPath: string): string | undefined {
+	let currentDir = path.resolve(startPath);
+
+	for (;;) {
+		if (
+			fs.existsSync(resolveWorkflowManifestPath(currentDir)) ||
+			fs.existsSync(resolvePluginManifestPath(currentDir))
+		) {
+			return currentDir;
+		}
+
+		const parentDir = path.dirname(currentDir);
+		if (parentDir === currentDir) {
+			return undefined;
+		}
+		currentDir = parentDir;
+	}
+}
+
+export function resolveWorkflowMarketplaceSource(
+	source: string,
+): WorkflowMarketplaceSource {
+	const trimmed = source.trim();
+	const resolvedPath = path.resolve(trimmed);
+
+	if (!fs.existsSync(resolvedPath) && isMarketplaceSlug(trimmed)) {
+		const slashIdx = trimmed.indexOf('/');
+		return {
+			kind: 'remote',
+			slug: trimmed,
+			owner: trimmed.slice(0, slashIdx),
+			repo: trimmed.slice(slashIdx + 1),
+		};
 	}
 
-	const manifest = JSON.parse(
-		fs.readFileSync(manifestPath, 'utf-8'),
-	) as MarketplaceManifest;
-
-	if (!Array.isArray(manifest.plugins)) {
+	const repoDir = findMarketplaceRepoDir(trimmed);
+	if (!repoDir) {
 		throw new Error(
-			`Invalid marketplace manifest at ${manifestPath}: "plugins" must be an array`,
+			`Local marketplace not found from source: ${trimmed}. Expected a marketplace repo root or a path inside one.`,
 		);
 	}
 
-	const entry = manifest.plugins.find(p => p.name === pluginName);
-	if (!entry) {
-		const available = manifest.plugins.map(p => p.name).join(', ');
+	return {
+		kind: 'local',
+		path: resolvedPath,
+		repoDir,
+	};
+}
+
+export function resolveWorkflowInstallSource(
+	source: string,
+	configuredMarketplaceSource: string,
+): string {
+	if (isMarketplaceRef(source)) {
+		return source;
+	}
+
+	const resolvedPath = path.resolve(source);
+	if (fs.existsSync(resolvedPath)) {
+		return source;
+	}
+
+	if (source.includes('/') || source.includes('\\')) {
+		throw new Error(`Workflow source not found: ${source}`);
+	}
+
+	const marketplaceSource =
+		resolveWorkflowMarketplaceSource(configuredMarketplaceSource);
+
+	if (marketplaceSource.kind === 'remote') {
+		const workflow = listMarketplaceWorkflows(
+			marketplaceSource.owner,
+			marketplaceSource.repo,
+		).find(entry => entry.name === source);
+		if (!workflow) {
+			throw new Error(
+				`Workflow "${source}" not found in marketplace ${marketplaceSource.slug}`,
+			);
+		}
+		return workflow.ref;
+	}
+
+	const workflow = listMarketplaceWorkflowsFromRepo(
+		marketplaceSource.repoDir,
+	).find(entry => entry.name === source);
+	if (!workflow) {
 		throw new Error(
-			`Plugin "${pluginName}" not found in marketplace ${owner}/${repo}. Available plugins: ${available}`,
+			`Workflow "${source}" not found in local marketplace ${marketplaceSource.repoDir}`,
+		);
+	}
+	return workflow.workflowPath;
+}
+
+export function listMarketplaceWorkflows(
+	owner: string,
+	repo: string,
+): MarketplaceWorkflowListing[] {
+	try {
+		execFileSync('git', ['--version'], {stdio: 'ignore'});
+	} catch {
+		throw new Error(
+			'git is not installed. Install git to use marketplace workflows.',
 		);
 	}
 
-	if (typeof entry.source !== 'string') {
-		throw new Error(
-			`Plugin "${pluginName}" uses a remote source type which is not supported by athena-cli. Only relative path sources are supported.`,
-		);
-	}
+	const cacheDir = path.join(os.homedir(), '.config', 'athena', 'marketplaces');
+	const repoDir = ensureRepo(cacheDir, owner, repo);
+	return listWorkflowEntriesFromManifest(
+		repoDir,
+		resolveWorkflowManifestPath(repoDir),
+		owner,
+		repo,
+	);
+}
 
-	// If pluginRoot is set and source is a bare name (not a relative path),
-	// prepend pluginRoot. This lets manifests use short names like "formatter"
-	// with pluginRoot "./plugins" instead of "./plugins/formatter".
-	const {pluginRoot} = manifest.metadata ?? {};
-	let sourcePath = entry.source;
-	if (
-		pluginRoot &&
-		!sourcePath.startsWith('./') &&
-		!sourcePath.startsWith('../')
-	) {
-		sourcePath = path.join(pluginRoot, sourcePath);
-	}
-
-	const pluginDir = path.resolve(repoDir, sourcePath);
-
-	// Guard against path traversal from malicious manifests
-	if (!pluginDir.startsWith(repoDir + path.sep) && pluginDir !== repoDir) {
-		throw new Error(
-			`Plugin "${pluginName}" source resolves outside the marketplace repo: ${pluginDir}`,
-		);
-	}
-
-	if (!fs.existsSync(pluginDir)) {
-		throw new Error(`Plugin source directory not found: ${pluginDir}`);
-	}
-
-	return pluginDir;
+export function listMarketplaceWorkflowsFromRepo(
+	repoDir: string,
+	owner = 'local',
+	repo = path.basename(repoDir),
+): MarketplaceWorkflowListing[] {
+	return listWorkflowEntriesFromManifest(
+		repoDir,
+		resolveWorkflowManifestPath(repoDir),
+		owner,
+		repo,
+	);
 }
 
 /**
@@ -220,71 +502,9 @@ export function resolveMarketplaceWorkflow(ref: string): string {
 	const {pluginName: workflowName, owner, repo} = parseRef(ref);
 	const cacheDir = path.join(os.homedir(), '.config', 'athena', 'marketplaces');
 	const repoDir = ensureRepo(cacheDir, owner, repo);
-
-	const preferredManifestPath = path.join(
+	return resolveWorkflowPathFromManifest(
+		workflowName,
 		repoDir,
-		'.athena-workflow',
-		'marketplace.json',
+		resolveWorkflowManifestPath(repoDir),
 	);
-	const legacyManifestPath = path.join(
-		repoDir,
-		'.claude-plugin',
-		'marketplace.json',
-	);
-	const manifestPath = fs.existsSync(preferredManifestPath)
-		? preferredManifestPath
-		: legacyManifestPath;
-	if (!fs.existsSync(manifestPath)) {
-		throw new Error(
-			`Marketplace manifest not found: ${preferredManifestPath} (legacy fallback: ${legacyManifestPath})`,
-		);
-	}
-
-	const manifest = JSON.parse(
-		fs.readFileSync(manifestPath, 'utf-8'),
-	) as MarketplaceManifest;
-
-	const workflows = manifest.workflows ?? [];
-	const entry = workflows.find(w => w.name === workflowName);
-	if (!entry) {
-		const available = workflows.map(w => w.name).join(', ') || '(none)';
-		throw new Error(
-			`Workflow "${workflowName}" not found in marketplace ${owner}/${repo}. Available workflows: ${available}`,
-		);
-	}
-
-	if (typeof entry.source !== 'string') {
-		throw new Error(
-			`Workflow "${workflowName}" uses a remote source type which is not supported.`,
-		);
-	}
-
-	let sourcePath = entry.source;
-	const {workflowRoot} = manifest.metadata ?? {};
-	if (
-		workflowRoot &&
-		!path.isAbsolute(sourcePath) &&
-		!sourcePath.startsWith('./') &&
-		!sourcePath.startsWith('../')
-	) {
-		sourcePath = path.join(workflowRoot, sourcePath);
-	}
-
-	const workflowPath = path.resolve(repoDir, sourcePath);
-
-	// Guard against path traversal
-	if (
-		!workflowPath.startsWith(repoDir + path.sep) &&
-		workflowPath !== repoDir
-	) {
-		throw new Error(
-			`Workflow "${workflowName}" source resolves outside the marketplace repo: ${workflowPath}`,
-		);
-	}
-
-	if (!fs.existsSync(workflowPath)) {
-		throw new Error(`Workflow source not found: ${workflowPath}`);
-	}
-
-	return workflowPath;
 }

@@ -35,6 +35,8 @@ export type AthenaConfig = {
 	theme?: string;
 	/** Globally selected workflow name */
 	activeWorkflow?: string;
+	/** Workflow marketplace source: owner/repo slug or local marketplace path */
+	workflowMarketplaceSource?: string;
 	/** Per-workflow saved selections (for MCP option args, etc.) */
 	workflowSelections?: WorkflowSelections;
 	/** Whether the setup wizard has been completed */
@@ -83,6 +85,7 @@ function readConfigFile(configPath: string, baseDir: string): AthenaConfig {
 		model?: string;
 		theme?: string;
 		activeWorkflow?: string;
+		workflowMarketplaceSource?: string;
 		workflowSelections?: WorkflowSelections;
 		setupComplete?: boolean;
 		harness?: string;
@@ -118,6 +121,7 @@ function readConfigFile(configPath: string, baseDir: string): AthenaConfig {
 		model: raw.model,
 		theme: raw.theme,
 		activeWorkflow: raw.activeWorkflow,
+		workflowMarketplaceSource: raw.workflowMarketplaceSource,
 		workflowSelections: raw.workflowSelections,
 		setupComplete: raw.setupComplete as boolean | undefined,
 		harness:

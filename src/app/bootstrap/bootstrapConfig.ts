@@ -11,10 +11,11 @@ import type {
 	HarnessProcessPreset,
 } from '../../core/runtime/process';
 import {
+	compileWorkflowPlan,
 	installWorkflowPlugins,
 	resolveWorkflow,
 } from '../../core/workflows/index';
-import type {WorkflowConfig} from '../../core/workflows/types';
+import type {WorkflowConfig, WorkflowPlan} from '../../core/workflows';
 import {DEFAULT_HARNESS} from '../runtime/createRuntime';
 import {resolveHarnessConfigProfile} from '../../harnesses/configProfiles';
 
@@ -36,6 +37,7 @@ export type RuntimeBootstrapOutput = {
 	pluginMcpConfig?: string;
 	workflowRef?: string;
 	workflow?: WorkflowConfig;
+	workflowPlan?: WorkflowPlan;
 	modelName: string | null;
 	warnings: string[];
 };
@@ -131,6 +133,14 @@ export function bootstrapRuntimeConfig({
 		...projectConfig.additionalDirectories,
 	];
 	const harnessConfigProfile = resolveHarnessConfigProfile(harness);
+	const workflowPlan = compileWorkflowPlan({
+		workflow: activeWorkflow,
+		pluginDirs:
+			activeWorkflow && resolvedWorkflow?.name === activeWorkflow.name
+				? workflowPluginDirs
+				: undefined,
+		pluginMcpConfig,
+	});
 
 	const configModel =
 		projectConfig.model || globalConfig.model || activeWorkflow?.model;
@@ -170,6 +180,7 @@ export function bootstrapRuntimeConfig({
 		pluginMcpConfig,
 		workflowRef: activeWorkflow?.name,
 		workflow: activeWorkflow,
+		workflowPlan,
 		modelName,
 		warnings,
 	};

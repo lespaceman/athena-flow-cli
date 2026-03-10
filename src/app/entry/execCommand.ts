@@ -26,7 +26,7 @@ export type ExecCliFlags = {
 
 export type ExecRuntimeConfig = Pick<
 	RuntimeBootstrapOutput,
-	'harness' | 'isolationConfig' | 'pluginMcpConfig' | 'workflow'
+	'harness' | 'isolationConfig' | 'pluginMcpConfig' | 'workflow' | 'workflowPlan'
 >;
 
 export type RunExecCommandInput = {
@@ -181,6 +181,7 @@ export async function runExecCommand(
 		isolationConfig: input.runtimeConfig.isolationConfig,
 		pluginMcpConfig: input.runtimeConfig.pluginMcpConfig,
 		workflow: input.runtimeConfig.workflow,
+		workflowPlan: input.runtimeConfig.workflowPlan,
 		verbose: input.flags.verbose,
 		json: input.flags.json,
 		outputLastMessagePath: input.flags.outputLastMessage,

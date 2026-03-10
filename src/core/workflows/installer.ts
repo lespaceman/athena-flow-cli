@@ -5,17 +5,26 @@
  * into absolute directory paths using the existing marketplace resolver.
  */
 
-import {resolveMarketplacePlugin} from '../../infra/plugins/marketplace';
-import type {WorkflowConfig} from './types';
+import {
+	resolveMarketplacePlugin,
+	resolveMarketplacePluginFromRepo,
+} from '../../infra/plugins/marketplace';
+import type {ResolvedWorkflowConfig, WorkflowConfig} from './types';
 
 /**
  * Resolve all plugins listed in a workflow to absolute directory paths.
  * Uses the marketplace resolver for `name@owner/repo` refs.
  * Throws on the first plugin that fails to resolve, with the specific ref in the message.
  */
-export function installWorkflowPlugins(workflow: WorkflowConfig): string[] {
+export function installWorkflowPlugins(
+	workflow: WorkflowConfig | ResolvedWorkflowConfig,
+): string[] {
 	return workflow.plugins.map(ref => {
 		try {
+			const source = '__source' in workflow ? workflow.__source : undefined;
+			if (source?.kind === 'local' && source.repoDir) {
+				return resolveMarketplacePluginFromRepo(ref, source.repoDir);
+			}
 			return resolveMarketplacePlugin(ref);
 		} catch (error) {
 			throw new Error(

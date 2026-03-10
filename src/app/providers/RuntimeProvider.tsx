@@ -46,6 +46,7 @@ export function HookProvider({
 	projectDir,
 	instanceId,
 	harness,
+	workflow,
 	runtime: providedRuntime,
 	runtimeFactory = createRuntime,
 	allowedTools,
@@ -54,8 +55,15 @@ export function HookProvider({
 }: HookProviderProps) {
 	// Runtime must be stable (memoized) — useFeed assumes it doesn't change
 	const runtime = useMemo(
-		() => providedRuntime ?? runtimeFactory({harness, projectDir, instanceId}),
-		[providedRuntime, runtimeFactory, harness, projectDir, instanceId],
+		() =>
+			providedRuntime ??
+			runtimeFactory({
+				harness,
+				projectDir,
+				instanceId,
+				...(workflow ? {workflow} : {}),
+			}),
+		[providedRuntime, runtimeFactory, harness, projectDir, instanceId, workflow],
 	);
 
 	const sessionStore = useMemo(

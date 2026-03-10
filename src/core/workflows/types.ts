@@ -30,3 +30,18 @@ export type WorkflowConfig = {
 	/** Path to system prompt file, passed as --append-system-prompt-file */
 	systemPromptFile?: string;
 };
+
+export type WorkflowSourceMetadata =
+	| {
+			kind: 'marketplace';
+			ref: string;
+	  }
+	| {
+			kind: 'local';
+			path: string;
+			repoDir?: string;
+	  };
+
+export type ResolvedWorkflowConfig = WorkflowConfig & {
+	__source?: WorkflowSourceMetadata;
+};

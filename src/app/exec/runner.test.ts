@@ -11,7 +11,6 @@ import type {
 } from '../../core/runtime/types';
 import {runExec} from './runner';
 import {EXEC_EXIT_CODE} from './types';
-import * as workflowsModule from '../../core/workflows';
 
 class MockRuntime implements Runtime {
 	private eventHandlers = new Set<RuntimeEventHandler>();
@@ -410,31 +409,8 @@ describe('runExec', () => {
 		const runtime = new MockRuntime();
 		const stdout = createWriteCapture();
 		const stderr = createWriteCapture();
-		const existsSync = vi.spyOn(fs, 'existsSync');
-		const cleanupTrackerFile = vi.spyOn(workflowsModule, 'cleanupTrackerFile');
-		const createLoopManager = vi.spyOn(workflowsModule, 'createLoopManager');
-		const mockLoopManager = {
-			isTerminal: vi.fn().mockReturnValue(true),
-			getState: vi.fn().mockReturnValue({
-				active: true,
-				iteration: 0,
-				maxIterations: 5,
-				completed: true,
-				blocked: false,
-				reachedLimit: false,
-			}),
-			incrementIteration: vi.fn(),
-			deactivate: vi.fn(),
-			trackerPath: '/tmp/tracker.md',
-		};
-
-		createLoopManager.mockReturnValue(
-			mockLoopManager as unknown as ReturnType<
-				typeof workflowsModule.createLoopManager
-			>,
-		);
-
-		existsSync.mockImplementation(pathArg => pathArg === '/tmp/tracker.md');
+		const trackerPath = '/tmp/tracker.md';
+		fs.writeFileSync(trackerPath, '<!-- DONE -->', 'utf-8');
 
 		const spawnProcess = (opts: SpawnArgs): ChildProcess => {
 			const child = makeChildProcess();
@@ -480,12 +456,9 @@ describe('runExec', () => {
 			});
 
 			expect(result.success).toBe(true);
-			expect(cleanupTrackerFile).toHaveBeenCalledWith('/tmp/tracker.md');
-			expect(mockLoopManager.deactivate).toHaveBeenCalledTimes(1);
+			expect(fs.existsSync(trackerPath)).toBe(false);
 		} finally {
-			existsSync.mockRestore();
-			cleanupTrackerFile.mockRestore();
-			createLoopManager.mockRestore();
+			fs.rmSync(trackerPath, {force: true});
 		}
 	});
 

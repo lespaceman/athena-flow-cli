@@ -10,8 +10,8 @@ describe('formatTokenCount', () => {
 		expect(formatTokenCount(1500)).toBe('1.5k');
 	});
 
-	it('returns 0 for null', () => {
-		expect(formatTokenCount(null)).toBe('0');
+	it('returns placeholder for null', () => {
+		expect(formatTokenCount(null)).toBe('--');
 	});
 
 	it('formats sub-1000 as-is', () => {
@@ -29,7 +29,7 @@ describe('renderContextBar', () => {
 
 	it('renders empty bar when used is null', () => {
 		const result = renderContextBar(null, 200000, 24, false);
-		expect(result).toContain('0 / 200k');
+		expect(result).toContain('-- / 200k');
 	});
 
 	it('renders color bar with ANSI codes', () => {

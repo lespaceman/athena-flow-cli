@@ -25,7 +25,9 @@ describe('useCodexSessionController', () => {
 			onEvent,
 		} as unknown as Runtime;
 
-		const {result} = renderHook(() => useCodexSessionController(runtime));
+		const {result} = renderHook(() =>
+			useCodexSessionController(runtime, {model: 'gpt-5.3-codex'}),
+		);
 
 		await act(async () => {
 			await result.current.spawn('continue the task', 'thread-123', {
@@ -35,8 +37,38 @@ describe('useCodexSessionController', () => {
 
 		expect(sendPrompt).toHaveBeenCalledWith(
 			'continue the task',
-			'thread-123',
+			{
+				threadIdToResume: 'thread-123',
+				model: 'gpt-5.3-codex',
+				developerInstructions: undefined,
+				skillRoots: undefined,
+				config: undefined,
+				ephemeral: undefined,
+			},
 		);
 		expect(result.current.isRunning).toBe(false);
+	});
+
+	it('forwards ephemeral execution to the Codex runtime', async () => {
+		const runtime = {
+			sendPrompt,
+			sendInterrupt,
+			onEvent,
+		} as unknown as Runtime;
+
+		const {result} = renderHook(() =>
+			useCodexSessionController(runtime, {model: 'gpt-5.3-codex'}, undefined, true),
+		);
+
+		await act(async () => {
+			await result.current.spawn('ephemeral task');
+		});
+
+		expect(sendPrompt).toHaveBeenCalledWith(
+			'ephemeral task',
+			expect.objectContaining({
+				ephemeral: true,
+			}),
+		);
 	});
 });

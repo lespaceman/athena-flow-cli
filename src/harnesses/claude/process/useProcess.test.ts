@@ -5,8 +5,6 @@ import {describe, it, expect, vi, beforeEach, afterEach} from 'vitest';
 import {renderHook, act} from '@testing-library/react';
 import {useClaudeProcess} from './useProcess';
 import * as spawnModule from './spawn';
-import * as workflowModule from '../../../core/workflows';
-import fs from 'node:fs';
 import {EventEmitter} from 'node:events';
 import type {ChildProcess} from 'node:child_process';
 import type {WorkflowConfig} from '../../../core/workflows/types';
@@ -20,13 +18,6 @@ function createMockChildProcess(): ChildProcess {
 
 vi.mock('./spawn', () => ({
 	spawnClaude: vi.fn(),
-}));
-
-vi.mock('../../../core/workflows', () => ({
-	applyPromptTemplate: vi.fn((_tpl: string, prompt: string) => prompt),
-	createLoopManager: vi.fn(),
-	buildContinuePrompt: vi.fn(() => 'Continue the task.'),
-	cleanupTrackerFile: vi.fn(),
 }));
 
 describe('useClaudeProcess', () => {
@@ -869,345 +860,41 @@ describe('useClaudeProcess', () => {
 		);
 	});
 
-	it('should pass workflow systemPromptFile to harness isolation when file exists', async () => {
-		const existsSpy = vi
-			.spyOn(fs, 'existsSync')
-			.mockImplementation(p => p === '/test/workflow-prompt.md');
-		try {
-			const workflow: WorkflowConfig = {
-				name: 'wf',
-				plugins: [],
-				promptTemplate: '{input}',
-				systemPromptFile: 'workflow-prompt.md',
-			};
-
-			const {result} = renderHook(() =>
-				useClaudeProcess(
-					'/test',
-					TEST_INSTANCE_ID,
-					undefined,
-					undefined,
-					false,
-					workflow,
-				),
-			);
-
-			await act(async () => {
-				await result.current.spawn('test prompt');
-			});
-
-			expect(spawnModule.spawnClaude).toHaveBeenCalledWith(
-				expect.objectContaining({
-					isolation: expect.objectContaining({
-						appendSystemPromptFile: '/test/workflow-prompt.md',
-					}),
-				}),
-			);
-		} finally {
-			existsSpy.mockRestore();
-		}
-	});
-
-	it('should skip missing workflow systemPromptFile instead of passing invalid appendSystemPromptFile', async () => {
-		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-		try {
-			const workflow: WorkflowConfig = {
-				name: 'wf',
-				plugins: [],
-				promptTemplate: '{input}',
-				systemPromptFile: 'missing-prompt.md',
-			};
-
-			const {result} = renderHook(() =>
-				useClaudeProcess(
-					'/test',
-					TEST_INSTANCE_ID,
-					undefined,
-					undefined,
-					false,
-					workflow,
-				),
-			);
-
-			await act(async () => {
-				await result.current.spawn('test prompt');
-			});
-
-			expect(spawnModule.spawnClaude).toHaveBeenCalledWith(
-				expect.objectContaining({
-					prompt: 'test prompt',
-				}),
-			);
-			expect(capturedOptions['isolation']).toBeUndefined();
-			expect(errorSpy).toHaveBeenCalledWith(
-				expect.stringContaining('system prompt file not found'),
-			);
-		} finally {
-			errorSpy.mockRestore();
-		}
-	});
-
-	describe('workflow loop respawn', () => {
-		const loopWorkflow: WorkflowConfig = {
-			name: 'test-loop',
+	it('passes workflow env through to Claude spawn without applying workflow logic internally', async () => {
+		const workflow: WorkflowConfig = {
+			name: 'wf',
 			plugins: [],
-			promptTemplate: '{prompt}',
+			promptTemplate: 'Wrapped: {input}',
+			systemPromptFile: 'workflow-prompt.md',
+			env: {ATHENA_WORKFLOW: '1'},
 			loop: {
 				enabled: true,
 				completionMarker: '<!-- DONE -->',
 				maxIterations: 5,
-				trackerPath: 'tracker.md',
 			},
 		};
 
-		it('should not respawn loop on non-zero exit code', async () => {
-			const mockLoopManager = {
-				isTerminal: vi.fn().mockReturnValue(false),
-				getState: vi.fn().mockReturnValue({
-					active: true,
-					iteration: 0,
-					maxIterations: 5,
-					completed: false,
-					blocked: false,
-					reachedLimit: false,
-				}),
-				incrementIteration: vi.fn(),
-				deactivate: vi.fn(),
-				trackerPath: '/tmp/tracker.md',
-			};
-			vi.mocked(workflowModule.createLoopManager).mockReturnValue(
-				mockLoopManager,
-			);
+		const {result} = renderHook(() =>
+			useClaudeProcess(
+				'/test',
+				TEST_INSTANCE_ID,
+				undefined,
+				undefined,
+				false,
+				workflow,
+			),
+		);
 
-			const {result} = renderHook(() =>
-				useClaudeProcess(
-					'/test',
-					TEST_INSTANCE_ID,
-					undefined,
-					undefined,
-					false,
-					loopWorkflow,
-				),
-			);
-
-			await act(async () => {
-				await result.current.spawn('test prompt');
-			});
-
-			const spawnCountBefore = vi.mocked(spawnModule.spawnClaude).mock.calls
-				.length;
-
-			// Simulate non-zero exit (error)
-			act(() => {
-				capturedCallbacks.onExit?.(1);
-			});
-
-			// Should NOT have respawned
-			expect(vi.mocked(spawnModule.spawnClaude).mock.calls.length).toBe(
-				spawnCountBefore,
-			);
-			expect(result.current.isRunning).toBe(false);
+		await act(async () => {
+			await result.current.spawn('test prompt');
 		});
 
-		it('should respawn loop on exit code 0 when not terminal', async () => {
-			const existsSpy = vi
-				.spyOn(fs, 'existsSync')
-				.mockImplementation(p => p === '/tmp/tracker.md');
-			const mockLoopManager = {
-				isTerminal: vi.fn().mockReturnValue(false),
-				getState: vi.fn().mockReturnValue({
-					active: true,
-					iteration: 0,
-					maxIterations: 5,
-					completed: false,
-					blocked: false,
-					reachedLimit: false,
-				}),
-				incrementIteration: vi.fn(),
-				deactivate: vi.fn(),
-				trackerPath: '/tmp/tracker.md',
-			};
-			vi.mocked(workflowModule.createLoopManager).mockReturnValue(
-				mockLoopManager,
-			);
-
-			try {
-				const {result} = renderHook(() =>
-					useClaudeProcess(
-						'/test',
-						TEST_INSTANCE_ID,
-						undefined,
-						undefined,
-						false,
-						loopWorkflow,
-					),
-				);
-
-				await act(async () => {
-					await result.current.spawn('test prompt');
-				});
-
-				const spawnCountBefore = vi.mocked(spawnModule.spawnClaude).mock.calls
-					.length;
-
-				// Simulate successful exit
-				await act(async () => {
-					capturedCallbacks.onExit?.(0);
-				});
-
-				// Should have respawned (one more call)
-				expect(vi.mocked(spawnModule.spawnClaude).mock.calls.length).toBe(
-					spawnCountBefore + 1,
-				);
-				expect(mockLoopManager.incrementIteration).toHaveBeenCalledTimes(1);
-			} finally {
-				existsSpy.mockRestore();
-			}
-		});
-
-		it('should not respawn loop on exit code 0 when tracker does not exist', async () => {
-			const mockLoopManager = {
-				isTerminal: vi.fn().mockReturnValue(false),
-				getState: vi.fn().mockReturnValue({
-					active: true,
-					iteration: 0,
-					maxIterations: 5,
-					completed: false,
-					blocked: false,
-					reachedLimit: false,
-				}),
-				incrementIteration: vi.fn(),
-				deactivate: vi.fn(),
-				trackerPath: '/tmp/missing-tracker.md',
-			};
-			vi.mocked(workflowModule.createLoopManager).mockReturnValue(
-				mockLoopManager,
-			);
-
-			const {result} = renderHook(() =>
-				useClaudeProcess(
-					'/test',
-					TEST_INSTANCE_ID,
-					undefined,
-					undefined,
-					false,
-					loopWorkflow,
-				),
-			);
-
-			await act(async () => {
-				await result.current.spawn('test prompt');
-			});
-
-			const spawnCountBefore = vi.mocked(spawnModule.spawnClaude).mock.calls
-				.length;
-
-			await act(async () => {
-				capturedCallbacks.onExit?.(0);
-			});
-
-			expect(vi.mocked(spawnModule.spawnClaude).mock.calls.length).toBe(
-				spawnCountBefore,
-			);
-			expect(mockLoopManager.incrementIteration).not.toHaveBeenCalled();
-		});
-
-		it('removes the tracker file when the loop reaches a terminal state', async () => {
-			const existsSpy = vi
-				.spyOn(fs, 'existsSync')
-				.mockImplementation(p => p === '/tmp/tracker.md');
-			const mockLoopManager = {
-				isTerminal: vi.fn().mockReturnValue(true),
-				getState: vi.fn().mockReturnValue({
-					active: true,
-					iteration: 0,
-					maxIterations: 5,
-					completed: true,
-					blocked: false,
-					reachedLimit: false,
-				}),
-				incrementIteration: vi.fn(),
-				deactivate: vi.fn(),
-				trackerPath: '/tmp/tracker.md',
-			};
-			vi.mocked(workflowModule.createLoopManager).mockReturnValue(
-				mockLoopManager,
-			);
-
-			try {
-				const {result} = renderHook(() =>
-					useClaudeProcess(
-						'/test',
-						TEST_INSTANCE_ID,
-						undefined,
-						undefined,
-						false,
-						loopWorkflow,
-					),
-				);
-
-				await act(async () => {
-					await result.current.spawn('test prompt');
-				});
-
-				await act(async () => {
-					capturedCallbacks.onExit?.(0);
-				});
-
-				expect(workflowModule.cleanupTrackerFile).toHaveBeenCalledWith(
-					'/tmp/tracker.md',
-				);
-				expect(mockLoopManager.deactivate).toHaveBeenCalledTimes(1);
-			} finally {
-				existsSpy.mockRestore();
-			}
-		});
-
-		it('removes the tracker file when the user stops the loop', async () => {
-			const mockLoopManager = {
-				isTerminal: vi.fn().mockReturnValue(false),
-				getState: vi.fn().mockReturnValue({
-					active: true,
-					iteration: 0,
-					maxIterations: 5,
-					completed: false,
-					blocked: false,
-					reachedLimit: false,
-				}),
-				incrementIteration: vi.fn(),
-				deactivate: vi.fn(),
-				trackerPath: '/tmp/tracker.md',
-			};
-			vi.mocked(workflowModule.createLoopManager).mockReturnValue(
-				mockLoopManager,
-			);
-
-			const {result} = renderHook(() =>
-				useClaudeProcess(
-					'/test',
-					TEST_INSTANCE_ID,
-					undefined,
-					undefined,
-					false,
-					loopWorkflow,
-				),
-			);
-
-			await act(async () => {
-				await result.current.spawn('test prompt');
-			});
-
-			await act(async () => {
-				const killPromise = result.current.kill();
-				capturedCallbacks.onExit?.(null);
-				await killPromise;
-			});
-
-			expect(workflowModule.cleanupTrackerFile).toHaveBeenCalledWith(
-				'/tmp/tracker.md',
-			);
-			expect(mockLoopManager.deactivate).toHaveBeenCalledTimes(1);
-			expect(result.current.isRunning).toBe(false);
-		});
+		expect(spawnModule.spawnClaude).toHaveBeenCalledWith(
+			expect.objectContaining({
+				prompt: 'test prompt',
+				env: {ATHENA_WORKFLOW: '1'},
+			}),
+		);
+		expect(capturedOptions['isolation']).toBeUndefined();
 	});
 });

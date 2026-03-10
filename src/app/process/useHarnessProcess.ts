@@ -1,5 +1,5 @@
 import type {AthenaHarness} from '../../infra/plugins/config';
-import type {WorkflowConfig} from '../../core/workflows/types';
+import type {WorkflowConfig, WorkflowPlan} from '../../core/workflows';
 import type {
 	HarnessProcessConfig,
 	HarnessProcessOverride,
@@ -9,6 +9,7 @@ import type {
 import type {TokenUsage} from '../../shared/types/headerMetrics';
 import type {UseSessionControllerResult} from '../../harnesses/contracts/session';
 import {resolveHarnessAdapter} from '../../harnesses/registry';
+import {useWorkflowSessionController} from '../../core/workflows/useWorkflowSessionController';
 import {useRuntime} from '../providers/RuntimeProvider';
 
 export type HarnessProcessResult = UseSessionControllerResult<HarnessProcessOverride> & {
@@ -23,6 +24,7 @@ export type UseHarnessProcessInput = {
 	pluginMcpConfig?: string;
 	verbose?: boolean;
 	workflow?: WorkflowConfig;
+	workflowPlan?: WorkflowPlan;
 	options?: HarnessProcessOptions;
 };
 
@@ -38,12 +40,17 @@ export function useHarnessProcess(
 		pluginMcpConfig: input.pluginMcpConfig,
 		verbose: input.verbose,
 		workflow: input.workflow,
+		workflowPlan: input.workflowPlan,
 		options: input.options,
 		runtime,
 	});
+	const workflowController = useWorkflowSessionController(controller, {
+		projectDir: input.projectDir,
+		workflow: input.workflow,
+	});
 
 	return {
-		...controller,
-		tokenUsage: controller.usage,
+		...workflowController,
+		tokenUsage: workflowController.usage,
 	};
 }

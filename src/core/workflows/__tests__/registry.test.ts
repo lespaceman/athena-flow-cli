@@ -52,10 +52,11 @@ vi.mock('node:os', () => ({
 vi.mock('../../../infra/plugins/marketplace', () => ({
 	isMarketplaceRef: (entry: string) =>
 		/^[a-zA-Z0-9_-]+@[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(entry),
+	findMarketplaceRepoDir: () => undefined,
 	resolveMarketplaceWorkflow: () => '/tmp/resolved-workflow.json',
 }));
 
-const {resolveWorkflow, installWorkflow, listWorkflows, removeWorkflow} =
+const {resolveWorkflow, installWorkflow, updateWorkflow, listWorkflows, removeWorkflow} =
 	await import('../registry');
 
 beforeEach(() => {
@@ -78,6 +79,66 @@ describe('resolveWorkflow', () => {
 		const result = resolveWorkflow('e2e-testing');
 
 		expect(result).toEqual(workflow);
+	});
+
+	it('attaches local source repo metadata when installed from a local marketplace checkout', () => {
+		const workflow = {
+			name: 'local-marketplace',
+			plugins: ['plugin@owner/repo'],
+			promptTemplate: '{input}',
+		};
+		files[
+			'/home/testuser/.config/athena/workflows/local-marketplace/workflow.json'
+		] = JSON.stringify(workflow);
+		files[
+			'/home/testuser/.config/athena/workflows/local-marketplace/source.json'
+		] = JSON.stringify({
+			kind: 'local',
+			path: '/tmp/workflow-marketplace/workflows/local-marketplace/workflow.json',
+			repoDir: '/tmp/workflow-marketplace',
+		});
+		files[
+			'/tmp/workflow-marketplace/workflows/local-marketplace/workflow.json'
+		] = JSON.stringify(workflow);
+
+		const result = resolveWorkflow('local-marketplace');
+
+		expect(result.__source).toEqual({
+			kind: 'local',
+			path: '/tmp/workflow-marketplace/workflows/local-marketplace/workflow.json',
+			repoDir: '/tmp/workflow-marketplace',
+		});
+	});
+
+	it('does not silently re-sync local workflow content on resolve', () => {
+		files['/home/testuser/.config/athena/workflows/local-copy/workflow.json'] =
+			JSON.stringify({
+				name: 'local-copy',
+				plugins: [],
+				promptTemplate: 'installed snapshot',
+			});
+		files['/home/testuser/.config/athena/workflows/local-copy/source.json'] =
+			JSON.stringify({
+				kind: 'local',
+				path: '/tmp/workflow-marketplace/workflows/local-copy/workflow.json',
+			});
+		files['/tmp/workflow-marketplace/workflows/local-copy/workflow.json'] =
+			JSON.stringify({
+				name: 'local-copy',
+				plugins: [],
+				promptTemplate: 'live source',
+			});
+
+		const result = resolveWorkflow('local-copy');
+
+		expect(result.promptTemplate).toBe('installed snapshot');
+		expect(
+			JSON.parse(
+				files[
+					'/home/testuser/.config/athena/workflows/local-copy/workflow.json'
+				]!,
+			).promptTemplate,
+		).toBe('installed snapshot');
 	});
 
 	it('throws when workflow is not installed', () => {
@@ -306,6 +367,16 @@ describe('installWorkflow', () => {
 				'/home/testuser/.config/athena/workflows/my-workflow/workflow.json'
 			],
 		).toBeDefined();
+		expect(
+			JSON.parse(
+				files[
+					'/home/testuser/.config/athena/workflows/my-workflow/source.json'
+				]!,
+			),
+		).toEqual({
+			kind: 'local',
+			path: '/tmp/workflow.json',
+		});
 	});
 
 	it('installs from marketplace ref', () => {
@@ -345,11 +416,12 @@ describe('installWorkflow', () => {
 			files['/home/testuser/.config/athena/workflows/mkt-workflow/source.json'];
 		expect(sourceFile).toBeDefined();
 		expect(JSON.parse(sourceFile!)).toEqual({
+			kind: 'marketplace',
 			ref: 'mkt-workflow@owner/repo',
 		});
 	});
 
-	it('does not persist source ref for local file installs', () => {
+	it('records local source metadata for local file installs', () => {
 		files['/tmp/workflow.json'] = JSON.stringify({
 			name: 'local-only',
 			plugins: [],
@@ -359,8 +431,15 @@ describe('installWorkflow', () => {
 		installWorkflow('/tmp/workflow.json');
 
 		expect(
-			files['/home/testuser/.config/athena/workflows/local-only/source.json'],
-		).toBeUndefined();
+			JSON.parse(
+				files[
+					'/home/testuser/.config/athena/workflows/local-only/source.json'
+				]!,
+			),
+		).toEqual({
+			kind: 'local',
+			path: '/tmp/workflow.json',
+		});
 	});
 
 	it('copies relative systemPromptFile asset next to installed workflow.json', () => {
@@ -378,6 +457,93 @@ describe('installWorkflow', () => {
 		expect(
 			files['/home/testuser/.config/athena/workflows/asset-workflow/prompt.md'],
 		).toBe('# Prompt');
+	});
+
+	it('rejects workflow assets that escape the source workflow directory', () => {
+		files['/tmp/workflow.json'] = JSON.stringify({
+			name: 'unsafe-workflow',
+			plugins: [],
+			promptTemplate: '{input}',
+			systemPromptFile: '../prompt.md',
+		});
+		files['/prompt.md'] = '# Prompt';
+
+		expect(() => installWorkflow('/tmp/workflow.json')).toThrow(
+			/outside the workflow root/,
+		);
+	});
+});
+
+describe('updateWorkflow', () => {
+	it('re-installs a marketplace workflow from its recorded source', () => {
+		files['/tmp/resolved-workflow.json'] = JSON.stringify({
+			name: 'update-me',
+			plugins: [],
+			promptTemplate: 'new',
+		});
+		files['/home/testuser/.config/athena/workflows/update-me/workflow.json'] =
+			JSON.stringify({
+				name: 'update-me',
+				plugins: [],
+				promptTemplate: 'old',
+			});
+		files['/home/testuser/.config/athena/workflows/update-me/source.json'] =
+			JSON.stringify({
+				kind: 'marketplace',
+				ref: 'update-me@owner/repo',
+			});
+
+		const name = updateWorkflow('update-me');
+
+		expect(name).toBe('update-me');
+		expect(
+			JSON.parse(
+				files[
+					'/home/testuser/.config/athena/workflows/update-me/workflow.json'
+				]!,
+			).promptTemplate,
+		).toBe('new');
+	});
+
+	it('re-installs a local workflow from its recorded source path', () => {
+		files['/tmp/workflow.json'] = JSON.stringify({
+			name: 'local-update',
+			plugins: [],
+			promptTemplate: 'new',
+		});
+		files['/home/testuser/.config/athena/workflows/local-update/workflow.json'] =
+			JSON.stringify({
+				name: 'local-update',
+				plugins: [],
+				promptTemplate: 'old',
+			});
+		files['/home/testuser/.config/athena/workflows/local-update/source.json'] =
+			JSON.stringify({
+				kind: 'local',
+				path: '/tmp/workflow.json',
+			});
+
+		const name = updateWorkflow('local-update');
+
+		expect(name).toBe('local-update');
+		expect(
+			JSON.parse(
+				files[
+					'/home/testuser/.config/athena/workflows/local-update/workflow.json'
+				]!,
+			).promptTemplate,
+		).toBe('new');
+	});
+
+	it('throws when a workflow has no recorded source', () => {
+		files['/home/testuser/.config/athena/workflows/no-source/workflow.json'] =
+			JSON.stringify({
+				name: 'no-source',
+				plugins: [],
+				promptTemplate: '{input}',
+			});
+
+		expect(() => updateWorkflow('no-source')).toThrow(/has no recorded source/);
 	});
 });
 
