@@ -267,6 +267,23 @@ export function translateNotification(
 				return translateCollabCompleted(item);
 			}
 
+			if (itemType === 'agentMessage') {
+				return {
+					kind: 'message.complete',
+					data: {
+						thread_id: params.threadId,
+						turn_id: params.turnId,
+						item_id: item['id'] as string | undefined,
+						message: item['text'] as string | undefined,
+						phase:
+							typeof item['phase'] === 'string' || item['phase'] === null
+								? (item['phase'] as string | null)
+								: undefined,
+					},
+					expectsDecision: false,
+				};
+			}
+
 			const toolName = resolveToolName(itemType, item);
 			if (
 				itemType === 'commandExecution' ||
@@ -350,8 +367,7 @@ function translateCollabStarted(
 	item: Record<string, unknown>,
 ): CodexTranslatedEvent {
 	const agentId = resolveCollabAgentId(item);
-	const tool =
-		typeof item['tool'] === 'string' ? item['tool'] : 'spawnAgent';
+	const tool = typeof item['tool'] === 'string' ? item['tool'] : 'spawnAgent';
 	return {
 		kind: 'subagent.start',
 		data: {
@@ -367,8 +383,7 @@ function translateCollabCompleted(
 	item: Record<string, unknown>,
 ): CodexTranslatedEvent {
 	const agentId = resolveCollabAgentId(item);
-	const tool =
-		typeof item['tool'] === 'string' ? item['tool'] : 'spawnAgent';
+	const tool = typeof item['tool'] === 'string' ? item['tool'] : 'spawnAgent';
 	const status =
 		typeof item['status'] === 'string' ? item['status'] : 'completed';
 	return {

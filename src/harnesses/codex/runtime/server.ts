@@ -72,12 +72,7 @@ function requireThreadId(value: unknown, method: string): string {
  * are suppressed because they are either accumulated (agentMessage) or
  * redundant (userMessage is already shown as user.prompt).
  */
-const SUPPRESSED_ITEM_TYPES = new Set([
-	'agentMessage',
-	'userMessage',
-	'plan',
-	'reasoning',
-]);
+const SUPPRESSED_ITEM_TYPES = new Set(['userMessage', 'plan', 'reasoning']);
 
 const IGNORED_NOTIFICATION_METHODS = new Set([
 	M.THREAD_STATUS_CHANGED,

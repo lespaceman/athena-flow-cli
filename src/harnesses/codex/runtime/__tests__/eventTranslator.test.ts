@@ -66,6 +66,33 @@ describe('translateNotification', () => {
 		);
 	});
 
+	it('maps item/completed (agentMessage) to message.complete', () => {
+		const result = translateNotification({
+			method: 'item/completed',
+			params: {
+				threadId: 'th1',
+				turnId: 't1',
+				item: {
+					id: 'i1',
+					type: 'agentMessage',
+					text: 'Using agent-web-interface-guide because this requires live browser interaction.',
+					phase: 'commentary',
+				},
+			},
+		});
+		expect(result.kind).toBe('message.complete');
+		expect(result.data).toEqual(
+			expect.objectContaining({
+				thread_id: 'th1',
+				turn_id: 't1',
+				item_id: 'i1',
+				message:
+					'Using agent-web-interface-guide because this requires live browser interaction.',
+				phase: 'commentary',
+			}),
+		);
+	});
+
 	it('maps turn/completed to turn.complete', () => {
 		const result = translateNotification({
 			method: 'turn/completed',

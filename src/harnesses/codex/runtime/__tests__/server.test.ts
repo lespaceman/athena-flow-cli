@@ -393,4 +393,46 @@ describe('createCodexServer', () => {
 
 		expect(events).toEqual([]);
 	});
+
+	it('does not suppress completed agentMessage items', async () => {
+		const runtime = createCodexServer({
+			projectDir: '/project',
+			instanceId: 1,
+			binaryPath: 'codex',
+		});
+		const events: RuntimeEvent[] = [];
+		runtime.onEvent(event => {
+			events.push(event);
+		});
+
+		await runtime.start();
+		const manager = mockState.current;
+		expect(manager).not.toBeNull();
+
+		manager!.emit('notification', {
+			method: M.ITEM_COMPLETED,
+			params: {
+				threadId: 'th-1',
+				turnId: 'turn-1',
+				item: {
+					id: 'msg-1',
+					type: 'agentMessage',
+					text: 'Incremental commentary',
+					phase: 'commentary',
+				},
+			},
+		});
+
+		expect(events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: 'message.complete',
+					data: expect.objectContaining({
+						item_id: 'msg-1',
+						message: 'Incremental commentary',
+					}),
+				}),
+			]),
+		);
+	});
 });

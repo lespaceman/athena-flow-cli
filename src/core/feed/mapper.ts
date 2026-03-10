@@ -227,7 +227,14 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 	const activeSubagentStack: string[] = []; // LIFO stack of active subagent actor IDs
 	let lastTaskDescription: string | undefined;
 	const subagentDescriptions = new Map<string, string>(); // agent_id → description
-	let pendingRootMessage = '';
+	const pendingMessages = new Map<
+		string,
+		{
+			message: string;
+			actorId: string;
+			scope: 'root' | 'subagent';
+		}
+	>();
 	const transcriptReader = createTranscriptReader();
 
 	/**
@@ -313,6 +320,77 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 		};
 		const eventKind = event.kind;
 		const results: FeedEvent[] = [];
+		const resolveMessageScope = (): {
+			actorId: string;
+			scope: 'root' | 'subagent';
+		} => {
+			const actorId = resolveToolActor();
+			return {
+				actorId,
+				scope: activeSubagentStack.length > 0 ? 'subagent' : 'root',
+			};
+		};
+		const appendPendingMessageDelta = (
+			itemId: string | undefined,
+			delta: string,
+		): void => {
+			if (!delta) return;
+			const key = itemId ?? '__legacy_root__';
+			const existing = pendingMessages.get(key);
+			if (existing) {
+				existing.message += delta;
+				return;
+			}
+			const scope = resolveMessageScope();
+			pendingMessages.set(key, {
+				message: delta,
+				actorId: scope.actorId,
+				scope: scope.scope,
+			});
+		};
+		const emitCompletedMessage = (
+			itemId: string | undefined,
+			messageText: string | undefined,
+		): void => {
+			const key = itemId ?? '__legacy_root__';
+			const pending = pendingMessages.get(key);
+			const message = messageText ?? pending?.message ?? '';
+			if (!message) return;
+			const scope = pending ?? resolveMessageScope();
+			results.push(
+				makeEvent(
+					'agent.message',
+					'info',
+					scope.actorId,
+					{
+						message,
+						source: 'hook',
+						scope: scope.scope,
+					} satisfies import('./types').AgentMessageData,
+					event,
+				),
+			);
+			pendingMessages.delete(key);
+		};
+		const flushPendingMessages = (): void => {
+			for (const [itemId, pending] of pendingMessages) {
+				if (!pending.message) continue;
+				results.push(
+					makeEvent(
+						'agent.message',
+						'info',
+						pending.actorId,
+						{
+							message: pending.message,
+							source: 'hook',
+							scope: pending.scope,
+						} satisfies import('./types').AgentMessageData,
+						event,
+					),
+				);
+				pendingMessages.delete(itemId);
+			}
+		};
 
 		// Fallback: emit agent.message from last_assistant_message when transcript yields nothing
 		function emitFallbackMessage(
@@ -358,7 +436,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 
 		switch (eventKind) {
 			case 'session.start': {
-				pendingRootMessage = '';
+				pendingMessages.clear();
 				const source = readString(d['source']) ?? 'startup';
 				currentSession = {
 					session_id: event.sessionId,
@@ -389,7 +467,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 			}
 
 			case 'session.end': {
-				pendingRootMessage = '';
+				pendingMessages.clear();
 				if (currentRun) {
 					const closeEvt = closeRun(event, 'completed');
 					if (closeEvt) results.push(closeEvt);
@@ -435,7 +513,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 			}
 
 			case 'turn.start': {
-				pendingRootMessage = '';
+				pendingMessages.clear();
 				const prompt = readString(d['prompt']);
 				results.push(
 					...ensureRunArray(
@@ -463,13 +541,25 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 			}
 
 			case 'message.delta': {
-				pendingRootMessage += readString(d['delta']) ?? '';
+				appendPendingMessageDelta(
+					readString(d['item_id']),
+					readString(d['delta']) ?? '',
+				);
+				break;
+			}
+
+			case 'message.complete': {
+				results.push(...ensureRunArray(event));
+				emitCompletedMessage(
+					readString(d['item_id']),
+					readString(d['message']),
+				);
 				break;
 			}
 
 			case 'turn.complete': {
 				if (!currentRun) {
-					pendingRootMessage = '';
+					pendingMessages.clear();
 					break;
 				}
 				const stopEvt = makeEvent(
@@ -482,23 +572,16 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 					event,
 				);
 				results.push(stopEvt);
-				if (pendingRootMessage) {
-					results.push(
-						makeEvent(
-							'agent.message',
-							'info',
-							'agent:root',
-							{
-								message: pendingRootMessage,
-								source: 'hook',
-								scope: 'root',
-							} satisfies import('./types').AgentMessageData,
-							event,
-							{parent_event_id: stopEvt.event_id},
-						),
-					);
+				const messageCountBeforeFlush = results.length;
+				flushPendingMessages();
+				if (results.length > messageCountBeforeFlush) {
+					for (let i = messageCountBeforeFlush; i < results.length; i++) {
+						results[i]!.cause = {
+							...(results[i]!.cause ?? {}),
+							parent_event_id: stopEvt.event_id,
+						};
+					}
 				}
-				pendingRootMessage = '';
 				const closeEvt = closeRun(event, 'completed');
 				if (closeEvt) {
 					results.push(closeEvt);

@@ -168,7 +168,7 @@ describe('FeedMapper', () => {
 			expect(userPrompt!.actor_id).toBe('user');
 		});
 
-		it('collapses Codex message deltas into agent.message on turn.complete', () => {
+		it('emits Codex agent messages when item completion arrives', () => {
 			const mapper = createFeedMapper();
 			const startResults = mapper.mapEvent(
 				makeRuntimeEvent('turn/started', {
@@ -223,6 +223,39 @@ describe('FeedMapper', () => {
 
 			expect(deltaResults).toEqual([]);
 
+			const completeMessageResults = mapper.mapEvent(
+				makeRuntimeEvent('item/completed', {
+					kind: 'message.complete',
+					hookName: 'item/completed',
+					data: {
+						thread_id: 'th-1',
+						turn_id: 'turn-1',
+						item_id: 'msg-1',
+						message: 'Hello from Codex',
+						phase: 'commentary',
+					},
+					payload: {
+						threadId: 'th-1',
+						turnId: 'turn-1',
+						item: {
+							id: 'msg-1',
+							type: 'agentMessage',
+							text: 'Hello from Codex',
+							phase: 'commentary',
+						},
+					},
+				}),
+			);
+
+			expect(completeMessageResults).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						kind: 'agent.message',
+						data: expect.objectContaining({message: 'Hello from Codex'}),
+					}),
+				]),
+			);
+
 			const completeResults = mapper.mapEvent(
 				makeRuntimeEvent('turn/completed', {
 					kind: 'turn.complete',
@@ -237,14 +270,7 @@ describe('FeedMapper', () => {
 
 			expect(completeResults.some(r => r.kind === 'stop.request')).toBe(true);
 			expect(completeResults.some(r => r.kind === 'run.end')).toBe(true);
-			expect(completeResults).toEqual(
-				expect.arrayContaining([
-					expect.objectContaining({
-						kind: 'agent.message',
-						data: expect.objectContaining({message: 'Hello from Codex'}),
-					}),
-				]),
-			);
+			expect(completeResults.some(r => r.kind === 'agent.message')).toBe(false);
 			expect(mapper.getCurrentRun()).toBeNull();
 		});
 

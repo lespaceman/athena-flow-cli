@@ -7,6 +7,7 @@ export type RuntimeEventKind =
 	| 'turn.start'
 	| 'turn.complete'
 	| 'message.delta'
+	| 'message.complete'
 	| 'plan.delta'
 	| 'reasoning.delta'
 	| 'usage.update'
@@ -54,6 +55,13 @@ export type RuntimeEventDataMap = {
 		turn_id?: string;
 		item_id?: string;
 		delta?: string;
+	};
+	'message.complete': {
+		thread_id?: string;
+		turn_id?: string;
+		item_id?: string;
+		message?: string;
+		phase?: string | null;
 	};
 	'plan.delta': {
 		thread_id?: string;
