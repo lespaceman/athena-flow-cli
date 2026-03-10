@@ -95,4 +95,3 @@ export function resolveCodexMcpConfig(
 	}
 	return {mcp_servers: merged};
 }
-

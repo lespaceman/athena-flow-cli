@@ -50,14 +50,10 @@ function extractWorkflowSkills(
 	const data = Array.isArray(response['data']) ? response['data'] : [];
 	return data.flatMap(entry => {
 		const record = asRecord(entry);
-		const skills = Array.isArray(record?.['skills']) ? record['skills'] : [];
+		const skills = Array.isArray(record['skills']) ? record['skills'] : [];
 		return skills
 			.map(skill => asRecord(skill))
 			.filter((skill): skill is Record<string, unknown> => {
-				if (!skill) {
-					return false;
-				}
-
 				if (skill['enabled'] === false) {
 					return false;
 				}
@@ -68,7 +64,7 @@ function extractWorkflowSkills(
 			})
 			.map(skill => {
 				const dependencies = asRecord(skill['dependencies']);
-				const tools = Array.isArray(dependencies?.['tools'])
+				const tools = Array.isArray(dependencies['tools'])
 					? dependencies['tools']
 					: [];
 				return {
@@ -80,7 +76,6 @@ function extractWorkflowSkills(
 					path: typeof skill['path'] === 'string' ? skill['path'] : undefined,
 					dependencySummary: tools
 						.map(tool => asRecord(tool))
-						.filter((tool): tool is Record<string, unknown> => tool !== null)
 						.map(formatSkillDependency)
 						.filter((value): value is string => value !== null),
 				} satisfies CodexWorkflowSkill;

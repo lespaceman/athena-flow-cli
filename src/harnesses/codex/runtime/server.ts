@@ -270,10 +270,6 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 		msg: {method: string},
 		event: RuntimeEvent,
 	): RuntimeEvent {
-		if (typeof event.data !== 'object' || event.data === null) {
-			return event;
-		}
-
 		const data = event.data as Record<string, unknown>;
 		if (msg.method === M.THREAD_STARTED && threadModel) {
 			event.data = {...data, model: threadModel};
