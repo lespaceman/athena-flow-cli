@@ -92,6 +92,67 @@ describe('useTimeline', () => {
 		expect(result.current.timelineEntries[0]?.opTag).toBe('tool.ok');
 	});
 
+	it('patches an existing tool.pre row when command output deltas arrive', () => {
+		const pre = makeEvent('tool.pre', 1, {
+			tool_name: 'Bash',
+			tool_input: {command: 'npm test'},
+			tool_use_id: 'tu-1',
+		});
+		const initialEvents = [pre];
+		const {result, rerender} = renderHook(
+			({feedEvents}: {feedEvents: FeedEvent[]}) =>
+				useTimeline({
+					feedItems: mergeFeedItems([], feedEvents),
+					feedEvents,
+					currentRun: null,
+					searchQuery: '',
+					postByToolUseId: buildPostByToolUseId(feedEvents),
+					verbose: true,
+				}),
+			{
+				initialProps: {feedEvents: initialEvents},
+			},
+		);
+
+		const delta = makeEvent('tool.delta', 2, {
+			tool_name: 'Bash',
+			tool_input: {},
+			tool_use_id: 'tu-1',
+			delta: 'running...\n',
+		});
+		rerender({feedEvents: [...initialEvents, delta]});
+
+		expect(result.current.timelineEntries).toHaveLength(1);
+		expect(result.current.timelineEntries[0]?.pairedPostEvent).toBe(delta);
+		expect(result.current.timelineEntries[0]?.opTag).toBe('tool.call');
+
+		const secondDelta = makeEvent('tool.delta', 3, {
+			tool_name: 'Bash',
+			tool_input: {},
+			tool_use_id: 'tu-1',
+			delta: 'running...\nline 2\n',
+		});
+		rerender({feedEvents: [...initialEvents, delta, secondDelta]});
+
+		expect(result.current.timelineEntries).toHaveLength(1);
+		expect(result.current.timelineEntries[0]?.pairedPostEvent).toBe(
+			secondDelta,
+		);
+		expect(result.current.timelineEntries[0]?.opTag).toBe('tool.call');
+
+		const post = makeEvent('tool.post', 4, {
+			tool_name: 'Bash',
+			tool_input: {command: 'npm test'},
+			tool_use_id: 'tu-1',
+			tool_response: {stdout: 'done\n', stderr: '', exitCode: 0},
+		});
+		rerender({feedEvents: [...initialEvents, delta, secondDelta, post]});
+
+		expect(result.current.timelineEntries).toHaveLength(1);
+		expect(result.current.timelineEntries[0]?.pairedPostEvent).toBe(post);
+		expect(result.current.timelineEntries[0]?.opTag).toBe('tool.ok');
+	});
+
 	it('materializes feed search text lazily from event details', () => {
 		const event = makeEvent('tool.pre', 1, {
 			tool_name: 'Bash',

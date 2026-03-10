@@ -24,6 +24,8 @@ export function generateTitle(event: FeedEvent, ascii = false): string {
 			return `Run ${event.data.status}`;
 		case 'user.prompt':
 			return truncate(event.data.prompt);
+		case 'tool.delta':
+			return `${g['tool.gutter']} ${event.data.tool_name} output`;
 		case 'tool.pre':
 			return `${g['tool.bullet']} ${event.data.tool_name}`;
 		case 'tool.post':

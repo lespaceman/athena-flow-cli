@@ -41,7 +41,8 @@ export default function MergedToolCallEvent({
 	const parsed = parseToolName(toolName);
 
 	// Determine state: pending, success, or failure
-	const isResolved = postEvent != null;
+	const isStreaming = postEvent?.kind === 'tool.delta';
+	const isResolved = postEvent != null && !isStreaming;
 	const isFailed = postEvent?.kind === 'tool.failure';
 
 	// Pick glyph and color
@@ -121,18 +122,48 @@ export default function MergedToolCallEvent({
 				</Box>
 			)}
 
-			{/* Expanded: output section (only when resolved) */}
+			{/* Expanded: output section (streaming or resolved) */}
 			{(verbose || expanded) &&
 				postEvent &&
-				renderOutput(postEvent, parentWidth)}
+				renderOutput(event, postEvent, parentWidth)}
 		</Box>
 	);
 }
 
 function renderOutput(
+	preEvent: Extract<
+		FeedEvent,
+		{kind: 'tool.pre'} | {kind: 'permission.request'}
+	>,
 	postEvent: FeedEvent,
 	parentWidth?: number,
 ): React.ReactNode {
+	if (postEvent.kind === 'tool.delta') {
+		const toolName = preEvent.data.tool_name;
+		const toolInput = preEvent.data.tool_input;
+		const outputMeta = extractToolOutput(
+			toolName,
+			toolInput,
+			postEvent.data.delta,
+		);
+		return (
+			<ToolResultContainer
+				previewLines={outputMeta.previewLines}
+				totalLineCount={outputMeta.totalLineCount}
+				toolId={postEvent.data.tool_use_id}
+				parentWidth={parentWidth}
+			>
+				{(availableWidth: number) => (
+					<ToolOutputRenderer
+						toolName={toolName}
+						toolInput={toolInput}
+						toolResponse={postEvent.data.delta}
+						availableWidth={availableWidth}
+					/>
+				)}
+			</ToolResultContainer>
+		);
+	}
 	if (postEvent.kind === 'tool.failure') {
 		return (
 			<ToolResultContainer

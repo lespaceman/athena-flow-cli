@@ -3,6 +3,18 @@ import type {AppServerManager} from './appServerManager';
 import * as M from '../protocol/methods';
 import {asRecord} from './eventTranslator';
 
+export type CodexWorkflowSkill = {
+	name: string;
+	description?: string;
+	path?: string;
+	dependencySummary: string[];
+};
+
+export type CodexSkillInstructionsResult = {
+	instructions?: string;
+	skills: CodexWorkflowSkill[];
+};
+
 function isUnderAnyRoot(filePath: string, roots: string[]): boolean {
 	return roots.some(root => {
 		const normalizedRoot = root.endsWith(path.sep)
@@ -30,13 +42,13 @@ function formatSkillDependency(tool: Record<string, unknown>): string | null {
 	return `${type} \`${value}\``;
 }
 
-function buildSkillInstructionsFromResult(
+function extractWorkflowSkills(
 	result: unknown,
 	skillRoots: string[],
-): string | undefined {
+): CodexWorkflowSkill[] {
 	const response = asRecord(result);
 	const data = Array.isArray(response['data']) ? response['data'] : [];
-	const workflowSkills = data.flatMap(entry => {
+	return data.flatMap(entry => {
 		const record = asRecord(entry);
 		const skills = Array.isArray(record?.['skills']) ? record['skills'] : [];
 		return skills
@@ -53,9 +65,32 @@ function buildSkillInstructionsFromResult(
 				const skillPath =
 					typeof skill['path'] === 'string' ? skill['path'] : null;
 				return skillPath !== null && isUnderAnyRoot(skillPath, skillRoots);
+			})
+			.map(skill => {
+				const dependencies = asRecord(skill['dependencies']);
+				const tools = Array.isArray(dependencies?.['tools'])
+					? dependencies['tools']
+					: [];
+				return {
+					name: typeof skill['name'] === 'string' ? skill['name'] : 'unknown',
+					description:
+						typeof skill['description'] === 'string'
+							? skill['description']
+							: undefined,
+					path: typeof skill['path'] === 'string' ? skill['path'] : undefined,
+					dependencySummary: tools
+						.map(tool => asRecord(tool))
+						.filter((tool): tool is Record<string, unknown> => tool !== null)
+						.map(formatSkillDependency)
+						.filter((value): value is string => value !== null),
+				} satisfies CodexWorkflowSkill;
 			});
 	});
+}
 
+function buildSkillInstructions(
+	workflowSkills: CodexWorkflowSkill[],
+): string | undefined {
 	if (workflowSkills.length === 0) {
 		return undefined;
 	}
@@ -66,24 +101,10 @@ function buildSkillInstructionsFromResult(
 	];
 
 	for (const skill of workflowSkills) {
-		const name = typeof skill['name'] === 'string' ? skill['name'] : 'unknown';
-		const description =
-			typeof skill['description'] === 'string' ? skill['description'] : '';
-		const skillPath =
-			typeof skill['path'] === 'string' ? skill['path'] : undefined;
-		const dependencies = asRecord(skill['dependencies']);
-		const tools = Array.isArray(dependencies?.['tools'])
-			? dependencies['tools']
-			: [];
-		const dependencySummary = tools
-			.map(tool => asRecord(tool))
-			.filter((tool): tool is Record<string, unknown> => tool !== null)
-			.map(formatSkillDependency)
-			.filter((value): value is string => value !== null);
-		const location = skillPath ? ` (file: ${skillPath})` : '';
-		lines.push(`- ${name}: ${description}${location}`);
-		if (dependencySummary.length > 0) {
-			lines.push(`  Dependencies: ${dependencySummary.join(', ')}`);
+		const location = skill.path ? ` (file: ${skill.path})` : '';
+		lines.push(`- ${skill.name}: ${skill.description ?? ''}${location}`);
+		if (skill.dependencySummary.length > 0) {
+			lines.push(`  Dependencies: ${skill.dependencySummary.join(', ')}`);
 		}
 	}
 
@@ -97,10 +118,10 @@ export async function resolveCodexSkillInstructions(input: {
 	manager: AppServerManager;
 	projectDir: string;
 	skillRoots?: string[];
-}): Promise<string | undefined> {
+}): Promise<CodexSkillInstructionsResult> {
 	const skillRoots = input.skillRoots?.filter(Boolean) ?? [];
 	if (skillRoots.length === 0) {
-		return undefined;
+		return {instructions: undefined, skills: []};
 	}
 
 	const result = await input.manager.sendRequest(M.SKILLS_LIST, {
@@ -114,5 +135,9 @@ export async function resolveCodexSkillInstructions(input: {
 		],
 	});
 
-	return buildSkillInstructionsFromResult(result, skillRoots);
+	const skills = extractWorkflowSkills(result, skillRoots);
+	return {
+		instructions: buildSkillInstructions(skills),
+		skills,
+	};
 }

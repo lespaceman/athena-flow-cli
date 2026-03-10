@@ -28,13 +28,19 @@ export function mergeFeedItems(
 	});
 }
 
-/** Build a lookup index: tool_use_id → post/failure FeedEvent. */
+/** Build a lookup index: tool_use_id → latest delta/post/failure FeedEvent. */
 export function buildPostByToolUseId(
 	events: FeedEvent[],
 ): Map<string, FeedEvent> {
 	const map = new Map<string, FeedEvent>();
 	for (const event of events) {
-		if (event.kind !== 'tool.post' && event.kind !== 'tool.failure') continue;
+		if (
+			event.kind !== 'tool.delta' &&
+			event.kind !== 'tool.post' &&
+			event.kind !== 'tool.failure'
+		) {
+			continue;
+		}
 		const toolUseId = event.data.tool_use_id;
 		if (toolUseId) map.set(toolUseId, event);
 	}

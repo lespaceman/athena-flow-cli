@@ -23,6 +23,9 @@ export type FeedMapper = {
 };
 
 export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
+	const MAX_STREAMED_TOOL_OUTPUT_CHARS = 64_000;
+	const STREAMED_TOOL_OUTPUT_TRUNCATED_NOTICE =
+		'[streaming output truncated to recent content]\n';
 	let currentSession: Session | null = null;
 	let currentRun: Run | null = null;
 	const actors = new ActorRegistry();
@@ -39,6 +42,8 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 	// first new event has empty indexes, which is benign — no decisions can arrive
 	// for events from the old adapter session.
 	const toolPreIndex = new Map<string, string>(); // tool_use_id → feed event_id
+	const toolDeltaTextByUseId = new Map<string, string>(); // tool_use_id → cumulative streamed output
+	const truncatedToolDeltaUseIds = new Set<string>();
 	const eventIdByRequestId = new Map<string, string>(); // runtime id → feed event_id
 	const eventKindByRequestId = new Map<string, string>(); // runtime id → feed kind
 
@@ -106,6 +111,28 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 
 	function nextSeq(): number {
 		return ++seq;
+	}
+
+	function appendToolDelta(
+		toolUseId: string | undefined,
+		chunk: string,
+	): string {
+		if (!toolUseId) {
+			return chunk;
+		}
+
+		const cumulative = `${toolDeltaTextByUseId.get(toolUseId) ?? ''}${chunk}`;
+		if (cumulative.length <= MAX_STREAMED_TOOL_OUTPUT_CHARS) {
+			toolDeltaTextByUseId.set(toolUseId, cumulative);
+			return truncatedToolDeltaUseIds.has(toolUseId)
+				? `${STREAMED_TOOL_OUTPUT_TRUNCATED_NOTICE}${cumulative}`
+				: cumulative;
+		}
+
+		const tail = cumulative.slice(-MAX_STREAMED_TOOL_OUTPUT_CHARS);
+		toolDeltaTextByUseId.set(toolUseId, tail);
+		truncatedToolDeltaUseIds.add(toolUseId);
+		return `${STREAMED_TOOL_OUTPUT_TRUNCATED_NOTICE}${tail}`;
 	}
 
 	function getRunId(): string {
@@ -193,6 +220,8 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 
 		runSeq++;
 		toolPreIndex.clear();
+		toolDeltaTextByUseId.clear();
+		truncatedToolDeltaUseIds.clear();
 		eventIdByRequestId.clear();
 		eventKindByRequestId.clear();
 		activeSubagentStack.length = 0;
@@ -595,6 +624,32 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 				break;
 			}
 
+			case 'tool.delta': {
+				results.push(...ensureRunArray(event));
+				const toolUseId = resolveToolUseId(event, d);
+				const toolName =
+					event.toolName ?? readString(d['tool_name']) ?? 'Unknown';
+				const parentId = toolUseId ? toolPreIndex.get(toolUseId) : undefined;
+				const chunk = readString(d['delta']) ?? '';
+				const cumulative = appendToolDelta(toolUseId, chunk);
+				results.push(
+					makeEvent(
+						'tool.delta',
+						'info',
+						resolveToolActor(),
+						{
+							tool_name: toolName,
+							tool_input: readObject(d['tool_input']),
+							tool_use_id: toolUseId,
+							delta: cumulative,
+						} satisfies import('./types').ToolDeltaData,
+						event,
+						toolUseCause(toolUseId, parentId),
+					),
+				);
+				break;
+			}
+
 			case 'tool.pre': {
 				results.push(...ensureRunArray(event));
 				if (currentRun) currentRun.counters.tool_uses++;
@@ -632,6 +687,10 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 			case 'tool.post': {
 				results.push(...ensureRunArray(event));
 				const toolUseId = resolveToolUseId(event, d);
+				if (toolUseId) {
+					toolDeltaTextByUseId.delete(toolUseId);
+					truncatedToolDeltaUseIds.delete(toolUseId);
+				}
 				const parentId = toolUseId ? toolPreIndex.get(toolUseId) : undefined;
 				const toolName =
 					event.toolName ?? readString(d['tool_name']) ?? 'Unknown';
@@ -657,6 +716,10 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 				results.push(...ensureRunArray(event));
 				if (currentRun) currentRun.counters.tool_failures++;
 				const toolUseId = resolveToolUseId(event, d);
+				if (toolUseId) {
+					toolDeltaTextByUseId.delete(toolUseId);
+					truncatedToolDeltaUseIds.delete(toolUseId);
+				}
 				const parentId = toolUseId ? toolPreIndex.get(toolUseId) : undefined;
 				const toolName =
 					event.toolName ?? readString(d['tool_name']) ?? 'Unknown';

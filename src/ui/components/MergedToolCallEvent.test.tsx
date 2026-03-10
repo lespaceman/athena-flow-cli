@@ -80,6 +80,27 @@ describe('MergedToolCallEvent', () => {
 		expect(frame).toContain('command not found');
 	});
 
+	it('keeps pending state while showing streamed output for tool.delta', () => {
+		const preEvent = makeFeedEvent('tool.pre', {
+			tool_name: 'Bash',
+			tool_input: {command: 'npm test'},
+			tool_use_id: 'tu-stream',
+		});
+		const deltaEvent = makeFeedEvent('tool.delta', {
+			tool_name: 'Bash',
+			tool_input: {},
+			tool_use_id: 'tu-stream',
+			delta: 'PASS src/example.test.ts\n',
+		});
+		const {lastFrame} = render(
+			<MergedToolCallEvent event={preEvent} postEvent={deltaEvent} expanded />,
+		);
+		const frame = stripAnsi(lastFrame() ?? '');
+		expect(frame).toContain('◐');
+		expect(frame).toContain('PASS src/example.test.ts');
+		expect(frame).not.toContain('exit 0');
+	});
+
 	it('shows input + output when expanded and postEvent present', () => {
 		const preEvent = makeFeedEvent('tool.pre', {
 			tool_name: 'Bash',

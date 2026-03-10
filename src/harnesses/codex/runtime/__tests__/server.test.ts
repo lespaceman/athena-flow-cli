@@ -186,6 +186,10 @@ describe('createCodexServer', () => {
 			instanceId: 1,
 			binaryPath: 'codex',
 		});
+		const events: RuntimeEvent[] = [];
+		runtime.onEvent(event => {
+			events.push(event);
+		});
 
 		await runtime.start();
 		await runtime.sendPrompt('Hello Codex', {
@@ -244,6 +248,19 @@ describe('createCodexServer', () => {
 			manager!.requests.find(request => request.method === 'thread/start')
 				?.params?.['developerInstructions'],
 		).not.toEqual(expect.stringContaining('global-skill'));
+		expect(events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: 'notification',
+					data: expect.objectContaining({
+						title: 'Skills loaded',
+						notification_type: 'skills.loaded',
+						message: 'Loaded 1 workflow skill: workflow-skill.',
+					}),
+					hookName: 'skills/list',
+				}),
+			]),
+		);
 	});
 
 	it('starts ephemeral Codex threads without extended history persistence', async () => {
@@ -394,6 +411,44 @@ describe('createCodexServer', () => {
 		expect(events).toEqual([]);
 	});
 
+	it('surfaces skills/changed after skill roots are configured', async () => {
+		const runtime = createCodexServer({
+			projectDir: '/project',
+			instanceId: 1,
+			binaryPath: 'codex',
+		});
+		const events: RuntimeEvent[] = [];
+		runtime.onEvent(event => {
+			events.push(event);
+		});
+
+		await runtime.start();
+		await runtime.sendPrompt('Hello Codex', {
+			skillRoots: ['/workflow/plugins/e2e-test-builder/skills'],
+		});
+
+		const manager = mockState.current;
+		expect(manager).not.toBeNull();
+
+		manager!.emit('notification', {
+			method: M.SKILLS_CHANGED,
+			params: {},
+		});
+
+		expect(events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: 'notification',
+					data: expect.objectContaining({
+						title: 'Skills changed',
+						notification_type: 'skills.changed',
+					}),
+					hookName: M.SKILLS_CHANGED,
+				}),
+			]),
+		);
+	});
+
 	it('does not suppress completed agentMessage items', async () => {
 		const runtime = createCodexServer({
 			projectDir: '/project',
@@ -434,5 +489,58 @@ describe('createCodexServer', () => {
 				}),
 			]),
 		);
+	});
+
+	it('interrupts using the turn id returned from turn/start before notifications arrive', async () => {
+		const runtime = createCodexServer({
+			projectDir: '/project',
+			instanceId: 1,
+			binaryPath: 'codex',
+		});
+
+		await runtime.start();
+		const manager = mockState.current as
+			| (typeof mockState.current & {
+					sendRequest: (
+						method: string,
+						params?: Record<string, unknown>,
+					) => Promise<unknown>;
+					sendNotification: (
+						method: string,
+						params?: Record<string, unknown>,
+					) => void;
+			  })
+			| null;
+		expect(manager).not.toBeNull();
+
+		const originalSendRequest = manager!.sendRequest.bind(manager);
+		const sendNotification = vi.fn();
+		manager!.sendNotification = sendNotification;
+		manager!.sendRequest = vi.fn(async (method, params) => {
+			if (method === M.TURN_START) {
+				manager!.requests.push({method, params});
+				return {turn: {id: 'turn-early', items: [], status: 'inProgress'}};
+			}
+			return originalSendRequest(method, params);
+		});
+
+		const promptPromise = runtime.sendPrompt('Interruptible turn');
+		await new Promise(resolve => setTimeout(resolve, 0));
+		runtime.sendInterrupt();
+
+		expect(sendNotification).toHaveBeenCalledWith(M.TURN_INTERRUPT, {
+			threadId: 'th-1',
+			turnId: 'turn-early',
+		});
+
+		manager!.emit('notification', {
+			method: 'turn/completed',
+			params: {
+				threadId: 'th-1',
+				turn: {id: 'turn-early', items: [], status: 'cancelled'},
+			},
+		});
+
+		await expect(promptPromise).resolves.toBeUndefined();
 	});
 });

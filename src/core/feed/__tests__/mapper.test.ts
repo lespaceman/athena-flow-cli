@@ -291,6 +291,109 @@ describe('FeedMapper', () => {
 			expect(results).toEqual([]);
 			expect(mapper.getCurrentRun()).toBeNull();
 		});
+
+		it('accumulates tool.delta output by tool_use_id', () => {
+			const mapper = createFeedMapper();
+			mapper.mapEvent(
+				makeRuntimeEvent('item/started', {
+					kind: 'tool.pre',
+					hookName: 'item/started',
+					toolName: 'Bash',
+					toolUseId: 'cmd-1',
+					data: {
+						tool_name: 'Bash',
+						tool_input: {command: 'npm test'},
+						tool_use_id: 'cmd-1',
+					},
+				}),
+			);
+
+			const first = mapper.mapEvent(
+				makeRuntimeEvent('item/commandExecution/outputDelta', {
+					kind: 'tool.delta',
+					hookName: 'item/commandExecution/outputDelta',
+					toolName: 'Bash',
+					toolUseId: 'cmd-1',
+					data: {
+						tool_name: 'Bash',
+						tool_input: {},
+						tool_use_id: 'cmd-1',
+						delta: 'line 1\n',
+					},
+				}),
+			);
+			const second = mapper.mapEvent(
+				makeRuntimeEvent('item/commandExecution/outputDelta', {
+					kind: 'tool.delta',
+					hookName: 'item/commandExecution/outputDelta',
+					toolName: 'Bash',
+					toolUseId: 'cmd-1',
+					data: {
+						tool_name: 'Bash',
+						tool_input: {},
+						tool_use_id: 'cmd-1',
+						delta: 'line 2\n',
+					},
+				}),
+			);
+
+			expect(first.find(r => r.kind === 'tool.delta')?.data).toEqual(
+				expect.objectContaining({
+					tool_use_id: 'cmd-1',
+					delta: 'line 1\n',
+				}),
+			);
+			expect(second.find(r => r.kind === 'tool.delta')?.data).toEqual(
+				expect.objectContaining({
+					tool_use_id: 'cmd-1',
+					delta: 'line 1\nline 2\n',
+				}),
+			);
+		});
+
+		it('truncates oversized cumulative tool.delta output', () => {
+			const mapper = createFeedMapper();
+			mapper.mapEvent(
+				makeRuntimeEvent('item/started', {
+					kind: 'tool.pre',
+					hookName: 'item/started',
+					toolName: 'Bash',
+					toolUseId: 'cmd-big',
+					data: {
+						tool_name: 'Bash',
+						tool_input: {command: 'npm test'},
+						tool_use_id: 'cmd-big',
+					},
+				}),
+			);
+
+			const largeChunk = 'x'.repeat(70_000);
+			const results = mapper.mapEvent(
+				makeRuntimeEvent('item/commandExecution/outputDelta', {
+					kind: 'tool.delta',
+					hookName: 'item/commandExecution/outputDelta',
+					toolName: 'Bash',
+					toolUseId: 'cmd-big',
+					data: {
+						tool_name: 'Bash',
+						tool_input: {},
+						tool_use_id: 'cmd-big',
+						delta: largeChunk,
+					},
+				}),
+			);
+
+			const deltaEvent = results.find(r => r.kind === 'tool.delta');
+			expect(deltaEvent).toBeDefined();
+			expect(deltaEvent!.data).toEqual(
+				expect.objectContaining({
+					tool_use_id: 'cmd-big',
+				}),
+			);
+			const deltaText = (deltaEvent!.data as {delta: string}).delta;
+			expect(deltaText.startsWith('[streaming output truncated')).toBe(true);
+			expect(deltaText.length).toBeLessThan(70_000);
+		});
 	});
 
 	describe('tool mapping', () => {

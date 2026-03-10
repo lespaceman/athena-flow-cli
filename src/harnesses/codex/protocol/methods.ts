@@ -16,6 +16,8 @@ export const TURN_DIFF_UPDATED = 'turn/diff/updated';
 export const TURN_PLAN_UPDATED = 'turn/plan/updated';
 export const ITEM_STARTED = 'item/started';
 export const ITEM_COMPLETED = 'item/completed';
+export const ITEM_COMMAND_EXECUTION_OUTPUT_DELTA =
+	'item/commandExecution/outputDelta';
 export const ITEM_AGENT_MESSAGE_DELTA = 'item/agentMessage/delta';
 export const ITEM_PLAN_DELTA = 'item/plan/delta';
 export const ITEM_REASONING_SUMMARY_TEXT_DELTA =
@@ -24,6 +26,7 @@ export const ITEM_REASONING_SUMMARY_PART_ADDED =
 	'item/reasoning/summaryPartAdded';
 export const ITEM_REASONING_TEXT_DELTA = 'item/reasoning/textDelta';
 export const THREAD_STARTED = 'thread/started';
+export const SKILLS_CHANGED = 'skills/changed';
 export const THREAD_STATUS_CHANGED = 'thread/status/changed';
 export const THREAD_TOKEN_USAGE_UPDATED = 'thread/tokenUsage/updated';
 export const THREAD_NAME_UPDATED = 'thread/name/updated';

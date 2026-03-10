@@ -128,7 +128,10 @@ function buildResult(
 }
 
 function renderToolResponseContent(
-	event: Extract<FeedEvent, {kind: 'tool.post'} | {kind: 'tool.failure'}>,
+	event: Extract<
+		FeedEvent,
+		{kind: 'tool.delta'} | {kind: 'tool.post'} | {kind: 'tool.failure'}
+	>,
 	width: number,
 ): ContentSection {
 	const {tool_name, tool_input} = event.data;
@@ -141,7 +144,7 @@ function renderToolResponseContent(
 	const output = extractToolOutput(
 		tool_name,
 		tool_input as Record<string, unknown>,
-		event.data.tool_response,
+		event.kind === 'tool.delta' ? event.data.delta : event.data.tool_response,
 	);
 
 	switch (output.type) {
@@ -242,6 +245,7 @@ function extractToolSubject(
 /** Compact label for any event type. Tool events use the tool name. */
 function eventLabel(event: FeedEvent): string {
 	switch (event.kind) {
+		case 'tool.delta':
 		case 'tool.pre':
 		case 'tool.post':
 		case 'tool.failure':
@@ -326,6 +330,7 @@ function buildCompactHeader(
 type ToolEvent = Extract<
 	FeedEvent,
 	| {kind: 'tool.pre'}
+	| {kind: 'tool.delta'}
 	| {kind: 'tool.post'}
 	| {kind: 'tool.failure'}
 	| {kind: 'permission.request'}
@@ -336,7 +341,7 @@ function renderToolResult(
 	event: ToolEvent,
 	responseEvent: Extract<
 		FeedEvent,
-		{kind: 'tool.post'} | {kind: 'tool.failure'}
+		{kind: 'tool.delta'} | {kind: 'tool.post'} | {kind: 'tool.failure'}
 	>,
 	width: number,
 	cw: number,
@@ -373,6 +378,7 @@ export function renderDetailLines(
 		}
 
 		case 'tool.post':
+		case 'tool.delta':
 		case 'tool.failure':
 			return renderToolResult(event, event, width, cw);
 
@@ -380,7 +386,8 @@ export function renderDetailLines(
 		case 'permission.request': {
 			if (
 				pairedPostEvent &&
-				(pairedPostEvent.kind === 'tool.post' ||
+				(pairedPostEvent.kind === 'tool.delta' ||
+					pairedPostEvent.kind === 'tool.post' ||
 					pairedPostEvent.kind === 'tool.failure')
 			) {
 				return renderToolResult(event, pairedPostEvent, width, cw);

@@ -16,6 +16,7 @@ import {mapDecisionToCodexResult} from './decisionMapper';
 import {asRecord} from './eventTranslator';
 import {resolveCodexSkillInstructions} from './skillInstructions';
 import * as M from '../protocol/methods';
+import {generateId} from '../../../shared/utils/id';
 
 export type CodexServerOptions = {
 	projectDir: string;
@@ -126,6 +127,7 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 	let threadModel: string | null = null;
 	let pendingTurnPrompt: string | null = null;
 	let pendingTurnCompletion: PendingTurnCompletion | null = null;
+	let configuredSkillRoots: string[] = [];
 
 	function createPendingTurnCompletion(): PendingTurnCompletion {
 		let settleResolve: (() => void) | null = null;
@@ -167,6 +169,30 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 		}
 	}
 
+	function emitNotification(input: {
+		hookName: string;
+		message: string;
+		title?: string;
+		notificationType: string;
+		payload?: unknown;
+	}): void {
+		emit({
+			id: `codex-local-${generateId()}`,
+			timestamp: Date.now(),
+			kind: 'notification',
+			data: {
+				message: input.message,
+				title: input.title,
+				notification_type: input.notificationType,
+			},
+			hookName: input.hookName,
+			sessionId: threadId ?? '',
+			context: {cwd: projectDir, transcriptPath: ''},
+			interaction: {expectsDecision: false},
+			payload: input.payload,
+		});
+	}
+
 	function notifyDecision(eventId: string, decision: RuntimeDecision): void {
 		for (const handler of decisionHandlers) {
 			try {
@@ -189,6 +215,7 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 
 	function clearPendingTurn(error?: Error): void {
 		pendingTurnPrompt = null;
+		turnId = null;
 		if (pendingTurnCompletion?.interruptTimer) {
 			clearTimeout(pendingTurnCompletion.interruptTimer);
 			pendingTurnCompletion.interruptTimer = null;
@@ -289,6 +316,20 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 		return base ?? skills;
 	}
 
+	function buildSkillLoadMessage(input: {
+		skillNames: string[];
+		skillRoots: string[];
+	}): string {
+		const {skillNames, skillRoots} = input;
+		if (skillNames.length === 0) {
+			const rootLabel = skillRoots.length === 1 ? 'root' : 'roots';
+			return `No workflow skills were loaded from ${skillRoots.length} configured skill ${rootLabel}.`;
+		}
+
+		const label = skillNames.length === 1 ? 'skill' : 'skills';
+		return `Loaded ${skillNames.length} workflow ${label}: ${skillNames.join(', ')}.`;
+	}
+
 	const runtime: CodexRuntime = {
 		async start(): Promise<void> {
 			if (status === 'running') return;
@@ -298,6 +339,12 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 
 				manager.on('notification', msg => {
 					if (shouldIgnoreNotificationMethod(msg.method)) {
+						return;
+					}
+					if (
+						msg.method === M.SKILLS_CHANGED &&
+						configuredSkillRoots.length === 0
+					) {
 						return;
 					}
 					trackNotificationState(msg);
@@ -385,6 +432,7 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 			threadId = null;
 			turnId = null;
 			threadModel = null;
+			configuredSkillRoots = [];
 			clearPendingTurn(new Error('Codex runtime stopped'));
 		},
 
@@ -442,6 +490,7 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 				const continuation = options?.continuation;
 				const approvalPolicy = options?.approvalPolicy ?? 'on-request';
 				const sandbox = options?.sandbox ?? 'workspace-write';
+				const skillRoots = options?.skillRoots?.filter(Boolean) ?? [];
 				const shouldResume =
 					continuation?.mode === 'resume' && continuation.handle.length > 0;
 				const shouldStartFresh =
@@ -451,12 +500,29 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 					shouldResume || shouldStartFresh || (shouldReuseCurrent && !threadId);
 				let skillInstructions: string | undefined;
 				if (shouldConfigureThread) {
+					configuredSkillRoots = skillRoots;
 					try {
-						skillInstructions = await resolveCodexSkillInstructions({
+						const skillResolution = await resolveCodexSkillInstructions({
 							manager,
 							projectDir,
-							skillRoots: options?.skillRoots,
+							skillRoots,
 						});
+						skillInstructions = skillResolution.instructions;
+						if (skillRoots.length > 0) {
+							emitNotification({
+								hookName: M.SKILLS_LIST,
+								title: 'Skills loaded',
+								message: buildSkillLoadMessage({
+									skillNames: skillResolution.skills.map(skill => skill.name),
+									skillRoots,
+								}),
+								notificationType: 'skills.loaded',
+								payload: {
+									skillRoots,
+									skills: skillResolution.skills,
+								},
+							});
+						}
 					} catch (error) {
 						console.error(
 							`[athena:codex] failed to scan workflow skills: ${
@@ -525,13 +591,18 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 				// configured at thread creation/resume time, and turns inherit it.
 				// The per-turn `sandboxPolicy` override is for fine-grained control
 				// that we don't currently need.
-				await manager.sendRequest(M.TURN_START, {
+				const result = await manager.sendRequest(M.TURN_START, {
 					threadId,
 					input: [{type: 'text', text: prompt, text_elements: []}],
 					cwd: projectDir,
 					approvalPolicy,
 					...(options?.model ? {model: options.model} : {}),
 				});
+				const response = asRecord(result);
+				const turn = asRecord(response['turn'] ?? result);
+				if (turn['id']) {
+					turnId = String(turn['id']);
+				}
 
 				await turnCompletion.promise;
 			} catch (error) {

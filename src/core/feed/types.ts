@@ -8,6 +8,7 @@ export type FeedEventKind =
 	| 'run.start'
 	| 'run.end'
 	| 'user.prompt'
+	| 'tool.delta'
 	| 'tool.pre'
 	| 'tool.post'
 	| 'tool.failure'
@@ -99,6 +100,13 @@ export type ToolPreData = {
 	tool_name: string;
 	tool_input: Record<string, unknown>;
 	tool_use_id?: string;
+};
+
+export type ToolDeltaData = {
+	tool_name: string;
+	tool_input: Record<string, unknown>;
+	tool_use_id?: string;
+	delta: string;
 };
 
 export type ToolPostData = {
@@ -232,6 +240,7 @@ export type FeedEvent =
 	| (FeedEventBase & {kind: 'run.start'; data: RunStartData})
 	| (FeedEventBase & {kind: 'run.end'; data: RunEndData})
 	| (FeedEventBase & {kind: 'user.prompt'; data: UserPromptData})
+	| (FeedEventBase & {kind: 'tool.delta'; data: ToolDeltaData})
 	| (FeedEventBase & {kind: 'tool.pre'; data: ToolPreData})
 	| (FeedEventBase & {kind: 'tool.post'; data: ToolPostData})
 	| (FeedEventBase & {kind: 'tool.failure'; data: ToolFailureData})

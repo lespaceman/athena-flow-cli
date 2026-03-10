@@ -45,6 +45,20 @@ describe('translateNotification', () => {
 		expect(result.expectsDecision).toBe(false);
 	});
 
+	it('maps skills/changed to a visible notification', () => {
+		const result = translateNotification({
+			method: 'skills/changed',
+			params: {},
+		});
+		expect(result.kind).toBe('notification');
+		expect(result.data).toEqual(
+			expect.objectContaining({
+				title: 'Skills changed',
+				notification_type: 'skills.changed',
+			}),
+		);
+	});
+
 	it('maps item/agentMessage/delta to message.delta', () => {
 		const result = translateNotification({
 			method: 'item/agentMessage/delta',
@@ -62,6 +76,28 @@ describe('translateNotification', () => {
 				turn_id: 't1',
 				item_id: 'i1',
 				delta: 'Hello world',
+			}),
+		);
+	});
+
+	it('maps item/commandExecution/outputDelta to tool.delta', () => {
+		const result = translateNotification({
+			method: 'item/commandExecution/outputDelta',
+			params: {
+				threadId: 'th1',
+				turnId: 't1',
+				itemId: 'cmd-1',
+				delta: 'line 1\n',
+			},
+		});
+		expect(result.kind).toBe('tool.delta');
+		expect(result.data).toEqual(
+			expect.objectContaining({
+				thread_id: 'th1',
+				turn_id: 't1',
+				tool_name: 'Bash',
+				tool_use_id: 'cmd-1',
+				delta: 'line 1\n',
 			}),
 		);
 	});
@@ -114,7 +150,7 @@ describe('translateNotification', () => {
 			},
 		});
 		expect(result.kind).toBe('tool.pre');
-		expect(result.toolName).toBe('command_execution');
+		expect(result.toolName).toBe('Bash');
 	});
 
 	it('maps item/completed (commandExecution) to tool.post', () => {
@@ -238,7 +274,7 @@ describe('translateNotification', () => {
 		expect(result.kind).toBe('tool.failure');
 		expect(result.data).toEqual(
 			expect.objectContaining({
-				tool_name: 'command_execution',
+				tool_name: 'Bash',
 				error: 'push rejected',
 				exit_code: 128,
 				output: 'fatal: remote rejected',
@@ -266,7 +302,7 @@ describe('translateNotification', () => {
 		expect(result.kind).toBe('tool.failure');
 		expect(result.data).toEqual(
 			expect.objectContaining({
-				tool_name: 'mcp:demo/fetch',
+				tool_name: 'mcp__demo__fetch',
 				error: 'connection refused',
 				error_code: 'ECONNREFUSED',
 			}),
@@ -291,7 +327,7 @@ describe('translateNotification', () => {
 		expect(result.kind).toBe('tool.failure');
 		expect(result.data).toEqual(
 			expect.objectContaining({
-				tool_name: 'file_change',
+				tool_name: 'Edit',
 				error: 'permission denied',
 			}),
 		);
@@ -313,7 +349,7 @@ describe('translateServerRequest', () => {
 		});
 		expect(result.kind).toBe('permission.request');
 		expect(result.expectsDecision).toBe(true);
-		expect(result.toolName).toBe('command_execution');
+		expect(result.toolName).toBe('Bash');
 	});
 
 	it('maps fileChange approval to permission.request', () => {
@@ -330,7 +366,7 @@ describe('translateServerRequest', () => {
 		});
 		expect(result.kind).toBe('permission.request');
 		expect(result.expectsDecision).toBe(true);
-		expect(result.toolName).toBe('file_change');
+		expect(result.toolName).toBe('Edit');
 		expect(result.data).toEqual(
 			expect.objectContaining({
 				tool_input: {
@@ -354,7 +390,7 @@ describe('translateServerRequest', () => {
 			},
 		});
 		expect(result.kind).toBe('permission.request');
-		expect(result.toolName).toBe('file_change');
+		expect(result.toolName).toBe('Edit');
 		expect(result.toolUseId).toBe('patch-1');
 	});
 
@@ -373,7 +409,7 @@ describe('translateServerRequest', () => {
 			},
 		});
 		expect(result.kind).toBe('permission.request');
-		expect(result.toolName).toBe('command_execution');
+		expect(result.toolName).toBe('Bash');
 		expect(result.toolUseId).toBe('exec-1');
 	});
 

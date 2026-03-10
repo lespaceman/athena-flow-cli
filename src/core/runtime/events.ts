@@ -11,6 +11,7 @@ export type RuntimeEventKind =
 	| 'plan.delta'
 	| 'reasoning.delta'
 	| 'usage.update'
+	| 'tool.delta'
 	| 'tool.pre'
 	| 'tool.post'
 	| 'tool.failure'
@@ -85,6 +86,14 @@ export type RuntimeEventDataMap = {
 		turn_id?: string;
 		usage?: TokenUsage;
 		delta?: TokenUsage;
+	};
+	'tool.delta': {
+		thread_id?: string;
+		turn_id?: string;
+		tool_name?: string;
+		tool_input?: Record<string, unknown>;
+		tool_use_id?: string;
+		delta?: string;
 	};
 	'tool.pre': {
 		tool_name?: string;

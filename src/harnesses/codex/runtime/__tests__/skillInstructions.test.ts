@@ -28,7 +28,7 @@ describe('resolveCodexSkillInstructions', () => {
 			}),
 		};
 
-		const instructions = await resolveCodexSkillInstructions({
+		const result = await resolveCodexSkillInstructions({
 			manager: manager as never,
 			projectDir: '/project',
 			skillRoots: ['/workflow/plugins/e2e-test-builder/skills'],
@@ -44,7 +44,13 @@ describe('resolveCodexSkillInstructions', () => {
 				},
 			],
 		});
-		expect(instructions).toContain('enabled-skill');
-		expect(instructions).not.toContain('disabled-skill');
+		expect(result.instructions).toContain('enabled-skill');
+		expect(result.instructions).not.toContain('disabled-skill');
+		expect(result.skills).toEqual([
+			expect.objectContaining({
+				name: 'enabled-skill',
+				path: '/workflow/plugins/e2e-test-builder/skills/enabled/SKILL.md',
+			}),
+		]);
 	});
 });

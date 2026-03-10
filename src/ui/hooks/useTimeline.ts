@@ -177,6 +177,20 @@ function pairedPostForEvent(
 	return postByToolUseId?.get(event.data.tool_use_id);
 }
 
+function pendingToolUpdateUseId(event: FeedEvent): string | undefined {
+	if (
+		event.kind !== 'tool.delta' &&
+		event.kind !== 'tool.post' &&
+		event.kind !== 'tool.failure'
+	) {
+		return undefined;
+	}
+	if (event.data.tool_name === 'Task') {
+		return undefined;
+	}
+	return event.data.tool_use_id;
+}
+
 function buildEventEntry(
 	event: FeedEvent,
 	subagentTypes: Map<string, string>,
@@ -229,6 +243,7 @@ function maybeBuildEventEntry(
 	verbose?: boolean,
 ): TimelineEntry | null {
 	if (shouldSkipEvent(event, verbose)) return null;
+	if (event.kind === 'tool.delta') return null;
 	if (mergedToolUseId(event, postByToolUseId)) {
 		return null;
 	}
@@ -403,7 +418,7 @@ function appendTimelineCache(
 			activeRunId = event.run_id;
 		}
 
-		const resolvedToolUseId = mergedToolUseId(event, postByToolUseId);
+		const resolvedToolUseId = pendingToolUpdateUseId(event);
 		if (resolvedToolUseId) {
 			const pendingIndex = pendingEntryIndexByToolUseId.get(resolvedToolUseId);
 			if (pendingIndex !== undefined) {
@@ -414,7 +429,9 @@ function appendTimelineCache(
 						subagentTypes,
 						event,
 					);
-					pendingEntryIndexByToolUseId.delete(resolvedToolUseId);
+					if (event.kind === 'tool.post' || event.kind === 'tool.failure') {
+						pendingEntryIndexByToolUseId.delete(resolvedToolUseId);
+					}
 					recomputeDuplicateActorsAround(entries, pendingIndex);
 				}
 			}

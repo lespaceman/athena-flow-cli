@@ -80,6 +80,8 @@ export function eventOperation(event: FeedEvent): string {
 			return 'run.abort';
 		case 'user.prompt':
 			return 'prompt';
+		case 'tool.delta':
+			return 'tool.call';
 		case 'tool.pre':
 			return 'tool.call';
 		case 'tool.post':
@@ -140,6 +142,8 @@ export function eventLabel(event: FeedEvent): string {
 			return 'Run Abort';
 		case 'user.prompt':
 			return 'User Prompt';
+		case 'tool.delta':
+			return 'Tool Call';
 		case 'tool.pre':
 			return 'Tool Call';
 		case 'tool.post':
@@ -212,6 +216,7 @@ export function eventLabel(event: FeedEvent): string {
 /** Extract contextual detail for the DETAIL column (tool name, agent type, etc.). */
 export function eventDetail(event: FeedEvent): string {
 	switch (event.kind) {
+		case 'tool.delta':
 		case 'tool.pre':
 		case 'tool.post':
 		case 'tool.failure':
@@ -337,6 +342,7 @@ export type SummaryResult = {
 
 export function eventSummary(event: FeedEvent): SummaryResult {
 	switch (event.kind) {
+		case 'tool.delta':
 		case 'tool.pre':
 		case 'tool.post':
 		case 'permission.request':
@@ -484,6 +490,7 @@ function eventSummaryText(event: FeedEvent): string {
 				200,
 			);
 		case 'tool.pre':
+		case 'tool.delta':
 		case 'tool.post':
 		case 'tool.failure':
 		case 'permission.request':
@@ -496,6 +503,7 @@ function eventSummaryText(event: FeedEvent): string {
 export function expansionForEvent(event: FeedEvent): string {
 	switch (event.kind) {
 		case 'tool.pre':
+		case 'tool.delta':
 			return JSON.stringify(
 				{tool: event.data.tool_name, args: event.data.tool_input},
 				null,
@@ -680,6 +688,8 @@ export function mergedEventSummary(
 			undefined,
 			postEvent.data.error,
 		);
+	} else if (postEvent.kind === 'tool.delta') {
+		return eventSummary(event);
 	} else if (postEvent.kind === 'tool.post') {
 		resultText = summarizeToolResult(
 			toolName,
@@ -718,7 +728,10 @@ export function isEntryStable(entry: TimelineEntry): boolean {
 	if (!entry.feedEvent) return true;
 	const kind = entry.feedEvent.kind;
 	if (kind === 'tool.pre' || kind === 'permission.request') {
-		return entry.pairedPostEvent !== undefined;
+		return (
+			entry.pairedPostEvent !== undefined &&
+			entry.pairedPostEvent.kind !== 'tool.delta'
+		);
 	}
 	return true;
 }

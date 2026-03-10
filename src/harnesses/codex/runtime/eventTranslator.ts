@@ -48,11 +48,14 @@ function resolveToolName(
 ): string {
 	switch (itemType) {
 		case 'commandExecution':
-			return 'command_execution';
+			return 'Bash';
 		case 'fileChange':
-			return 'file_change';
-		case 'mcpToolCall':
-			return `mcp:${item['server'] ?? 'unknown'}/${item['tool'] ?? 'unknown'}`;
+			return 'Edit';
+		case 'mcpToolCall': {
+			const server = String(item['server'] ?? 'unknown');
+			const tool = String(item['tool'] ?? 'unknown');
+			return `mcp__${server}__${tool}`;
+		}
 		default:
 			return itemType;
 	}
@@ -101,6 +104,19 @@ export function translateNotification(
 				kind: 'session.start',
 				data: {
 					source: 'codex',
+				},
+				expectsDecision: false,
+			};
+		}
+
+		case M.SKILLS_CHANGED: {
+			return {
+				kind: 'notification',
+				data: {
+					title: 'Skills changed',
+					message:
+						'Workflow skill files changed. Refresh or start a new Codex thread to pick up updated skill instructions.',
+					notification_type: 'skills.changed',
 				},
 				expectsDecision: false,
 			};
@@ -170,6 +186,31 @@ export function translateNotification(
 					item_id: params.itemId,
 					delta: params.delta,
 				},
+				expectsDecision: false,
+			};
+		}
+
+		case M.ITEM_COMMAND_EXECUTION_OUTPUT_DELTA: {
+			const params = asRecord(msg.params);
+			return {
+				kind: 'tool.delta',
+				data: {
+					thread_id:
+						typeof params['threadId'] === 'string'
+							? params['threadId']
+							: undefined,
+					turn_id:
+						typeof params['turnId'] === 'string' ? params['turnId'] : undefined,
+					tool_name: 'Bash',
+					tool_input: {},
+					tool_use_id:
+						typeof params['itemId'] === 'string' ? params['itemId'] : undefined,
+					delta:
+						typeof params['delta'] === 'string' ? params['delta'] : undefined,
+				},
+				toolName: 'Bash',
+				toolUseId:
+					typeof params['itemId'] === 'string' ? params['itemId'] : undefined,
 				expectsDecision: false,
 			};
 		}
@@ -455,7 +496,7 @@ export function translateServerRequest(
 	switch (msg.method) {
 		case M.CMD_EXEC_REQUEST_APPROVAL: {
 			const params = msg.params as CodexCommandExecutionRequestApprovalParams;
-			return permissionRequestEvent('command_execution', {
+			return permissionRequestEvent('Bash', {
 				command: params.command,
 				cwd: params.cwd,
 				reason: params.reason,
@@ -466,7 +507,7 @@ export function translateServerRequest(
 
 		case M.FILE_CHANGE_REQUEST_APPROVAL: {
 			const params = msg.params as CodexFileChangeRequestApprovalParams;
-			return permissionRequestEvent('file_change', {
+			return permissionRequestEvent('Edit', {
 				reason: params.reason,
 				grantRoot: params.grantRoot,
 			});
@@ -480,7 +521,7 @@ export function translateServerRequest(
 		case M.APPLY_PATCH_APPROVAL: {
 			const params = msg.params as CodexApplyPatchApprovalParams;
 			return permissionRequestEvent(
-				'file_change',
+				'Edit',
 				{
 					fileChanges: params.fileChanges,
 					reason: params.reason,
@@ -494,7 +535,7 @@ export function translateServerRequest(
 		case M.EXEC_COMMAND_APPROVAL: {
 			const params = msg.params as CodexExecCommandApprovalParams;
 			return permissionRequestEvent(
-				'command_execution',
+				'Bash',
 				{
 					command: params.command,
 					cwd: params.cwd,

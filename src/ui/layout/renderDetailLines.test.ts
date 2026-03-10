@@ -156,6 +156,30 @@ describe('renderDetailLines', () => {
 		expect(text).toContain('echo hello');
 	});
 
+	it('renders streamed command output for tool.pre paired with tool.delta', () => {
+		const pre = makeEvent({
+			kind: 'tool.pre',
+			data: {
+				tool_name: 'Bash',
+				tool_input: {command: 'npm test'},
+				tool_use_id: 'cmd-1',
+			},
+		});
+		const delta = makeEvent({
+			kind: 'tool.delta',
+			data: {
+				tool_name: 'Bash',
+				tool_input: {},
+				tool_use_id: 'cmd-1',
+				delta: 'PASS src/example.test.ts\n',
+			},
+		});
+		const result = renderDetailLines(pre, 80, delta);
+		const text = stripAnsi(result.lines.join('\n'));
+		expect(text).toContain('$ npm test');
+		expect(text).toContain('PASS src/example.test.ts');
+	});
+
 	it('wraps long tool request lines to detail width', () => {
 		const event = makeEvent({
 			kind: 'tool.pre',
