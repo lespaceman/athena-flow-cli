@@ -33,7 +33,7 @@ describe('DiagnosticsConsentDialog', () => {
 		expect(onDecision).toHaveBeenCalledWith('send-once');
 	});
 
-	it('declines on Escape', () => {
+	it('declines on Escape', async () => {
 		const onDecision = vi.fn();
 		const {stdin} = render(
 			<DiagnosticsConsentDialog
@@ -43,6 +43,7 @@ describe('DiagnosticsConsentDialog', () => {
 		);
 
 		stdin.write('\x1B');
+		await new Promise(resolve => setImmediate(resolve));
 		expect(onDecision).toHaveBeenCalledWith('do-not-send');
 	});
 });
