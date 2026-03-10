@@ -72,9 +72,8 @@ export function resolveCodexWorkflowConfig(
 				return [name, normalizeCodexMcpServerConfig(record)] as const;
 			})
 			.filter(
-				(
-					entry,
-				): entry is readonly [string, Record<string, unknown>] => entry !== null,
+				(entry): entry is readonly [string, Record<string, unknown>] =>
+					entry !== null,
 			),
 	);
 

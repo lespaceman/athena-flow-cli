@@ -63,7 +63,14 @@ export function HookProvider({
 				instanceId,
 				...(workflow ? {workflow} : {}),
 			}),
-		[providedRuntime, runtimeFactory, harness, projectDir, instanceId, workflow],
+		[
+			providedRuntime,
+			runtimeFactory,
+			harness,
+			projectDir,
+			instanceId,
+			workflow,
+		],
 	);
 
 	const sessionStore = useMemo(

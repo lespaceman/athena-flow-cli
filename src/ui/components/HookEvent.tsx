@@ -37,8 +37,7 @@ export default function HookEvent({
 	}
 
 	if (
-		(event.kind === 'tool.pre' &&
-			event.data.tool_name === 'AskUserQuestion') ||
+		(event.kind === 'tool.pre' && event.data.tool_name === 'AskUserQuestion') ||
 		(event.kind === 'permission.request' &&
 			event.data.tool_name === 'user_input')
 	) {

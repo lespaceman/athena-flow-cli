@@ -75,24 +75,24 @@ Claude Code -> hook-forwarder (stdin) -> UDS -> athena-flow runtime
 
 `exec`-only flags:
 
-| Flag                    | Description                                                |
-| ----------------------- | ---------------------------------------------------------- |
-| `--continue`            | Resume most recent exec session (or `--continue=<id>`)     |
-| `--json`                | Emit JSONL lifecycle events to stdout                      |
-| `--output-last-message` | Write the final assistant message to a file                |
+| Flag                    | Description                                                                         |
+| ----------------------- | ----------------------------------------------------------------------------------- |
+| `--continue`            | Resume most recent exec session (or `--continue=<id>`)                              |
+| `--json`                | Emit JSONL lifecycle events to stdout                                               |
+| `--output-last-message` | Write the final assistant message to a file                                         |
 | `--ephemeral`           | Disable durable session persistence for the current exec run (`--continue` invalid) |
-| `--on-permission`       | `allow`, `deny`, or `fail` (default) for permission hooks  |
-| `--on-question`         | `empty` or `fail` (default) for `AskUserQuestion`          |
-| `--timeout-ms`          | Hard timeout for the full exec run                         |
+| `--on-permission`       | `allow`, `deny`, or `fail` (default) for permission hooks                           |
+| `--on-question`         | `empty` or `fail` (default) for `AskUserQuestion`                                   |
+| `--timeout-ms`          | Hard timeout for the full exec run                                                  |
 
 ## CLI Commands
 
-| Command              | Description                                           |
-| -------------------- | ----------------------------------------------------- |
-| `setup`              | Re-run setup wizard                                   |
-| `sessions`           | Launch interactive session picker                     |
-| `resume [sessionId]` | Resume most recent session, or a specific one         |
-| `exec "<prompt>"`    | Run Athena without Ink/TUI (automation mode)          |
+| Command              | Description                                                                                              |
+| -------------------- | -------------------------------------------------------------------------------------------------------- |
+| `setup`              | Re-run setup wizard                                                                                      |
+| `sessions`           | Launch interactive session picker                                                                        |
+| `resume [sessionId]` | Resume most recent session, or a specific one                                                            |
+| `exec "<prompt>"`    | Run Athena without Ink/TUI (automation mode)                                                             |
 | `workflow <sub>`     | Manage workflows (`install`, `list`, `update`, `use-marketplace`, `update-marketplace`, `remove`, `use`) |
 
 ## Workflow Commands

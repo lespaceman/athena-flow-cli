@@ -1,5 +1,17 @@
 import type {TokenUsage} from '../../shared/types/headerMetrics';
 
+export type TurnContinuation =
+	| {mode: 'fresh'}
+	| {mode: 'resume'; handle: string}
+	| {mode: 'reuse-current'};
+
+export type TurnExecutionResult = {
+	exitCode: number | null;
+	error: Error | null;
+	tokens: TokenUsage;
+	streamMessage: string | null;
+};
+
 export type HarnessProcessFailureCode =
 	| 'claude_binary_missing'
 	| 'hook_forwarder_missing'
@@ -34,9 +46,9 @@ export type HarnessProcess<ConfigOverride = unknown> = {
 	isRunning: boolean;
 	spawn: (
 		prompt: string,
-		sessionId?: string,
+		continuation?: TurnContinuation,
 		configOverride?: ConfigOverride,
-	) => Promise<void>;
+	) => Promise<TurnExecutionResult>;
 	interrupt: () => void;
 	kill: () => Promise<void>;
 	usage: TokenUsage;

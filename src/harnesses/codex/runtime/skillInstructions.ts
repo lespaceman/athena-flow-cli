@@ -5,14 +5,14 @@ import {asRecord} from './eventTranslator';
 
 function isUnderAnyRoot(filePath: string, roots: string[]): boolean {
 	return roots.some(root => {
-		const normalizedRoot = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+		const normalizedRoot = root.endsWith(path.sep)
+			? root
+			: `${root}${path.sep}`;
 		return filePath === root || filePath.startsWith(normalizedRoot);
 	});
 }
 
-function formatSkillDependency(
-	tool: Record<string, unknown>,
-): string | null {
+function formatSkillDependency(tool: Record<string, unknown>): string | null {
 	const type = typeof tool['type'] === 'string' ? tool['type'] : null;
 	const value = typeof tool['value'] === 'string' ? tool['value'] : null;
 	if (!type || !value) {
@@ -87,7 +87,9 @@ function buildSkillInstructionsFromResult(
 		}
 	}
 
-	lines.push('If a task matches a skill description, invoke it with `$<skill-name>` and include the matching skill input item.');
+	lines.push(
+		'If a task matches a skill description, invoke it with `$<skill-name>` and include the matching skill input item.',
+	);
 	return lines.join('\n');
 }
 

@@ -81,8 +81,7 @@ export function runWorkflowCommand(
 			try {
 				const installSource = resolveInstallSource(
 					source,
-					readConfig().workflowMarketplaceSource ??
-						DEFAULT_MARKETPLACE_SLUG,
+					readConfig().workflowMarketplaceSource ?? DEFAULT_MARKETPLACE_SLUG,
 				);
 				const name = install(installSource);
 				logOut(`Installed workflow: ${name}`);

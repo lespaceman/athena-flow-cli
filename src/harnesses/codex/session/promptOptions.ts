@@ -1,6 +1,7 @@
 import type {
 	HarnessProcessConfig,
 	HarnessProcessOverride,
+	TurnContinuation,
 } from '../../../core/runtime/process';
 import type {WorkflowPlan} from '../../../core/workflows';
 import {
@@ -9,7 +10,7 @@ import {
 } from './workflowArtifacts';
 
 export type CodexPromptOptions = {
-	threadIdToResume?: string;
+	continuation?: TurnContinuation;
 	model?: string;
 	developerInstructions?: string;
 	skillRoots?: string[];
@@ -26,7 +27,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 export function buildCodexPromptOptions(input: {
 	processConfig?: HarnessProcessConfig;
-	sessionId?: string;
+	continuation?: TurnContinuation;
 	configOverride?: HarnessProcessOverride;
 	workflowPlan?: WorkflowPlan;
 	ephemeral?: boolean;
@@ -45,7 +46,7 @@ export function buildCodexPromptOptions(input: {
 	const skillRoots = resolveCodexWorkflowSkillRoots(input.workflowPlan);
 
 	return {
-		threadIdToResume: input.sessionId,
+		continuation: input.continuation,
 		model: modelFromOverride ?? modelFromProcess,
 		developerInstructions,
 		skillRoots: skillRoots.length > 0 ? skillRoots : undefined,

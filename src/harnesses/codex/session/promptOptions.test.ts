@@ -27,13 +27,13 @@ describe('buildCodexPromptOptions', () => {
 		expect(
 			buildCodexPromptOptions({
 				processConfig: {model: 'gpt-5.3-codex'},
-				sessionId: 'thread-123',
+				continuation: {mode: 'resume', handle: 'thread-123'},
 				configOverride: {
 					developerInstructions: 'Use the workflow tracker.',
 				},
 			}),
 		).toEqual({
-			threadIdToResume: 'thread-123',
+			continuation: {mode: 'resume', handle: 'thread-123'},
 			model: 'gpt-5.3-codex',
 			developerInstructions: 'Use the workflow tracker.',
 			skillRoots: undefined,
@@ -49,7 +49,7 @@ describe('buildCodexPromptOptions', () => {
 				configOverride: {model: 'gpt-5.4-codex'},
 			}),
 		).toEqual({
-			threadIdToResume: undefined,
+			continuation: undefined,
 			model: 'gpt-5.4-codex',
 			developerInstructions: undefined,
 			skillRoots: undefined,
@@ -79,15 +79,12 @@ describe('buildCodexPromptOptions', () => {
 						plugins: [],
 						promptTemplate: '{input}',
 					},
-					pluginDirs: [
-						'/plugins/e2e-test-builder',
-						'/plugins/md-export',
-					],
+					pluginDirs: ['/plugins/e2e-test-builder', '/plugins/md-export'],
 					pluginMcpConfig: '/tmp/plugin-mcp.json',
 				},
 			}),
 		).toEqual({
-			threadIdToResume: undefined,
+			continuation: undefined,
 			model: undefined,
 			developerInstructions: undefined,
 			skillRoots: [
@@ -113,7 +110,7 @@ describe('buildCodexPromptOptions', () => {
 				ephemeral: true,
 			}),
 		).toEqual({
-			threadIdToResume: undefined,
+			continuation: undefined,
 			model: undefined,
 			developerInstructions: undefined,
 			skillRoots: undefined,

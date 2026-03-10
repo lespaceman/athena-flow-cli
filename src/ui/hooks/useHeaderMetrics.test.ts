@@ -42,6 +42,7 @@ describe('useHeaderMetrics', () => {
 				cacheWrite: null,
 				total: null,
 				contextSize: null,
+				contextWindowSize: null,
 			},
 			failures: 0,
 			blocks: 0,

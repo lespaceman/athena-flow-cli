@@ -29,15 +29,15 @@ type WorkflowOption = {
 };
 
 function readLocalWorkflowOption(sourcePath: string): WorkflowOption {
-	const raw = JSON.parse(
-		fs.readFileSync(sourcePath, 'utf-8'),
-	) as {
+	const raw = JSON.parse(fs.readFileSync(sourcePath, 'utf-8')) as {
 		name?: string;
 		description?: string;
 	};
 
 	if (!raw.name) {
-		throw new Error(`Workflow source at ${sourcePath} is missing a "name" field.`);
+		throw new Error(
+			`Workflow source at ${sourcePath} is missing a "name" field.`,
+		);
 	}
 
 	return {
@@ -118,7 +118,9 @@ export default function WorkflowStep({onComplete, onError}: Props) {
 		try {
 			const nextOptions = loadWorkflowOptions();
 			if (nextOptions.length === 0) {
-				throw new Error('No workflows are currently published in the Athena marketplace.');
+				throw new Error(
+					'No workflows are currently published in the Athena marketplace.',
+				);
 			}
 			setOptions(nextOptions);
 			setStatus('selecting');

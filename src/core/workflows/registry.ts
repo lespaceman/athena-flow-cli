@@ -51,9 +51,9 @@ function readStoredWorkflowSource(
 	if (!fs.existsSync(sourceFile)) return;
 
 	try {
-		const source = JSON.parse(
-			fs.readFileSync(sourceFile, 'utf-8'),
-		) as WorkflowSourceMetadata | {ref?: string; path?: string};
+		const source = JSON.parse(fs.readFileSync(sourceFile, 'utf-8')) as
+			| WorkflowSourceMetadata
+			| {ref?: string; path?: string};
 		if (typeof source.ref === 'string') {
 			return {kind: 'marketplace', ref: source.ref};
 		}
@@ -74,7 +74,9 @@ function readStoredWorkflowSource(
 	return undefined;
 }
 
-function syncFromSource(workflowDir: string): WorkflowSourceMetadata | undefined {
+function syncFromSource(
+	workflowDir: string,
+): WorkflowSourceMetadata | undefined {
 	const source = readStoredWorkflowSource(workflowDir);
 	if (!source) return undefined;
 
@@ -202,7 +204,11 @@ function copyWorkflowFiles(sourcePath: string, destDir: string): void {
 	const absoluteDestDir = path.resolve(destDir);
 
 	fs.mkdirSync(absoluteDestDir, {recursive: true});
-	fs.writeFileSync(path.join(absoluteDestDir, 'workflow.json'), content, 'utf-8');
+	fs.writeFileSync(
+		path.join(absoluteDestDir, 'workflow.json'),
+		content,
+		'utf-8',
+	);
 
 	// Copy referenced local assets next to workflow.json when available.
 	const copyRelativeAsset = (assetPath: string | undefined) => {
@@ -275,7 +281,8 @@ export function updateWorkflow(name: string): string {
 		);
 	}
 
-	const installSource = source.kind === 'marketplace' ? source.ref : source.path;
+	const installSource =
+		source.kind === 'marketplace' ? source.ref : source.path;
 	return installWorkflow(installSource, name);
 }
 

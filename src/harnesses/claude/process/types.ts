@@ -6,6 +6,10 @@
 
 import {type IsolationConfig, type IsolationPreset} from '../config/isolation';
 import type {TokenUsage} from '../../../shared/types/headerMetrics';
+import type {
+	TurnContinuation,
+	TurnExecutionResult,
+} from '../../../core/runtime/process';
 
 /**
  * Options for spawning a Claude Code headless process.
@@ -49,9 +53,9 @@ export type SpawnClaudeOptions = {
 export type UseClaudeProcessResult = {
 	spawn: (
 		prompt: string,
-		sessionId?: string,
+		continuation?: TurnContinuation,
 		isolation?: Partial<IsolationConfig>,
-	) => Promise<void>;
+	) => Promise<TurnExecutionResult>;
 	isRunning: boolean;
 	output: string[];
 	kill: () => Promise<void>;

@@ -75,9 +75,7 @@ describe('runWorkflowCommand', () => {
 			const installWorkflow = vi.fn().mockImplementation(() => {
 				throw new Error('file not found');
 			});
-			const resolveWorkflowInstallSource = vi
-				.fn()
-				.mockReturnValue('/bad/path');
+			const resolveWorkflowInstallSource = vi.fn().mockReturnValue('/bad/path');
 			const readGlobalConfig = vi.fn().mockReturnValue({
 				plugins: [],
 				additionalDirectories: [],

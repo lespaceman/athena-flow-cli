@@ -5,4 +5,4 @@
 /**
  * Represents whether outbound network access is available to the agent.
  */
-export type NetworkAccess = "restricted" | "enabled";
+export type NetworkAccess = 'restricted' | 'enabled';

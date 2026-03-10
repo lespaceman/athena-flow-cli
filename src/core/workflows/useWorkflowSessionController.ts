@@ -1,6 +1,10 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
-import type {HarnessProcessOverride} from '../runtime/process';
-import type {UseSessionControllerResult} from '../../harnesses/contracts/session';
+import type {
+	HarnessProcess,
+	HarnessProcessOverride,
+	TurnContinuation,
+	TurnExecutionResult,
+} from '../runtime/process';
 import {
 	cleanupWorkflowRun,
 	createWorkflowRunState,
@@ -10,16 +14,18 @@ import {
 import type {WorkflowConfig} from './types';
 
 export function useWorkflowSessionController(
-	base: UseSessionControllerResult,
+	base: HarnessProcess<HarnessProcessOverride>,
 	input: {
 		projectDir: string;
 		workflow?: WorkflowConfig;
 	},
-): UseSessionControllerResult {
+): HarnessProcess<HarnessProcessOverride> {
 	const [isRunning, setIsRunning] = useState(false);
 	const cancelledRef = useRef(false);
 	const activeRunIdRef = useRef(0);
-	const activeSpawnPromiseRef = useRef<Promise<void> | null>(null);
+	const activeSpawnPromiseRef = useRef<Promise<TurnExecutionResult> | null>(
+		null,
+	);
 
 	const interrupt = useCallback((): void => {
 		cancelledRef.current = true;
@@ -31,14 +37,15 @@ export function useWorkflowSessionController(
 		activeRunIdRef.current += 1;
 		setIsRunning(false);
 		await base.kill();
+		await activeSpawnPromiseRef.current?.catch(() => {});
 	}, [base]);
 
 	const spawn = useCallback(
 		async (
 			prompt: string,
-			sessionId?: string,
+			continuation?: TurnContinuation,
 			configOverride?: HarnessProcessOverride,
-		): Promise<void> => {
+		): Promise<TurnExecutionResult> => {
 			const previousSpawn = activeSpawnPromiseRef.current;
 			if (previousSpawn) {
 				cancelledRef.current = true;
@@ -58,7 +65,13 @@ export function useWorkflowSessionController(
 					projectDir: input.projectDir,
 					workflow: input.workflow,
 				});
-				let nextSessionId = sessionId;
+				let nextContinuation = continuation;
+				let lastResult: TurnExecutionResult = {
+					exitCode: 0,
+					error: null,
+					tokens: base.usage,
+					streamMessage: null,
+				};
 
 				try {
 					while (!cancelledRef.current && activeRunIdRef.current === runId) {
@@ -70,21 +83,24 @@ export function useWorkflowSessionController(
 							console.error(`[athena] ${warning}`);
 						}
 
-						await base.spawn(
+						lastResult = await base.spawn(
 							prepared.prompt,
-							nextSessionId,
+							nextContinuation,
 							prepared.configOverride,
 						);
 						if (
 							cancelledRef.current ||
 							activeRunIdRef.current !== runId ||
+							lastResult.error !== null ||
+							(lastResult.exitCode !== null && lastResult.exitCode !== 0) ||
 							!shouldContinueWorkflowRun(workflowState)
 						) {
 							break;
 						}
 
-						nextSessionId = undefined;
+						nextContinuation = {mode: 'fresh'};
 					}
+					return lastResult;
 				} finally {
 					cleanupWorkflowRun(workflowState);
 					if (activeSpawnPromiseRef.current === runPromise) {
@@ -97,18 +113,18 @@ export function useWorkflowSessionController(
 			})();
 
 			activeSpawnPromiseRef.current = runPromise;
-			await runPromise;
+			return await runPromise;
 		},
 		[base, input.projectDir, input.workflow],
 	);
 
 	useEffect(() => {
-			return () => {
-				cancelledRef.current = true;
-				activeRunIdRef.current += 1;
-				activeSpawnPromiseRef.current = null;
-			};
-		}, []);
+		return () => {
+			cancelledRef.current = true;
+			activeRunIdRef.current += 1;
+			activeSpawnPromiseRef.current = null;
+		};
+	}, []);
 
 	return {
 		...base,

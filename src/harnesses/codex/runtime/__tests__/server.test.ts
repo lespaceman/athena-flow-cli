@@ -15,8 +15,10 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock('../appServerManager', () => ({
 	AppServerManager: class MockAppServerManager extends EventEmitter {
-		readonly requests: Array<{method: string; params?: Record<string, unknown>}> =
-			[];
+		readonly requests: Array<{
+			method: string;
+			params?: Record<string, unknown>;
+		}> = [];
 		readonly responses: Array<{id: number; result: unknown}> = [];
 		readonly errors: Array<{id: number; code: number; message: string}> = [];
 
@@ -235,12 +237,12 @@ describe('createCodexServer', () => {
 			]),
 		);
 		expect(
-			manager!.requests.find(request => request.method === 'thread/start')?.params
-				?.['developerInstructions'],
+			manager!.requests.find(request => request.method === 'thread/start')
+				?.params?.['developerInstructions'],
 		).toEqual(expect.stringContaining('workflow-skill'));
 		expect(
-			manager!.requests.find(request => request.method === 'thread/start')?.params
-				?.['developerInstructions'],
+			manager!.requests.find(request => request.method === 'thread/start')
+				?.params?.['developerInstructions'],
 		).not.toEqual(expect.stringContaining('global-skill'));
 	});
 
@@ -259,7 +261,8 @@ describe('createCodexServer', () => {
 		const manager = mockState.current;
 		expect(manager).not.toBeNull();
 		expect(
-			manager!.requests.find(request => request.method === 'thread/start')?.params,
+			manager!.requests.find(request => request.method === 'thread/start')
+				?.params,
 		).toEqual(
 			expect.objectContaining({
 				ephemeral: true,
@@ -278,7 +281,10 @@ describe('createCodexServer', () => {
 		await runtime.start();
 		const manager = mockState.current as
 			| (typeof mockState.current & {
-					sendRequest: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
+					sendRequest: (
+						method: string,
+						params?: Record<string, unknown>,
+					) => Promise<unknown>;
 			  })
 			| null;
 		expect(manager).not.toBeNull();

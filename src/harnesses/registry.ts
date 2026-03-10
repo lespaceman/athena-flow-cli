@@ -36,7 +36,8 @@ const opencodeHarnessAdapter: HarnessAdapter = {
 	createRuntime: input => claudeHarnessAdapter.createRuntime(input),
 	createSessionController: input =>
 		claudeHarnessAdapter.createSessionController(input),
-	useSessionController: input => claudeHarnessAdapter.useSessionController(input),
+	useSessionController: input =>
+		claudeHarnessAdapter.useSessionController(input),
 	resolveConfigProfile: () => ({
 		harness: 'opencode',
 		buildIsolationConfig: input => buildClaudeCompatibleIsolationConfig(input),

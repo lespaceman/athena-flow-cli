@@ -6,6 +6,7 @@ import type {
 	RuntimeDecisionHandler,
 	RuntimeStartupError,
 } from '../../../core/runtime/types';
+import type {TurnContinuation} from '../../../core/runtime/process';
 import {AppServerManager} from './appServerManager';
 import {
 	mapNotificationToRuntimeEvent,
@@ -28,7 +29,7 @@ export type CodexRuntime = Runtime & {
 	sendPrompt(
 		prompt: string,
 		options?: {
-			threadIdToResume?: string;
+			continuation?: TurnContinuation;
 			model?: string;
 			developerInstructions?: string;
 			skillRoots?: string[];
@@ -51,7 +52,10 @@ type PendingTurnCompletion = {
 	promise: Promise<void>;
 	resolve: () => void;
 	reject: (error: Error) => void;
+	interruptTimer: ReturnType<typeof setTimeout> | null;
 };
+
+const INTERRUPT_SETTLE_TIMEOUT_MS = 5_000;
 
 function requireThreadId(value: unknown, method: string): string {
 	if (typeof value === 'string' && value.length > 0) {
@@ -85,9 +89,10 @@ function shouldIgnoreNotificationMethod(method: string): boolean {
 	);
 }
 
-function getUnsupportedServerRequestResponse(
-	method: string,
-): {result?: unknown; error?: {code: number; message: string}} {
+function getUnsupportedServerRequestResponse(method: string): {
+	result?: unknown;
+	error?: {code: number; message: string};
+} {
 	switch (method) {
 		case M.MCP_SERVER_ELICITATION_REQUEST:
 			return {result: {action: 'decline', content: null}};
@@ -148,6 +153,7 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 				settleReject = null;
 				reject(error);
 			},
+			interruptTimer: null,
 		};
 	}
 
@@ -186,13 +192,20 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 
 	function clearPendingTurn(error?: Error): void {
 		pendingTurnPrompt = null;
+		if (pendingTurnCompletion?.interruptTimer) {
+			clearTimeout(pendingTurnCompletion.interruptTimer);
+			pendingTurnCompletion.interruptTimer = null;
+		}
 		if (error) {
 			pendingTurnCompletion?.reject(error);
 		}
 		pendingTurnCompletion = null;
 	}
 
-	function trackNotificationState(msg: {method: string; params?: unknown}): void {
+	function trackNotificationState(msg: {
+		method: string;
+		params?: unknown;
+	}): void {
 		if (msg.method === M.THREAD_STARTED) {
 			const params = asRecord(msg.params);
 			const thread = asRecord(params['thread']);
@@ -411,11 +424,12 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 		async sendPrompt(
 			prompt: string,
 			options?: {
-				threadIdToResume?: string;
+				continuation?: TurnContinuation;
 				model?: string;
 				developerInstructions?: string;
 				skillRoots?: string[];
 				config?: Record<string, unknown>;
+				ephemeral?: boolean;
 			},
 		): Promise<void> {
 			if (!manager || status !== 'running') {
@@ -426,8 +440,14 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 			}
 
 			try {
-				const threadIdToResume = options?.threadIdToResume;
-				const shouldConfigureThread = Boolean(threadIdToResume) || !threadId;
+				const continuation = options?.continuation;
+				const shouldResume =
+					continuation?.mode === 'resume' && continuation.handle.length > 0;
+				const shouldStartFresh =
+					continuation?.mode === 'fresh' || continuation == null;
+				const shouldReuseCurrent = continuation?.mode === 'reuse-current';
+				const shouldConfigureThread =
+					shouldResume || shouldStartFresh || (shouldReuseCurrent && !threadId);
 				let skillInstructions: string | undefined;
 				if (shouldConfigureThread) {
 					try {
@@ -451,46 +471,44 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 						)
 					: options?.developerInstructions;
 				// Resume a thread or start a new one
-					if (threadIdToResume) {
-						const result = await manager.sendRequest(M.THREAD_RESUME, {
-						threadId: threadIdToResume,
+				if (shouldResume) {
+					const result = await manager.sendRequest(M.THREAD_RESUME, {
+						threadId: continuation.handle,
 						approvalPolicy: 'on-request',
 						sandbox: 'workspace-write',
 						cwd: projectDir,
 						...(options?.model ? {model: options.model} : {}),
-						...(developerInstructions
-							? {developerInstructions}
-							: {}),
-							...(options?.config ? {config: options.config} : {}),
-							persistExtendedHistory: !options?.ephemeral,
-						});
-						const response = asRecord(result);
-						const thread = asRecord(response['thread'] ?? result);
-						threadId = requireThreadId(thread['id'], M.THREAD_RESUME);
-						threadModel =
-							typeof response['model'] === 'string'
-								? response['model']
+						...(developerInstructions ? {developerInstructions} : {}),
+						...(options?.config ? {config: options.config} : {}),
+						persistExtendedHistory: !options?.ephemeral,
+					});
+					const response = asRecord(result);
+					const thread = asRecord(response['thread'] ?? result);
+					threadId = requireThreadId(thread['id'], M.THREAD_RESUME);
+					threadModel =
+						typeof response['model'] === 'string'
+							? response['model']
 							: threadModel;
-				} else if (!threadId) {
+				} else if (shouldStartFresh || !threadId) {
+					threadId = null;
+					turnId = null;
 					const result = await manager.sendRequest(M.THREAD_START, {
 						approvalPolicy: 'on-request',
 						sandbox: 'workspace-write',
 						cwd: projectDir,
 						...(options?.model ? {model: options.model} : {}),
-						...(developerInstructions
-							? {developerInstructions}
-							: {}),
-							...(options?.config ? {config: options.config} : {}),
-							experimentalRawEvents: false,
-							...(options?.ephemeral ? {ephemeral: true} : {}),
-							persistExtendedHistory: !options?.ephemeral,
-						});
-						const response = asRecord(result);
-						const thread = asRecord(response['thread'] ?? result);
-						threadId = requireThreadId(thread['id'], M.THREAD_START);
-						threadModel =
-							typeof response['model'] === 'string'
-								? response['model']
+						...(developerInstructions ? {developerInstructions} : {}),
+						...(options?.config ? {config: options.config} : {}),
+						experimentalRawEvents: false,
+						...(options?.ephemeral ? {ephemeral: true} : {}),
+						persistExtendedHistory: !options?.ephemeral,
+					});
+					const response = asRecord(result);
+					const thread = asRecord(response['thread'] ?? result);
+					threadId = requireThreadId(thread['id'], M.THREAD_START);
+					threadModel =
+						typeof response['model'] === 'string'
+							? response['model']
 							: threadModel;
 				}
 
@@ -517,6 +535,17 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 		sendInterrupt(): void {
 			if (!manager || !threadId || !turnId) return;
 			manager.sendNotification(M.TURN_INTERRUPT, {threadId, turnId});
+			if (
+				pendingTurnCompletion &&
+				pendingTurnCompletion.interruptTimer === null
+			) {
+				pendingTurnCompletion.interruptTimer = setTimeout(() => {
+					if (!pendingTurnCompletion) {
+						return;
+					}
+					clearPendingTurn(new Error('Codex turn interrupt timed out'));
+				}, INTERRUPT_SETTLE_TIMEOUT_MS);
+			}
 		},
 
 		_getPendingCount() {

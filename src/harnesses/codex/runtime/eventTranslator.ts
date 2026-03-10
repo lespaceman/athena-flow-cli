@@ -19,17 +19,13 @@ import type {
 	CodexReasoningSummaryTextDeltaNotification,
 	CodexReasoningTextDeltaNotification,
 	CodexThreadNameUpdatedNotification,
-	CodexThreadStartedNotification,
 	CodexThreadTokenUsageUpdatedNotification,
 	CodexToolRequestUserInputParams,
 	CodexTurnCompletedNotification,
 	CodexTurnPlanUpdatedNotification,
 	CodexTurnStartedNotification,
 } from '../protocol';
-import {
-	getCodexUsageDelta,
-	getCodexUsageTotals,
-} from './tokenUsage';
+import {getCodexUsageDelta, getCodexUsageTotals} from './tokenUsage';
 import * as M from '../protocol/methods';
 
 export type CodexTranslatedEvent = {
@@ -101,7 +97,6 @@ export function translateNotification(
 ): CodexTranslatedEvent {
 	switch (msg.method) {
 		case M.THREAD_STARTED: {
-			const params = msg.params as CodexThreadStartedNotification;
 			return {
 				kind: 'session.start',
 				data: {

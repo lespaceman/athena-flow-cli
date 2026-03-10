@@ -175,7 +175,9 @@ describe('cli exec mode', () => {
 		trackErrorMock.mockReset();
 		trackTelemetryOptedOutMock.mockReset();
 		resolveWorkflowInstallSourceMock.mockReset();
-		resolveWorkflowInstallSourceMock.mockImplementation((source: string) => source);
+		resolveWorkflowInstallSourceMock.mockImplementation(
+			(source: string) => source,
+		);
 
 		readConfigMock.mockReturnValue(BASE_CONFIG);
 		readGlobalConfigMock.mockReturnValue(BASE_CONFIG);
@@ -363,11 +365,7 @@ describe('cli exec mode', () => {
 	});
 
 	it('routes workflow install through the interactive install wizard path', async () => {
-		const cli = await runCli([
-			'workflow',
-			'install',
-			'e2e-test-builder',
-		]);
+		const cli = await runCli(['workflow', 'install', 'e2e-test-builder']);
 		try {
 			await new Promise(resolve => setImmediate(resolve));
 			expect(renderMock).toHaveBeenCalledTimes(1);

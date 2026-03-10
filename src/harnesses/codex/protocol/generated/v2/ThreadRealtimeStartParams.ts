@@ -5,4 +5,8 @@
 /**
  * EXPERIMENTAL - start a thread-scoped realtime session.
  */
-export type ThreadRealtimeStartParams = { threadId: string, prompt: string, sessionId?: string | null, };
+export type ThreadRealtimeStartParams = {
+	threadId: string;
+	prompt: string;
+	sessionId?: string | null;
+};

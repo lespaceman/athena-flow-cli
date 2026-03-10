@@ -30,22 +30,23 @@ describe('useCodexSessionController', () => {
 		);
 
 		await act(async () => {
-			await result.current.spawn('continue the task', 'thread-123', {
-				model: 'gpt-5.3-codex',
-			});
+			await result.current.spawn(
+				'continue the task',
+				{mode: 'resume', handle: 'thread-123'},
+				{
+					model: 'gpt-5.3-codex',
+				},
+			);
 		});
 
-		expect(sendPrompt).toHaveBeenCalledWith(
-			'continue the task',
-			{
-				threadIdToResume: 'thread-123',
-				model: 'gpt-5.3-codex',
-				developerInstructions: undefined,
-				skillRoots: undefined,
-				config: undefined,
-				ephemeral: undefined,
-			},
-		);
+		expect(sendPrompt).toHaveBeenCalledWith('continue the task', {
+			continuation: {mode: 'resume', handle: 'thread-123'},
+			model: 'gpt-5.3-codex',
+			developerInstructions: undefined,
+			skillRoots: undefined,
+			config: undefined,
+			ephemeral: undefined,
+		});
 		expect(result.current.isRunning).toBe(false);
 	});
 
@@ -57,7 +58,12 @@ describe('useCodexSessionController', () => {
 		} as unknown as Runtime;
 
 		const {result} = renderHook(() =>
-			useCodexSessionController(runtime, {model: 'gpt-5.3-codex'}, undefined, true),
+			useCodexSessionController(
+				runtime,
+				{model: 'gpt-5.3-codex'},
+				undefined,
+				true,
+			),
 		);
 
 		await act(async () => {

@@ -96,12 +96,14 @@ One registry entry per harness. This is the public integration surface for the a
 
 ```ts
 type HarnessAdapter = {
-  id: AthenaHarness;
-  label: string;
-  verify: () => HarnessVerificationResult;
-  createRuntime(input: RuntimeFactoryInput): Runtime;
-  createSessionController(input: SessionControllerFactoryInput): SessionController;
-  resolveConfigProfile(): HarnessConfigProfile;
+	id: AthenaHarness;
+	label: string;
+	verify: () => HarnessVerificationResult;
+	createRuntime(input: RuntimeFactoryInput): Runtime;
+	createSessionController(
+		input: SessionControllerFactoryInput,
+	): SessionController;
+	resolveConfigProfile(): HarnessConfigProfile;
 };
 ```
 
@@ -133,18 +135,18 @@ This replaces the current Claude-biased "process" abstraction.
 
 ```ts
 type SessionController = {
-  startTurn(input: {
-    prompt: string;
-    resumeSessionId?: string;
-    overrides?: TurnOverrides;
-  }): Promise<TurnResult>;
-  interrupt(): void;
-  stop(): Promise<void>;
-  subscribeUsage(handler: (usage: TokenUsage) => void): () => void;
-  getState(): {
-    running: boolean;
-    providerSessionId?: string | null;
-  };
+	startTurn(input: {
+		prompt: string;
+		resumeSessionId?: string;
+		overrides?: TurnOverrides;
+	}): Promise<TurnResult>;
+	interrupt(): void;
+	stop(): Promise<void>;
+	subscribeUsage(handler: (usage: TokenUsage) => void): () => void;
+	getState(): {
+		running: boolean;
+		providerSessionId?: string | null;
+	};
 };
 ```
 
@@ -161,19 +163,19 @@ Replace the current isolation-first config model with two layers:
 
 ```ts
 type SessionOpenConfig = {
-  cwd: string;
-  model?: string;
-  approvalMode?: "interactive" | "never";
-  sandboxMode?: "workspace-write" | "danger-full-access";
-  baseInstructions?: string;
-  developerInstructions?: string;
+	cwd: string;
+	model?: string;
+	approvalMode?: 'interactive' | 'never';
+	sandboxMode?: 'workspace-write' | 'danger-full-access';
+	baseInstructions?: string;
+	developerInstructions?: string;
 };
 
 type TurnOverrides = {
-  model?: string;
-  outputSchema?: unknown;
-  cwd?: string;
-  developerInstructions?: string;
+	model?: string;
+	outputSchema?: unknown;
+	cwd?: string;
+	developerInstructions?: string;
 };
 ```
 

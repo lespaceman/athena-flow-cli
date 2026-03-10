@@ -56,8 +56,13 @@ vi.mock('../../../infra/plugins/marketplace', () => ({
 	resolveMarketplaceWorkflow: () => '/tmp/resolved-workflow.json',
 }));
 
-const {resolveWorkflow, installWorkflow, updateWorkflow, listWorkflows, removeWorkflow} =
-	await import('../registry');
+const {
+	resolveWorkflow,
+	installWorkflow,
+	updateWorkflow,
+	listWorkflows,
+	removeWorkflow,
+} = await import('../registry');
 
 beforeEach(() => {
 	for (const key of Object.keys(files)) {
@@ -511,12 +516,13 @@ describe('updateWorkflow', () => {
 			plugins: [],
 			promptTemplate: 'new',
 		});
-		files['/home/testuser/.config/athena/workflows/local-update/workflow.json'] =
-			JSON.stringify({
-				name: 'local-update',
-				plugins: [],
-				promptTemplate: 'old',
-			});
+		files[
+			'/home/testuser/.config/athena/workflows/local-update/workflow.json'
+		] = JSON.stringify({
+			name: 'local-update',
+			plugins: [],
+			promptTemplate: 'old',
+		});
 		files['/home/testuser/.config/athena/workflows/local-update/source.json'] =
 			JSON.stringify({
 				kind: 'local',

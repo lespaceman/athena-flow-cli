@@ -6,10 +6,7 @@ import type {
 	SessionControllerTurnResult,
 } from '../../contracts/session';
 import type {CodexRuntime} from '../runtime/server';
-import {
-	NULL_TOKENS,
-	readTokenUsage,
-} from '../runtime/tokenUsage';
+import {NULL_TOKENS, readTokenUsage} from '../runtime/tokenUsage';
 import {buildCodexPromptOptions} from './promptOptions';
 
 export function createCodexSessionController(
@@ -17,11 +14,12 @@ export function createCodexSessionController(
 ): SessionController {
 	const runtime = input.runtime as (Runtime & Partial<CodexRuntime>) | null;
 	const processConfig = input.processConfig as HarnessProcessConfig | undefined;
+	let activeTurnPromise: Promise<SessionControllerTurnResult> | null = null;
 
 	return {
 		async startTurn({
 			prompt,
-			sessionId,
+			continuation,
 			configOverride,
 		}): Promise<SessionControllerTurnResult> {
 			if (!runtime || typeof runtime.sendPrompt !== 'function') {
@@ -51,30 +49,39 @@ export function createCodexSessionController(
 				}
 			});
 
+			const turnPromise = (async (): Promise<SessionControllerTurnResult> => {
+				try {
+					await runtime.sendPrompt(
+						prompt,
+						buildCodexPromptOptions({
+							processConfig,
+							continuation,
+							configOverride,
+							workflowPlan: input.workflowPlan,
+							ephemeral: input.ephemeral,
+						}),
+					);
+					return {
+						exitCode: 0,
+						error: null,
+						tokens: tokenDelta,
+						streamMessage: message || null,
+					};
+				} catch (error) {
+					return {
+						exitCode: null,
+						error: error instanceof Error ? error : new Error(String(error)),
+						tokens: tokenDelta,
+						streamMessage: message || null,
+					};
+				} finally {
+					activeTurnPromise = null;
+				}
+			})();
+			activeTurnPromise = turnPromise;
+
 			try {
-				await runtime.sendPrompt(
-					prompt,
-					buildCodexPromptOptions({
-						processConfig,
-						sessionId,
-						configOverride,
-						workflowPlan: input.workflowPlan,
-						ephemeral: input.ephemeral,
-					}),
-				);
-				return {
-					exitCode: 0,
-					error: null,
-					tokens: tokenDelta,
-					streamMessage: message || null,
-				};
-			} catch (error) {
-				return {
-					exitCode: null,
-					error: error instanceof Error ? error : new Error(String(error)),
-					tokens: tokenDelta,
-					streamMessage: message || null,
-				};
+				return await turnPromise;
 			} finally {
 				unsubscribe();
 			}
@@ -86,6 +93,7 @@ export function createCodexSessionController(
 
 		async kill(): Promise<void> {
 			runtime?.sendInterrupt?.();
+			await activeTurnPromise?.catch(() => {});
 		},
 	};
 }

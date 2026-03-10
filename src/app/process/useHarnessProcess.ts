@@ -12,9 +12,10 @@ import {resolveHarnessAdapter} from '../../harnesses/registry';
 import {useWorkflowSessionController} from '../../core/workflows/useWorkflowSessionController';
 import {useRuntime} from '../providers/RuntimeProvider';
 
-export type HarnessProcessResult = UseSessionControllerResult<HarnessProcessOverride> & {
-	tokenUsage: TokenUsage;
-};
+export type HarnessProcessResult =
+	UseSessionControllerResult<HarnessProcessOverride> & {
+		tokenUsage: TokenUsage;
+	};
 
 export type UseHarnessProcessInput = {
 	harness: AthenaHarness;

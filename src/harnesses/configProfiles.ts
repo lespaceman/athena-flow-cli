@@ -6,7 +6,11 @@ import type {
 } from './contracts/config';
 import {resolveHarnessAdapter} from './registry';
 
-export type {BuildHarnessConfigInput, HarnessConfigProfile, ResolveHarnessModelInput};
+export type {
+	BuildHarnessConfigInput,
+	HarnessConfigProfile,
+	ResolveHarnessModelInput,
+};
 
 export function resolveHarnessConfigProfile(
 	harness: AthenaHarness,

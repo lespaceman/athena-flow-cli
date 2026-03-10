@@ -16,8 +16,7 @@ export function compileWorkflowPlan(input: {
 		return undefined;
 	}
 
-	const pluginDirs =
-		input.pluginDirs ?? installWorkflowPlugins(input.workflow);
+	const pluginDirs = input.pluginDirs ?? installWorkflowPlugins(input.workflow);
 
 	return {
 		workflow: input.workflow,

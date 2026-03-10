@@ -6,95 +6,13 @@ import {
 	resolveIsolationConfig,
 } from '../config/isolation';
 import {createTokenAccumulator} from '../process/tokenAccumulator';
+import {createAssistantMessageAccumulator} from './assistantMessageAccumulator';
 import type {
 	CreateSessionControllerInput,
 	SessionController,
 	SessionControllerTurnResult,
 } from '../../contracts/session';
-
-type StreamMessageRecord = Record<string, unknown>;
-
-const NULL_TOKENS = {
-	input: null,
-	output: null,
-	cacheRead: null,
-	cacheWrite: null,
-	total: null,
-	contextSize: null,
-} as const;
-
-function asRecord(value: unknown): StreamMessageRecord | null {
-	if (typeof value === 'object' && value !== null) {
-		return value as StreamMessageRecord;
-	}
-	return null;
-}
-
-function readAssistantText(message: StreamMessageRecord): string | null {
-	if (message['role'] !== 'assistant') return null;
-	const content = message['content'];
-	if (!Array.isArray(content)) return null;
-
-	const parts: string[] = [];
-	for (const block of content) {
-		const rec = asRecord(block);
-		if (!rec || rec['type'] !== 'text') continue;
-		if (typeof rec['text'] === 'string' && rec['text'].length > 0) {
-			parts.push(rec['text']);
-		}
-	}
-
-	return parts.length > 0 ? parts.join('') : null;
-}
-
-function createAssistantMessageAccumulator() {
-	let buffer = '';
-	let lastMessage: string | null = null;
-
-	function processLine(line: string): void {
-		let parsed: unknown;
-		try {
-			parsed = JSON.parse(line.trim());
-		} catch {
-			return;
-		}
-
-		const record = asRecord(parsed);
-		if (!record || record['parent_tool_use_id'] != null) {
-			return;
-		}
-
-		let nextMessage: string | null = null;
-		if (record['type'] === 'assistant') {
-			nextMessage = readAssistantText(asRecord(record['message']) ?? {});
-		} else if (record['type'] === 'message') {
-			nextMessage = readAssistantText(record);
-		}
-
-		if (nextMessage && nextMessage.trim().length > 0) {
-			lastMessage = nextMessage;
-		}
-	}
-
-	return {
-		feed(chunk: string): void {
-			buffer += chunk;
-			const lines = buffer.split('\n');
-			buffer = lines.pop() ?? '';
-			for (const line of lines) {
-				processLine(line);
-			}
-		},
-		flush(): void {
-			if (!buffer.trim()) return;
-			processLine(buffer);
-			buffer = '';
-		},
-		getLastMessage(): string | null {
-			return lastMessage;
-		},
-	};
-}
+import type {TurnContinuation} from '../../../core/runtime/process';
 
 function mergeIsolation(
 	base: IsolationConfig | IsolationPreset | undefined,
@@ -110,6 +28,22 @@ function mergeIsolation(
 	};
 }
 
+function resolveClaudeSessionId(
+	continuation: TurnContinuation | undefined,
+): string | undefined {
+	if (!continuation || continuation.mode === 'fresh') {
+		return undefined;
+	}
+
+	if (continuation.mode === 'resume') {
+		return continuation.handle;
+	}
+
+	throw new Error(
+		'Claude session controller does not support reuse-current continuation',
+	);
+}
+
 export function createClaudeSessionController(
 	input: CreateSessionControllerInput,
 ): SessionController {
@@ -120,18 +54,19 @@ export function createClaudeSessionController(
 		| IsolationPreset
 		| undefined;
 	let activeChild: ChildProcess | null = null;
+	let activeTurnPromise: Promise<SessionControllerTurnResult> | null = null;
 
 	return {
 		startTurn({
 			prompt,
-			sessionId,
+			continuation,
 			configOverride,
 			onStderrLine,
 		}): Promise<SessionControllerTurnResult> {
 			const tokenAccumulator = createTokenAccumulator();
 			const messageAccumulator = createAssistantMessageAccumulator();
 
-			return new Promise(resolve => {
+			const turnPromise = new Promise<SessionControllerTurnResult>(resolve => {
 				let settled = false;
 				const finalize = (exitCode: number | null, error: Error | null) => {
 					if (settled) return;
@@ -139,6 +74,7 @@ export function createClaudeSessionController(
 					tokenAccumulator.flush();
 					messageAccumulator.flush();
 					activeChild = null;
+					activeTurnPromise = null;
 					resolve({
 						exitCode,
 						error,
@@ -152,7 +88,7 @@ export function createClaudeSessionController(
 						prompt,
 						projectDir: input.projectDir,
 						instanceId: input.instanceId,
-						sessionId,
+						sessionId: resolveClaudeSessionId(continuation),
 						isolation: mergeIsolation(
 							processConfig,
 							input.pluginMcpConfig,
@@ -177,6 +113,8 @@ export function createClaudeSessionController(
 					);
 				}
 			});
+			activeTurnPromise = turnPromise;
+			return turnPromise;
 		},
 
 		interrupt(): void {
@@ -187,6 +125,7 @@ export function createClaudeSessionController(
 			if (!activeChild) return;
 			try {
 				activeChild.kill();
+				await activeTurnPromise?.catch(() => {});
 			} catch {
 				// Best effort.
 			} finally {

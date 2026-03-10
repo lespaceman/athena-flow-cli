@@ -32,8 +32,7 @@ vi.mock('../../core/workflows/index', () => ({
 		workflow
 			? {
 					workflow,
-					pluginDirs:
-						pluginDirs ?? installWorkflowPluginsMock(workflow),
+					pluginDirs: pluginDirs ?? installWorkflowPluginsMock(workflow),
 					pluginMcpConfig,
 				}
 			: undefined,

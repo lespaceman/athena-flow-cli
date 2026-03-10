@@ -4,6 +4,8 @@ import type {
 	HarnessProcessOptions,
 	HarnessProcessOverride,
 	HarnessProcessPreset,
+	TurnContinuation,
+	TurnExecutionResult,
 } from '../../core/runtime/process';
 import type {Runtime} from '../../core/runtime/types';
 import type {WorkflowConfig, WorkflowPlan} from '../../core/workflows';
@@ -13,21 +15,14 @@ export type SessionControllerTurnInput<
 	ConfigOverride = HarnessProcessOverride,
 > = {
 	prompt: string;
-	sessionId?: string;
+	continuation?: TurnContinuation;
 	configOverride?: ConfigOverride;
 	onStderrLine?: (message: string) => void;
 };
 
-export type SessionControllerTurnResult = {
-	exitCode: number | null;
-	error: Error | null;
-	tokens: TokenUsage;
-	streamMessage: string | null;
-};
+export type SessionControllerTurnResult = TurnExecutionResult;
 
-export type SessionController<
-	ConfigOverride = HarnessProcessOverride,
-> = {
+export type SessionController<ConfigOverride = HarnessProcessOverride> = {
 	startTurn: (
 		input: SessionControllerTurnInput<ConfigOverride>,
 	) => Promise<SessionControllerTurnResult>;
@@ -40,9 +35,9 @@ export type UseSessionControllerResult<
 > = {
 	spawn: (
 		prompt: string,
-		sessionId?: string,
+		continuation?: TurnContinuation,
 		configOverride?: ConfigOverride,
-	) => Promise<void>;
+	) => Promise<SessionControllerTurnResult>;
 	isRunning: boolean;
 	interrupt: () => void;
 	kill: () => Promise<void>;

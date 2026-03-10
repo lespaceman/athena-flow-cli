@@ -7,7 +7,11 @@ import path from 'node:path';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {renderHook, act} from '@testing-library/react';
 import {useWorkflowSessionController} from './useWorkflowSessionController';
-import type {UseSessionControllerResult} from '../../harnesses/contracts/session';
+import type {
+	HarnessProcess,
+	HarnessProcessOverride,
+	TurnExecutionResult,
+} from '../runtime/process';
 
 const tempDirs: string[] = [];
 
@@ -31,15 +35,42 @@ describe('useWorkflowSessionController', () => {
 		fs.writeFileSync(promptPath, 'Always read the tracker.', 'utf-8');
 
 		const spawn = vi
-			.fn<UseSessionControllerResult['spawn']>()
-			.mockImplementation(async (_prompt, _sessionId, _configOverride) => {
+			.fn<HarnessProcess<HarnessProcessOverride>['spawn']>()
+			.mockImplementation(async (_prompt, _continuation, _configOverride) => {
 				const call = spawn.mock.calls.length;
 				if (call === 1) {
 					fs.writeFileSync(trackerPath, 'still running', 'utf-8');
-					return;
+					return {
+						exitCode: 0,
+						error: null,
+						tokens: {
+							input: null,
+							output: null,
+							cacheRead: null,
+							cacheWrite: null,
+							total: null,
+							contextSize: null,
+							contextWindowSize: null,
+						},
+						streamMessage: null,
+					};
 				}
 
 				fs.writeFileSync(trackerPath, '<!-- DONE -->', 'utf-8');
+				return {
+					exitCode: 0,
+					error: null,
+					tokens: {
+						input: null,
+						output: null,
+						cacheRead: null,
+						cacheWrite: null,
+						total: null,
+						contextSize: null,
+						contextWindowSize: null,
+					},
+					streamMessage: null,
+				};
 			});
 
 		const {result} = renderHook(() =>
@@ -78,13 +109,16 @@ describe('useWorkflowSessionController', () => {
 		);
 
 		await act(async () => {
-			await result.current.spawn('ship it', 'session-1');
+			await result.current.spawn('ship it', {
+				mode: 'resume',
+				handle: 'session-1',
+			});
 		});
 
 		expect(spawn).toHaveBeenNthCalledWith(
 			1,
 			'Execute: ship it',
-			'session-1',
+			{mode: 'resume', handle: 'session-1'},
 			{
 				appendSystemPromptFile: promptPath,
 				developerInstructions: 'Always read the tracker.',
@@ -93,7 +127,7 @@ describe('useWorkflowSessionController', () => {
 		expect(spawn).toHaveBeenNthCalledWith(
 			2,
 			'Continue with tracker.md',
-			undefined,
+			{mode: 'fresh'},
 			{
 				appendSystemPromptFile: promptPath,
 				developerInstructions: 'Always read the tracker.',
@@ -109,14 +143,27 @@ describe('useWorkflowSessionController', () => {
 			releaseFirstSpawn?.();
 		});
 		const spawn = vi
-			.fn<UseSessionControllerResult['spawn']>()
+			.fn<HarnessProcess<HarnessProcessOverride>['spawn']>()
 			.mockImplementationOnce(
 				() =>
-					new Promise<void>(resolve => {
+					new Promise<TurnExecutionResult>(resolve => {
 						releaseFirstSpawn = resolve;
 					}),
 			)
-			.mockResolvedValueOnce(undefined);
+			.mockResolvedValueOnce({
+				exitCode: 0,
+				error: null,
+				tokens: {
+					input: null,
+					output: null,
+					cacheRead: null,
+					cacheWrite: null,
+					total: null,
+					contextSize: null,
+					contextWindowSize: null,
+				},
+				streamMessage: null,
+			});
 
 		const {result} = renderHook(() =>
 			useWorkflowSessionController(
@@ -145,7 +192,7 @@ describe('useWorkflowSessionController', () => {
 			),
 		);
 
-		let firstSpawnPromise: Promise<void>;
+		let firstSpawnPromise: Promise<TurnExecutionResult>;
 		await act(async () => {
 			firstSpawnPromise = result.current.spawn('first');
 		});
@@ -161,5 +208,69 @@ describe('useWorkflowSessionController', () => {
 		expect(kill).toHaveBeenCalledTimes(1);
 		expect(spawn).toHaveBeenNthCalledWith(1, 'first', undefined, undefined);
 		expect(spawn).toHaveBeenNthCalledWith(2, 'second', undefined, undefined);
+	});
+
+	it('stops workflow continuation after a failed turn', async () => {
+		const trackerPath = path.join(makeTempDir(), 'tracker.md');
+		const spawn = vi
+			.fn<HarnessProcess<HarnessProcessOverride>['spawn']>()
+			.mockImplementation(async () => {
+				fs.writeFileSync(trackerPath, 'still running', 'utf-8');
+				return {
+					exitCode: 1,
+					error: null,
+					tokens: {
+						input: null,
+						output: null,
+						cacheRead: null,
+						cacheWrite: null,
+						total: null,
+						contextSize: null,
+						contextWindowSize: null,
+					},
+					streamMessage: null,
+				};
+			});
+
+		const {result} = renderHook(() =>
+			useWorkflowSessionController(
+				{
+					spawn,
+					isRunning: false,
+					interrupt: vi.fn(),
+					kill: vi.fn().mockResolvedValue(undefined),
+					usage: {
+						input: null,
+						output: null,
+						cacheRead: null,
+						cacheWrite: null,
+						total: null,
+						contextSize: null,
+						contextWindowSize: null,
+					},
+				},
+				{
+					projectDir: path.dirname(trackerPath),
+					workflow: {
+						name: 'wf',
+						plugins: [],
+						promptTemplate: '{input}',
+						loop: {
+							enabled: true,
+							completionMarker: '<!-- DONE -->',
+							maxIterations: 5,
+							trackerPath: path.basename(trackerPath),
+						},
+					},
+				},
+			),
+		);
+
+		const turnResult = await act(async () => {
+			return await result.current.spawn('ship it');
+		});
+
+		expect(turnResult.exitCode).toBe(1);
+		expect(spawn).toHaveBeenCalledTimes(1);
 	});
 });

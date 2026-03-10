@@ -15,6 +15,7 @@ import {
 	prepareWorkflowTurn,
 	shouldContinueWorkflowRun,
 } from '../../core/workflows/sessionPlan';
+import type {TurnContinuation} from '../../core/runtime/process';
 import {
 	createSessionStore,
 	sessionsDir,
@@ -358,7 +359,9 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 		});
 
 		let nextPrompt = options.prompt;
-		let nextSessionId = options.adapterResumeSessionId;
+		let nextContinuation: TurnContinuation = options.adapterResumeSessionId
+			? {mode: 'resume', handle: options.adapterResumeSessionId}
+			: {mode: 'fresh'};
 
 		while (!hasFailure()) {
 			currentIteration += 1;
@@ -369,12 +372,13 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 
 			output.emitJsonEvent('process.started', {
 				iteration: currentIteration,
-				resumeSessionId: nextSessionId ?? null,
+				resumeSessionId:
+					nextContinuation.mode === 'resume' ? nextContinuation.handle : null,
 			});
 
 			const turnResult = await sessionController.startTurn({
 				prompt: preparedTurn.prompt,
-				sessionId: nextSessionId,
+				continuation: nextContinuation,
 				configOverride: preparedTurn.configOverride,
 				onStderrLine: message => output.log(message),
 			});
@@ -430,7 +434,7 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 			}
 
 			nextPrompt = options.prompt;
-			nextSessionId = undefined;
+			nextContinuation = {mode: 'fresh'};
 		}
 	} catch (error) {
 		registerFailure({

@@ -23,7 +23,8 @@ const listMarketplaceWorkflowsFromRepoMock = vi.fn(() => [
 		name: 'local-workflow',
 		description: 'Local workflow',
 		ref: 'local-workflow@local/workflow-marketplace',
-		workflowPath: '/tmp/workflow-marketplace/workflows/local-workflow/workflow.json',
+		workflowPath:
+			'/tmp/workflow-marketplace/workflows/local-workflow/workflow.json',
 	},
 ]);
 const findMarketplaceRepoDirMock = vi.fn();

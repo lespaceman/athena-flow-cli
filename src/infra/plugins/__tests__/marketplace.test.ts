@@ -473,10 +473,7 @@ describe('listMarketplaceWorkflows', () => {
 		execFileSyncMock.mockImplementation(() => {});
 
 		expect(
-			listMarketplaceWorkflows(
-				'lespaceman',
-				'athena-workflow-marketplace',
-			),
+			listMarketplaceWorkflows('lespaceman', 'athena-workflow-marketplace'),
 		).toEqual([
 			{
 				name: 'e2e-test-builder',

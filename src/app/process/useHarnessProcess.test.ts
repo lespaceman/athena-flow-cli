@@ -8,7 +8,8 @@ const resolveHarnessAdapterMock = vi.fn(() => ({
 }));
 
 vi.mock('../../harnesses/registry', () => ({
-	resolveHarnessAdapter: (harness: string) => resolveHarnessAdapterMock(harness),
+	resolveHarnessAdapter: (harness: string) =>
+		resolveHarnessAdapterMock(harness),
 }));
 
 const {useHarnessProcess} = await import('./useHarnessProcess');

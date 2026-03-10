@@ -4,14 +4,13 @@ import type {
 	HarnessProcessConfig,
 	HarnessProcessOptions,
 	HarnessProcessOverride,
+	TurnContinuation,
+	TurnExecutionResult,
 } from '../../../core/runtime/process';
 import type {WorkflowPlan} from '../../../core/workflows';
 import type {TokenUsage} from '../../../shared/types/headerMetrics';
 import type {CodexRuntime} from '../runtime/server';
-import {
-	NULL_TOKENS,
-	readTokenUsage,
-} from '../runtime/tokenUsage';
+import {NULL_TOKENS, readTokenUsage} from '../runtime/tokenUsage';
 import {buildCodexPromptOptions} from './promptOptions';
 
 /**
@@ -36,6 +35,9 @@ export function useCodexSessionController(
 	onExitTokensRef.current = options?.onExitTokens;
 	const onLifecycleEventRef = useRef(options?.onLifecycleEvent);
 	onLifecycleEventRef.current = options?.onLifecycleEvent;
+	const activeTurnPromiseRef = useRef<Promise<TurnExecutionResult> | null>(
+		null,
+	);
 
 	const codexRuntime = runtime as CodexRuntime | null;
 
@@ -45,6 +47,7 @@ export function useCodexSessionController(
 
 	const kill = useCallback(async (): Promise<void> => {
 		codexRuntime?.sendInterrupt();
+		await activeTurnPromiseRef.current?.catch(() => {});
 		if (!abortRef.current.signal.aborted) {
 			setIsRunning(false);
 		}
@@ -53,47 +56,87 @@ export function useCodexSessionController(
 	const spawn = useCallback(
 		async (
 			prompt: string,
-			sessionId?: string,
+			continuation?: TurnContinuation,
 			_configOverride?: HarnessProcessOverride,
-		): Promise<void> => {
+		): Promise<TurnExecutionResult> => {
 			if (!codexRuntime) {
 				onLifecycleEventRef.current?.({
 					type: 'spawn_error',
 					message: 'Codex runtime not available',
 					failureCode: 'spawn_error',
 				});
-				return;
+				return {
+					exitCode: null,
+					error: new Error('Codex runtime not available'),
+					tokens: {...NULL_TOKENS},
+					streamMessage: null,
+				};
 			}
 
 			setIsRunning(true);
+			let streamedMessage = '';
+			let turnTokens = {...NULL_TOKENS};
+			const unsubscribe = codexRuntime.onEvent(event => {
+				const data =
+					typeof event.data === 'object' && event.data !== null
+						? (event.data as Record<string, unknown>)
+						: {};
 
-			try {
-				await codexRuntime.sendPrompt(
-					prompt,
-					buildCodexPromptOptions({
-						processConfig,
-						sessionId,
-						configOverride: _configOverride,
-						workflowPlan,
-						ephemeral,
-					}),
-				);
-			} catch (error) {
-				if (!abortRef.current.signal.aborted) {
-					onLifecycleEventRef.current?.({
-						type: 'spawn_error',
-						message:
-							error instanceof Error
-								? error.message
-								: 'Unknown Codex error',
-						failureCode: 'spawn_error',
-					});
+				if (event.kind === 'message.delta') {
+					const delta = typeof data['delta'] === 'string' ? data['delta'] : '';
+					streamedMessage += delta;
 				}
-			} finally {
-				if (!abortRef.current.signal.aborted) {
-					setIsRunning(false);
+
+				if (event.kind === 'usage.update') {
+					turnTokens = readTokenUsage(data['delta']);
 				}
-			}
+			});
+
+			const turnPromise = (async (): Promise<TurnExecutionResult> => {
+				try {
+					await codexRuntime.sendPrompt(
+						prompt,
+						buildCodexPromptOptions({
+							processConfig,
+							continuation,
+							configOverride: _configOverride,
+							workflowPlan,
+							ephemeral,
+						}),
+					);
+					return {
+						exitCode: 0,
+						error: null,
+						tokens: turnTokens,
+						streamMessage: streamedMessage || null,
+					};
+				} catch (error) {
+					if (!abortRef.current.signal.aborted) {
+						onLifecycleEventRef.current?.({
+							type: 'spawn_error',
+							message:
+								error instanceof Error ? error.message : 'Unknown Codex error',
+							failureCode: 'spawn_error',
+						});
+					}
+					return {
+						exitCode: null,
+						error:
+							error instanceof Error ? error : new Error('Unknown Codex error'),
+						tokens: turnTokens,
+						streamMessage: streamedMessage || null,
+					};
+				} finally {
+					activeTurnPromiseRef.current = null;
+					unsubscribe();
+					if (!abortRef.current.signal.aborted) {
+						setIsRunning(false);
+					}
+				}
+			})();
+
+			activeTurnPromiseRef.current = turnPromise;
+			return await turnPromise;
 		},
 		[codexRuntime, processConfig, workflowPlan, ephemeral],
 	);

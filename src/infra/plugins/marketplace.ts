@@ -82,7 +82,9 @@ function readManifest(manifestPath: string): MarketplaceManifest {
 		throw new Error(`Marketplace manifest not found: ${manifestPath}`);
 	}
 
-	return JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as MarketplaceManifest;
+	return JSON.parse(
+		fs.readFileSync(manifestPath, 'utf-8'),
+	) as MarketplaceManifest;
 }
 
 function resolvePluginDirFromManifest(
@@ -180,7 +182,10 @@ function resolveWorkflowPathFromManifest(
 		);
 	}
 
-	const resolvedWorkflowPath = preferCanonicalWorkflowPath(repoDir, workflowPath);
+	const resolvedWorkflowPath = preferCanonicalWorkflowPath(
+		repoDir,
+		workflowPath,
+	);
 
 	if (!fs.existsSync(resolvedWorkflowPath)) {
 		throw new Error(`Workflow source not found: ${resolvedWorkflowPath}`);
@@ -425,8 +430,9 @@ export function resolveWorkflowInstallSource(
 		throw new Error(`Workflow source not found: ${source}`);
 	}
 
-	const marketplaceSource =
-		resolveWorkflowMarketplaceSource(configuredMarketplaceSource);
+	const marketplaceSource = resolveWorkflowMarketplaceSource(
+		configuredMarketplaceSource,
+	);
 
 	if (marketplaceSource.kind === 'remote') {
 		const workflow = listMarketplaceWorkflows(

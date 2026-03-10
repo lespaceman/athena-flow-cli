@@ -74,6 +74,7 @@ import {copyToClipboard} from '../../shared/utils/clipboard';
 import {extractYankContent} from '../../ui/utils/yankContent';
 import {detectHarness} from '../../shared/utils/detectHarness';
 import type {WorkflowConfig, WorkflowPlan} from '../../core/workflows';
+import type {TurnContinuation} from '../../core/runtime/process';
 import SetupWizard from '../../setup/SetupWizard';
 import {bootstrapRuntimeConfig} from '../bootstrap/bootstrapConfig';
 import {useRuntimeSelectors} from './useRuntimeSelectors';
@@ -727,15 +728,16 @@ function AppContent({
 					return;
 				}
 				const sessionToResume = currentSessionId ?? initialSessionRef.current;
+				const continuation: TurnContinuation = sessionToResume
+					? {mode: 'resume', handle: sessionToResume}
+					: {mode: 'fresh'};
 				startupAttemptRef.current = {
 					feedEventCountAtSpawn: feedEvents.length,
 				};
-				spawnHarness(result.text, sessionToResume ?? undefined).catch(
-					(err: unknown) => {
-						startupAttemptRef.current = null;
-						console.error('[athena] spawn failed:', err);
-					},
-				);
+				spawnHarness(result.text, continuation).catch((err: unknown) => {
+					startupAttemptRef.current = null;
+					console.error('[athena] spawn failed:', err);
+				});
 				// Clear intent after first use — subsequent prompts use currentSessionId from mapper
 				if (initialSessionRef.current) {
 					initialSessionRef.current = undefined;
@@ -792,12 +794,15 @@ function AppContent({
 						startupAttemptRef.current = {
 							feedEventCountAtSpawn: feedEvents.length,
 						};
-						return spawnHarness(prompt, sessionId, configOverride).catch(
-							(err: unknown) => {
+						const continuation: TurnContinuation = sessionId
+							? {mode: 'resume', handle: sessionId}
+							: {mode: 'fresh'};
+						return spawnHarness(prompt, continuation, configOverride)
+							.then(() => undefined)
+							.catch((err: unknown) => {
 								startupAttemptRef.current = null;
 								throw err;
-							},
-						);
+							});
 					},
 					currentSessionId: currentSessionId ?? undefined,
 				},

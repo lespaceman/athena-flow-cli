@@ -17,14 +17,22 @@ const tsOut = path.join(tempRoot, 'ts');
 const schemaOut = path.join(tempRoot, 'schema');
 
 try {
-	execFileSync('codex', ['app-server', 'generate-ts', '--out', tsOut, '--experimental'], {
-		stdio: 'inherit',
-		cwd: repoRoot,
-	});
-	execFileSync('codex', ['app-server', 'generate-json-schema', '--out', schemaOut], {
-		stdio: 'inherit',
-		cwd: repoRoot,
-	});
+	execFileSync(
+		'codex',
+		['app-server', 'generate-ts', '--out', tsOut, '--experimental'],
+		{
+			stdio: 'inherit',
+			cwd: repoRoot,
+		},
+	);
+	execFileSync(
+		'codex',
+		['app-server', 'generate-json-schema', '--out', schemaOut],
+		{
+			stdio: 'inherit',
+			cwd: repoRoot,
+		},
+	);
 
 	rmSync(outputRoot, {recursive: true, force: true});
 	cpSync(tsOut, outputRoot, {recursive: true});

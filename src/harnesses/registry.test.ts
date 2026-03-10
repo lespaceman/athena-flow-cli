@@ -12,9 +12,9 @@ describe('harness registry', () => {
 	});
 
 	it('falls back to the claude adapter for unknown harness ids', () => {
-		expect(
-			resolveHarnessAdapter('unknown-harness' as never).id,
-		).toBe('claude-code');
+		expect(resolveHarnessAdapter('unknown-harness' as never).id).toBe(
+			'claude-code',
+		);
 	});
 
 	it('exposes harness capabilities from the adapter registry', () => {
