@@ -26,6 +26,7 @@ export function useWorkflowSessionController(
 	const activeSpawnPromiseRef = useRef<Promise<TurnExecutionResult> | null>(
 		null,
 	);
+	const isCancelled = (): boolean => cancelledRef.current;
 
 	const interrupt = useCallback((): void => {
 		cancelledRef.current = true;
@@ -74,7 +75,7 @@ export function useWorkflowSessionController(
 				};
 
 				try {
-					while (!cancelledRef.current && activeRunIdRef.current === runId) {
+					while (!isCancelled() && activeRunIdRef.current === runId) {
 						const prepared = prepareWorkflowTurn(workflowState, {
 							prompt,
 							configOverride,
@@ -89,7 +90,7 @@ export function useWorkflowSessionController(
 							prepared.configOverride,
 						);
 						if (
-							cancelledRef.current ||
+							isCancelled() ||
 							activeRunIdRef.current !== runId ||
 							lastResult.error !== null ||
 							(lastResult.exitCode !== null && lastResult.exitCode !== 0) ||
@@ -103,10 +104,8 @@ export function useWorkflowSessionController(
 					return lastResult;
 				} finally {
 					cleanupWorkflowRun(workflowState);
-					if (activeSpawnPromiseRef.current === runPromise) {
-						activeSpawnPromiseRef.current = null;
-					}
 					if (activeRunIdRef.current === runId) {
+						activeSpawnPromiseRef.current = null;
 						setIsRunning(false);
 					}
 				}

@@ -79,7 +79,7 @@ export function useCodexSessionController(
 			let turnTokens = {...NULL_TOKENS};
 			const unsubscribe = codexRuntime.onEvent(event => {
 				const data =
-					typeof event.data === 'object' && event.data !== null
+					typeof event.data === 'object'
 						? (event.data as Record<string, unknown>)
 						: {};
 
@@ -152,7 +152,7 @@ export function useCodexSessionController(
 			}
 
 			const data =
-				typeof event.data === 'object' && event.data !== null
+				typeof event.data === 'object'
 					? (event.data as Record<string, unknown>)
 					: {};
 			const next = readTokenUsage(data['usage']);

@@ -5,6 +5,7 @@ import {verifyCodexHarness} from './system/verifyHarness';
 import type {HarnessAdapter} from '../adapter';
 import type {HarnessConfigProfile} from '../contracts/config';
 import type {UseSessionControllerResult} from '../contracts/session';
+import type {HarnessProcessConfig} from '../../core/runtime/process';
 
 const CODEX_CONFIG_PROFILE: HarnessConfigProfile = {
 	harness: 'openai-codex',
@@ -36,7 +37,7 @@ export const codexHarnessAdapter: HarnessAdapter = {
 	useSessionController: input => {
 		const process = useCodexSessionController(
 			input.runtime ?? null,
-			input.processConfig,
+			input.processConfig as HarnessProcessConfig | undefined,
 			input.workflowPlan,
 			input.ephemeral,
 			input.options,

@@ -161,6 +161,7 @@ const EMPTY_SESSION_METRICS: SessionMetrics = {
 		cacheWrite: null,
 		total: null,
 		contextSize: null,
+		contextWindowSize: null,
 	},
 	failures: 0,
 	blocks: 0,

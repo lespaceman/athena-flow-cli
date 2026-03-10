@@ -378,7 +378,7 @@ export function translateNotification(
 			return {
 				kind: 'notification',
 				data: {
-					message: `Thread renamed: ${params.name}`,
+					message: `Thread renamed: ${params.threadName ?? params.threadId}`,
 					notification_type: 'thread_name',
 				},
 				expectsDecision: false,

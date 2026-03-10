@@ -51,21 +51,30 @@ function readStoredWorkflowSource(
 	if (!fs.existsSync(sourceFile)) return;
 
 	try {
-		const source = JSON.parse(fs.readFileSync(sourceFile, 'utf-8')) as
-			| WorkflowSourceMetadata
-			| {ref?: string; path?: string};
-		if (typeof source.ref === 'string') {
-			return {kind: 'marketplace', ref: source.ref};
+		const source = JSON.parse(fs.readFileSync(sourceFile, 'utf-8')) as unknown;
+		if (!source || typeof source !== 'object') {
+			return undefined;
 		}
-		if (typeof source.path === 'string' && !('kind' in source)) {
-			return {kind: 'local', path: source.path};
+		const record = source as Record<string, unknown>;
+		if (typeof record['ref'] === 'string') {
+			return {kind: 'marketplace', ref: record['ref']};
 		}
 		if (
-			source &&
-			((source.kind === 'marketplace' && typeof source.ref === 'string') ||
-				(source.kind === 'local' && typeof source.path === 'string'))
+			typeof record['path'] === 'string' &&
+			typeof record['kind'] !== 'string'
 		) {
-			return source;
+			return {kind: 'local', path: record['path']};
+		}
+		if (record['kind'] === 'marketplace' && typeof record['ref'] === 'string') {
+			return {kind: 'marketplace', ref: record['ref']};
+		}
+		if (record['kind'] === 'local' && typeof record['path'] === 'string') {
+			return {
+				kind: 'local',
+				path: record['path'],
+				repoDir:
+					typeof record['repoDir'] === 'string' ? record['repoDir'] : undefined,
+			};
 		}
 	} catch {
 		// Ignore malformed source metadata and use the installed copy.

@@ -219,7 +219,9 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 		workflowPlan: options.workflowPlan,
 		ephemeral: options.ephemeral,
 		runtime,
-		spawnProcess: options.spawnProcess,
+		spawnProcess: options.spawnProcess as
+			| ((options: unknown) => import('node:child_process').ChildProcess)
+			| undefined,
 	});
 
 	function registerFailure(next: ExecRunFailure): void {

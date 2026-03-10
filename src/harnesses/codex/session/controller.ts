@@ -12,7 +12,7 @@ import {buildCodexPromptOptions} from './promptOptions';
 export function createCodexSessionController(
 	input: CreateSessionControllerInput,
 ): SessionController {
-	const runtime = input.runtime as (Runtime & Partial<CodexRuntime>) | null;
+	const runtime = input.runtime as (Runtime & CodexRuntime) | null;
 	const processConfig = input.processConfig as HarnessProcessConfig | undefined;
 	let activeTurnPromise: Promise<SessionControllerTurnResult> | null = null;
 
@@ -35,7 +35,7 @@ export function createCodexSessionController(
 			let tokenDelta = {...NULL_TOKENS};
 			const unsubscribe = runtime.onEvent(event => {
 				const data =
-					typeof event.data === 'object' && event.data !== null
+					typeof event.data === 'object'
 						? (event.data as Record<string, unknown>)
 						: {};
 
@@ -89,11 +89,11 @@ export function createCodexSessionController(
 		},
 
 		interrupt(): void {
-			runtime?.sendInterrupt?.();
+			runtime?.sendInterrupt();
 		},
 
 		async kill(): Promise<void> {
-			runtime?.sendInterrupt?.();
+			runtime?.sendInterrupt();
 			await activeTurnPromise?.catch(() => {});
 		},
 	};
