@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.13](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.12...cli-v0.3.13) (2026-03-10)
+
+
+### Features
+
+* **codex:** add app-server manager with JSON-RPC routing ([ecaad30](https://github.com/lespaceman/athena-flow-cli/commit/ecaad3074da9555764ca919f669dac07c333f2c6))
+* **codex:** add Codex runtime connector implementing Runtime interface ([f7c651d](https://github.com/lespaceman/athena-flow-cli/commit/f7c651d4622513c0d377ccdb86673e924cebdc91))
+* **codex:** add decision mapper for RuntimeDecision → Codex JSON-RPC ([d1bac5c](https://github.com/lespaceman/athena-flow-cli/commit/d1bac5c49215bef10ae617a3197960ee23f75019))
+* **codex:** add event translator and mapper for Codex → RuntimeEvent ([881b0c3](https://github.com/lespaceman/athena-flow-cli/commit/881b0c3f2c993b2f055eb4ffac2cc0554a209ad3))
+* **codex:** add harness verification with version checking ([025b251](https://github.com/lespaceman/athena-flow-cli/commit/025b2518d0910115932171cdf8cc87aae5631877))
+* **codex:** add JSON-RPC protocol types and Codex item types ([f644405](https://github.com/lespaceman/athena-flow-cli/commit/f644405737e10eb036da98f95f92e2bd84cbc87a))
+* **codex:** wire Codex harness into registry, profiles, and runtime factory ([9e9216a](https://github.com/lespaceman/athena-flow-cli/commit/9e9216a6bb2cc6e1e60fdf5df10af1c4f4c9283f))
+* implement feed visual design with desaturated palettes and semantic coloring ([8d230a0](https://github.com/lespaceman/athena-flow-cli/commit/8d230a093b534ad24ae080cb3e8ff08ee9e1b9cc))
+* improve codex skill and command stream visibility ([99bef03](https://github.com/lespaceman/athena-flow-cli/commit/99bef03d7106068facbea7dee516773a98e1456b))
+
+
+### Bug Fixes
+
+* **codex:** address plan review P0/P1 issues ([a531acd](https://github.com/lespaceman/athena-flow-cli/commit/a531acde79202ad5f2c884fe171c0e38d80dd807))
+* **codex:** restore agent message boundaries ([0b2229e](https://github.com/lespaceman/athena-flow-cli/commit/0b2229ef3f75326094b60e67dc04315073cd3024))
+* **harness:** stream live context usage ([5b4d628](https://github.com/lespaceman/athena-flow-cli/commit/5b4d62862f536b0701f0847b930eb13a7a02fb9e))
+* **header:** show context window only ([b217f01](https://github.com/lespaceman/athena-flow-cli/commit/b217f01035c8c8ff616ace3214f15baf18ac0338))
+* restore ci typecheck on codex branch ([a717ad3](https://github.com/lespaceman/athena-flow-cli/commit/a717ad35a0bc6e7cf7f2f7cc6c46d0f9ceb5a6eb))
+
 ## [0.3.12](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.11...cli-v0.3.12) (2026-03-09)
 
 
