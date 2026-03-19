@@ -1426,6 +1426,26 @@ describe('mergedEventSummary', () => {
 		expect(result.text).toContain('Read');
 		expect(result.text).toContain('foo.ts');
 	});
+
+	it('uses tool.post input when tool.pre input values are null (WebSearch)', () => {
+		const pre = {
+			...base({kind: 'tool.pre'}),
+			kind: 'tool.pre' as const,
+			data: {tool_name: 'WebSearch', tool_input: {query: null}},
+		};
+		const post = {
+			...base({kind: 'tool.post'}),
+			kind: 'tool.post' as const,
+			data: {
+				tool_name: 'WebSearch',
+				tool_input: {query: 'cheapest mac'},
+				tool_response: {type: 'search', query: 'cheapest mac'},
+			},
+		};
+		const result = mergedEventSummary(pre, post);
+		expect(result.text).toContain('cheapest mac');
+		expect(result.outcome).toBe('search');
+	});
 });
 
 describe('isEntryStable', () => {

@@ -152,6 +152,18 @@ describe('resolveToolDisplay', () => {
 			expect(result.outcome).toBe('2 results');
 		});
 
+		it('WebSearch: handles codex WebSearchAction response', () => {
+			const result = resolveToolDisplay(
+				'WebSearch',
+				{query: 'cheapest mac'},
+				{type: 'search', query: 'cheapest mac'},
+				undefined,
+			);
+			expect(result.toolColumn).toBe('WebSearch');
+			expect(result.segments[0]?.text).toContain('cheapest mac');
+			expect(result.outcome).toBe('search');
+		});
+
 		it('Task: extracts description', () => {
 			const result = resolveToolDisplay(
 				'Task',

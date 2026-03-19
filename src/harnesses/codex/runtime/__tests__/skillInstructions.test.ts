@@ -22,7 +22,13 @@ describe('resolveCodexSkillInstructions', () => {
 								path: '/workflow/plugins/e2e-test-builder/skills/disabled/SKILL.md',
 							},
 						],
-						errors: [],
+						errors: [
+							{
+								path: '/workflow/plugins/e2e-test-builder/skills/broken/SKILL.md',
+								message:
+									'invalid description: exceeds maximum length of 1024 characters',
+							},
+						],
 					},
 				],
 			}),
@@ -46,11 +52,22 @@ describe('resolveCodexSkillInstructions', () => {
 		});
 		expect(result.instructions).toContain('enabled-skill');
 		expect(result.instructions).not.toContain('disabled-skill');
+		expect(result.instructions).toContain('Unavailable workflow skills:');
+		expect(result.instructions).toContain(
+			'invalid description: exceeds maximum length of 1024 characters',
+		);
 		expect(result.skills).toEqual([
 			expect.objectContaining({
 				name: 'enabled-skill',
 				path: '/workflow/plugins/e2e-test-builder/skills/enabled/SKILL.md',
 			}),
+		]);
+		expect(result.errors).toEqual([
+			{
+				path: '/workflow/plugins/e2e-test-builder/skills/broken/SKILL.md',
+				message:
+					'invalid description: exceeds maximum length of 1024 characters',
+			},
 		]);
 	});
 });

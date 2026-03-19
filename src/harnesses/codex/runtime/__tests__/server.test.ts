@@ -86,7 +86,13 @@ vi.mock('../appServerManager', () => ({
 									enabled: true,
 								},
 							],
-							errors: [],
+							errors: [
+								{
+									path: '/workflow/plugins/e2e-test-builder/skills/broken/SKILL.md',
+									message:
+										'invalid description: exceeds maximum length of 1024 characters',
+								},
+							],
 						},
 					],
 				};
@@ -255,7 +261,17 @@ describe('createCodexServer', () => {
 					data: expect.objectContaining({
 						title: 'Skills loaded',
 						notification_type: 'skills.loaded',
-						message: 'Loaded 1 workflow skill: workflow-skill.',
+						message:
+							'Loaded 1 workflow skill: workflow-skill. Skipped 1 invalid skill due to validation errors.',
+					}),
+					payload: expect.objectContaining({
+						errors: [
+							{
+								path: '/workflow/plugins/e2e-test-builder/skills/broken/SKILL.md',
+								message:
+									'invalid description: exceeds maximum length of 1024 characters',
+							},
+						],
 					}),
 					hookName: 'skills/list',
 				}),

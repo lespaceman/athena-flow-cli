@@ -672,7 +672,18 @@ export function mergedEventSummary(
 	}
 
 	const toolName = event.data.tool_name;
-	const toolInput = event.data.tool_input;
+	// Prefer tool.pre input, but fall back to tool.post input when the pre
+	// event lacks useful data (e.g. codex WebSearch where query only arrives
+	// with item/completed).
+	const preInput = event.data.tool_input;
+	const postInput =
+		postEvent.kind === 'tool.post' || postEvent.kind === 'tool.failure'
+			? postEvent.data.tool_input
+			: undefined;
+	const toolInput =
+		postInput && Object.keys(preInput).every(k => preInput[k] == null)
+			? postInput
+			: preInput;
 	const parsed = parseToolName(toolName);
 	const name = resolveVerb(toolName, parsed);
 	const primaryInput = withMcpServerContext(

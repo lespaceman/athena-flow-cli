@@ -10,9 +10,15 @@ export type CodexWorkflowSkill = {
 	dependencySummary: string[];
 };
 
+export type CodexWorkflowSkillError = {
+	path?: string;
+	message: string;
+};
+
 export type CodexSkillInstructionsResult = {
 	instructions?: string;
 	skills: CodexWorkflowSkill[];
+	errors: CodexWorkflowSkillError[];
 };
 
 function isUnderAnyRoot(filePath: string, roots: string[]): boolean {
@@ -83,10 +89,37 @@ function extractWorkflowSkills(
 	});
 }
 
+function extractWorkflowSkillErrors(
+	result: unknown,
+): CodexWorkflowSkillError[] {
+	const response = asRecord(result);
+	const data = Array.isArray(response['data']) ? response['data'] : [];
+	return data.flatMap(entry => {
+		const record = asRecord(entry);
+		const errors = Array.isArray(record['errors']) ? record['errors'] : [];
+		return errors
+			.map(error => asRecord(error))
+			.flatMap(error => {
+				const message =
+					typeof error['message'] === 'string' ? error['message'] : null;
+				if (!message) {
+					return [];
+				}
+				return [
+					{
+						path: typeof error['path'] === 'string' ? error['path'] : undefined,
+						message,
+					} satisfies CodexWorkflowSkillError,
+				];
+			});
+	});
+}
+
 function buildSkillInstructions(
 	workflowSkills: CodexWorkflowSkill[],
+	workflowSkillErrors: CodexWorkflowSkillError[],
 ): string | undefined {
-	if (workflowSkills.length === 0) {
+	if (workflowSkills.length === 0 && workflowSkillErrors.length === 0) {
 		return undefined;
 	}
 
@@ -106,6 +139,15 @@ function buildSkillInstructions(
 	lines.push(
 		'If a task matches a skill description, invoke it with `$<skill-name>` and include the matching skill input item.',
 	);
+
+	if (workflowSkillErrors.length > 0) {
+		lines.push('');
+		lines.push('Unavailable workflow skills:');
+		for (const error of workflowSkillErrors) {
+			const location = error.path ? ` (file: ${error.path})` : '';
+			lines.push(`- ${error.message}${location}`);
+		}
+	}
 	return lines.join('\n');
 }
 
@@ -116,7 +158,7 @@ export async function resolveCodexSkillInstructions(input: {
 }): Promise<CodexSkillInstructionsResult> {
 	const skillRoots = input.skillRoots?.filter(Boolean) ?? [];
 	if (skillRoots.length === 0) {
-		return {instructions: undefined, skills: []};
+		return {instructions: undefined, skills: [], errors: []};
 	}
 
 	const result = await input.manager.sendRequest(M.SKILLS_LIST, {
@@ -131,8 +173,10 @@ export async function resolveCodexSkillInstructions(input: {
 	});
 
 	const skills = extractWorkflowSkills(result, skillRoots);
+	const errors = extractWorkflowSkillErrors(result);
 	return {
-		instructions: buildSkillInstructions(skills),
+		instructions: buildSkillInstructions(skills, errors),
 		skills,
+		errors,
 	};
 }

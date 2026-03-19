@@ -315,15 +315,26 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 	function buildSkillLoadMessage(input: {
 		skillNames: string[];
 		skillRoots: string[];
+		errorCount?: number;
 	}): string {
-		const {skillNames, skillRoots} = input;
+		const {skillNames, skillRoots, errorCount = 0} = input;
 		if (skillNames.length === 0) {
 			const rootLabel = skillRoots.length === 1 ? 'root' : 'roots';
-			return `No workflow skills were loaded from ${skillRoots.length} configured skill ${rootLabel}.`;
+			const base = `No workflow skills were loaded from ${skillRoots.length} configured skill ${rootLabel}.`;
+			if (errorCount === 0) {
+				return base;
+			}
+			const label = errorCount === 1 ? 'error' : 'errors';
+			return `${base} ${errorCount} validation ${label} occurred while scanning workflow skills.`;
 		}
 
 		const label = skillNames.length === 1 ? 'skill' : 'skills';
-		return `Loaded ${skillNames.length} workflow ${label}: ${skillNames.join(', ')}.`;
+		const base = `Loaded ${skillNames.length} workflow ${label}: ${skillNames.join(', ')}.`;
+		if (errorCount === 0) {
+			return base;
+		}
+		const skippedLabel = errorCount === 1 ? 'invalid skill' : 'invalid skills';
+		return `${base} Skipped ${errorCount} ${skippedLabel} due to validation errors.`;
 	}
 
 	const runtime: CodexRuntime = {
@@ -511,11 +522,13 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 								message: buildSkillLoadMessage({
 									skillNames: skillResolution.skills.map(skill => skill.name),
 									skillRoots,
+									errorCount: skillResolution.errors.length,
 								}),
 								notificationType: 'skills.loaded',
 								payload: {
 									skillRoots,
 									skills: skillResolution.skills,
+									errors: skillResolution.errors,
 								},
 							});
 						}

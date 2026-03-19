@@ -51,6 +51,8 @@ function resolveToolName(
 			return 'Bash';
 		case 'fileChange':
 			return 'Edit';
+		case 'webSearch':
+			return 'WebSearch';
 		case 'mcpToolCall': {
 			const server = String(item['server'] ?? 'unknown');
 			const tool = String(item['tool'] ?? 'unknown');
@@ -70,6 +72,8 @@ function resolveToolInput(
 			return {command: item['command'], cwd: item['cwd']};
 		case 'fileChange':
 			return {changes: item['changes']};
+		case 'webSearch':
+			return {query: item['query']};
 		case 'mcpToolCall':
 			return asRecord(item['arguments']);
 		default:
@@ -275,7 +279,8 @@ export function translateNotification(
 			if (
 				itemType === 'commandExecution' ||
 				itemType === 'fileChange' ||
-				itemType === 'mcpToolCall'
+				itemType === 'mcpToolCall' ||
+				itemType === 'webSearch'
 			) {
 				return {
 					kind: 'tool.pre',
@@ -329,7 +334,8 @@ export function translateNotification(
 			if (
 				itemType === 'commandExecution' ||
 				itemType === 'fileChange' ||
-				itemType === 'mcpToolCall'
+				itemType === 'mcpToolCall' ||
+				itemType === 'webSearch'
 			) {
 				const itemStatus = item['status'] as string;
 				if (itemStatus === 'failed' || itemStatus === 'cancelled') {
@@ -342,7 +348,10 @@ export function translateNotification(
 						tool_input: resolveToolInput(itemType, item),
 						tool_use_id: item['id'] as string | undefined,
 						tool_response:
-							item['aggregatedOutput'] ?? item['result'] ?? item['changes'],
+							item['aggregatedOutput'] ??
+							item['action'] ??
+							item['result'] ??
+							item['changes'],
 					},
 					toolName,
 					toolUseId: item['id'] as string | undefined,

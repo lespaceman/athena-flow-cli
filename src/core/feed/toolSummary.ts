@@ -106,6 +106,7 @@ function summarizeWebSearch(
 	_input: Record<string, unknown>,
 	response: unknown,
 ): string {
+	// Claude harness: response has {results: [{content: [...]}]}
 	const results = prop(response, 'results');
 	if (Array.isArray(results)) {
 		let count = 0;
@@ -114,6 +115,11 @@ function summarizeWebSearch(
 			count += Array.isArray(content) ? content.length : 1;
 		}
 		return `${count} results`;
+	}
+	// Codex harness: response is a WebSearchAction {type, query?, url?}
+	const actionType = prop(response, 'type');
+	if (typeof actionType === 'string') {
+		return actionType.replace(/_/g, ' ');
 	}
 	return '';
 }

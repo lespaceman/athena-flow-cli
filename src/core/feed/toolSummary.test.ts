@@ -98,6 +98,15 @@ describe('summarizeToolResult', () => {
 		expect(result).toBe('2 results');
 	});
 
+	it('summarizes WebSearch with codex WebSearchAction response', () => {
+		const result = summarizeToolResult(
+			'WebSearch',
+			{query: 'cheapest mac'},
+			{type: 'search', query: 'cheapest mac'},
+		);
+		expect(result).toBe('search');
+	});
+
 	it('summarizes Task with agent type only', () => {
 		const result = summarizeToolResult(
 			'Task',

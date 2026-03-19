@@ -146,6 +146,7 @@ function exitCodeOutcome(output: unknown): OutcomeResult {
 }
 
 function webSearchOutcome(output: unknown): OutcomeResult {
+	// Claude harness: response has {results: [{content: [...]}]}
 	const results = prop(output, 'results');
 	if (Array.isArray(results)) {
 		let count = 0;
@@ -154,6 +155,11 @@ function webSearchOutcome(output: unknown): OutcomeResult {
 			count += Array.isArray(content) ? content.length : 1;
 		}
 		return {text: `${count} results`, zero: count === 0};
+	}
+	// Codex harness: response is a WebSearchAction {type, query?, url?}
+	const actionType = prop(output, 'type');
+	if (typeof actionType === 'string') {
+		return {text: actionType.replace(/_/g, ' '), zero: false};
 	}
 	return undefined;
 }
