@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import {
+	parseSimpleYaml,
+	splitFrontmatter,
+} from '../../../shared/utils/yamlFrontmatter';
 
 /**
  * Agent config bridge: Claude plugin agents/*.md → Codex agent roles.
@@ -76,89 +80,14 @@ function mapSandboxMode(permissionMode?: string): string | undefined {
 
 /**
  * Parse a YAML frontmatter block from an agent .md file.
- * Reuses the same simple YAML subset as the skill frontmatter parser.
+ * Uses the shared YAML parser from yamlFrontmatter.ts.
  */
 export function parseAgentFrontmatter(content: string): {
 	frontmatter: Record<string, string | boolean | string[]>;
 	body: string;
 } {
-	const lines = content.split('\n');
-
-	if (lines[0]?.trim() !== '---') {
-		throw new Error('Agent .md must start with --- frontmatter delimiter');
-	}
-
-	const closingIndex = lines.indexOf('---', 1);
-	if (closingIndex === -1) {
-		throw new Error('Agent .md missing closing --- frontmatter delimiter');
-	}
-
-	const yamlLines = lines.slice(1, closingIndex);
-	const body = lines
-		.slice(closingIndex + 1)
-		.join('\n')
-		.trim();
-	const frontmatter: Record<string, string | boolean | string[]> = {};
-	let i = 0;
-
-	while (i < yamlLines.length) {
-		const line = yamlLines[i]!;
-
-		if (line.trim() === '') {
-			i++;
-			continue;
-		}
-
-		const colonIdx = line.indexOf(':');
-		if (colonIdx === -1) {
-			i++;
-			continue;
-		}
-
-		const key = line.slice(0, colonIdx).trim();
-		const rawValue = line.slice(colonIdx + 1).trim();
-
-		if (rawValue === '>') {
-			const parts: string[] = [];
-			i++;
-			while (i < yamlLines.length && yamlLines[i]!.startsWith('  ')) {
-				parts.push(yamlLines[i]!.trim());
-				i++;
-			}
-			frontmatter[key] = parts.join(' ');
-			continue;
-		}
-
-		if (rawValue === '') {
-			const items: string[] = [];
-			i++;
-			while (i < yamlLines.length && /^\s+-\s/.test(yamlLines[i]!)) {
-				items.push(yamlLines[i]!.replace(/^\s+-\s/, '').trim());
-				i++;
-			}
-			if (items.length > 0) {
-				frontmatter[key] = items;
-			} else {
-				frontmatter[key] = '';
-			}
-			continue;
-		}
-
-		if (rawValue === 'true') {
-			frontmatter[key] = true;
-			i++;
-			continue;
-		}
-		if (rawValue === 'false') {
-			frontmatter[key] = false;
-			i++;
-			continue;
-		}
-
-		frontmatter[key] = rawValue;
-		i++;
-	}
-
+	const {yamlLines, body} = splitFrontmatter(content, 'Agent .md');
+	const frontmatter = parseSimpleYaml(yamlLines);
 	return {frontmatter, body};
 }
 
