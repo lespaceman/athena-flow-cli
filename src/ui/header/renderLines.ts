@@ -2,7 +2,11 @@ import chalk from 'chalk';
 import stringWidth from 'string-width';
 import type {Theme} from '../theme/types';
 import type {HeaderModel} from './model';
-import {renderContextBar, type ContextBarPalette} from './contextBar';
+import {
+	formatTokenCount,
+	renderContextBar,
+	type ContextBarPalette,
+} from './contextBar';
 
 export function truncateSessionId(id: string, maxWidth: number): string {
 	if (id.length <= maxWidth) return id;
@@ -60,6 +64,24 @@ export function renderHeaderLines(
 		{text: sidText, priority: 90},
 		{text: wfText, priority: 70},
 		{text: harnessText, priority: 60},
+		// Token count (e.g., "Tokens: 45.2k")
+		...(model.total_tokens !== null
+			? [
+					{
+						text: `${style('Tokens: ', palette.label)}${style(formatTokenCount(model.total_tokens), palette.value)}`,
+						priority: 40,
+					},
+				]
+			: []),
+		// Run count (e.g., "Runs: 3")
+		...(model.run_count > 0
+			? [
+					{
+						text: `${style('Runs: ', palette.label)}${style(String(model.run_count), palette.value)}`,
+						priority: 50,
+					},
+				]
+			: []),
 	];
 
 	const buildLine = (ts: Token[]): string => {

@@ -32,6 +32,23 @@ type StreamMessage = {
 };
 
 /**
+ * Resolves the context window size (in tokens) for a given Claude model ID.
+ */
+function resolveContextWindowSize(modelId: string): number | null {
+	if (!modelId) return null;
+	// Extended context: model ID contains "[1m]" suffix
+	if (modelId.includes('[1m]')) return 1_000_000;
+	// Claude 3+ family: all have 200k context
+	if (/^claude-[3-9]|^claude-(opus|sonnet|haiku)-[4-9]/.test(modelId))
+		return 200_000;
+	// Claude 2.1 had 200k; Claude 2.0 had 100k
+	if (modelId.startsWith('claude-2.1')) return 200_000;
+	if (modelId.startsWith('claude-2')) return 100_000;
+	// Unknown model - default to 200k (most common)
+	return 200_000;
+}
+
+/**
  * Creates a stateful NDJSON parser that accumulates token usage
  * from Claude's `--output-format stream-json` stdout.
  *
@@ -45,6 +62,7 @@ export function createTokenAccumulator() {
 	let cacheRead = 0;
 	let cacheWrite = 0;
 	let contextSize = 0; // Latest turn's prompt size
+	let contextWindowSize: number | null = null;
 
 	function applyContextUsage(
 		usage: StreamUsage | undefined,
@@ -79,6 +97,23 @@ export function createTokenAccumulator() {
 				parsed.parent_tool_use_id != null ||
 					streamEvent.parent_tool_use_id != null,
 			);
+			if (!contextWindowSize && streamEvent.message) {
+				const model = (streamEvent.message as Record<string, unknown>)['model'];
+				if (typeof model === 'string') {
+					contextWindowSize = resolveContextWindowSize(model);
+				}
+			}
+		}
+
+		if (
+			!contextWindowSize &&
+			(parsed.type === 'message' || parsed.type === 'assistant')
+		) {
+			const msg = parsed.type === 'assistant' ? parsed.message : parsed;
+			const model = msg?.['model'];
+			if (typeof model === 'string') {
+				contextWindowSize = resolveContextWindowSize(model);
+			}
 		}
 
 		// Resolve usage from one of three formats:
@@ -158,7 +193,7 @@ export function createTokenAccumulator() {
 					cacheWrite: null,
 					total: null,
 					contextSize: null,
-					contextWindowSize: null,
+					contextWindowSize,
 				};
 			}
 			return {
@@ -168,7 +203,7 @@ export function createTokenAccumulator() {
 				cacheWrite: cacheWrite > 0 ? cacheWrite : null,
 				total: total > 0 ? total : null,
 				contextSize: contextSize > 0 ? contextSize : null,
-				contextWindowSize: null,
+				contextWindowSize,
 			};
 		},
 

@@ -134,7 +134,6 @@ describe('buildHeaderModel', () => {
 
 	it('no longer has removed fields', () => {
 		const model = buildHeaderModel(baseInput);
-		expect(model).not.toHaveProperty('run_count');
 		expect(model).not.toHaveProperty('active_agents');
 		expect(model).not.toHaveProperty('token_in');
 		expect(model).not.toHaveProperty('token_out');
@@ -153,5 +152,21 @@ describe('buildHeaderModel', () => {
 		expect(model.session_index).toBeNull();
 		expect(model.session_total).toBe(0);
 		expect(model.engine).toBeUndefined();
+	});
+
+	it('defaults total_tokens to null and run_count to 0', () => {
+		const model = buildHeaderModel(baseInput);
+		expect(model.total_tokens).toBeNull();
+		expect(model.run_count).toBe(0);
+	});
+
+	it('passes through totalTokens and runCount', () => {
+		const model = buildHeaderModel({
+			...baseInput,
+			totalTokens: 45200,
+			runCount: 3,
+		});
+		expect(model.total_tokens).toBe(45200);
+		expect(model.run_count).toBe(3);
 	});
 });

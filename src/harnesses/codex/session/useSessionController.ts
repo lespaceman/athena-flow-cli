@@ -155,7 +155,12 @@ export function useCodexSessionController(
 				typeof event.data === 'object'
 					? (event.data as Record<string, unknown>)
 					: {};
-			const next = readTokenUsage(data['usage']);
+			const totals = readTokenUsage(data['usage']);
+			const delta = readTokenUsage(data['delta']);
+			const next: TokenUsage = {
+				...totals,
+				contextSize: delta.contextSize,
+			};
 			setTokenUsage(next);
 			onExitTokensRef.current?.(next);
 		});

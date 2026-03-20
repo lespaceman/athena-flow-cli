@@ -10,6 +10,8 @@ const model: HeaderModel = {
 	workflow: 'test-wf',
 	harness: 'Claude Code',
 	context: {used: 50000, max: 200000},
+	total_tokens: null,
+	run_count: 0,
 	status: 'idle',
 	tail_mode: false,
 };
@@ -47,5 +49,34 @@ describe('renderHeaderLines', () => {
 		const plain = stripAnsi(line);
 		expect(plain).toContain('S: abc123 (2/5)');
 		expect(plain).not.toContain('ATHENA FLOW  |  S: abc123 (2/5)');
+	});
+
+	it('omits token count when total_tokens is null', () => {
+		const [line] = renderHeaderLines(model, 160, false);
+		expect(line).not.toContain('Tokens:');
+	});
+
+	it('omits run count when run_count is 0', () => {
+		const [line] = renderHeaderLines(model, 160, false);
+		expect(line).not.toContain('Runs:');
+	});
+
+	it('displays token count when total_tokens is set', () => {
+		const m: HeaderModel = {...model, total_tokens: 45200};
+		const [line] = renderHeaderLines(m, 160, false);
+		expect(line).toContain('Tokens: 45.2k');
+	});
+
+	it('displays run count when run_count > 0', () => {
+		const m: HeaderModel = {...model, run_count: 3};
+		const [line] = renderHeaderLines(m, 160, false);
+		expect(line).toContain('Runs: 3');
+	});
+
+	it('displays both token count and run count together', () => {
+		const m: HeaderModel = {...model, total_tokens: 1500, run_count: 7};
+		const [line] = renderHeaderLines(m, 160, false);
+		expect(line).toContain('Tokens: 1.5k');
+		expect(line).toContain('Runs: 7');
 	});
 });

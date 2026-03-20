@@ -230,6 +230,61 @@ describe('createTokenAccumulator', () => {
 		expect(usage.contextSize).toBe(200 + 1000 + 0);
 	});
 
+	describe('contextWindowSize extraction', () => {
+		it('extracts contextWindowSize from message_start model', () => {
+			const acc = createTokenAccumulator();
+			acc.feed(
+				JSON.stringify({
+					type: 'stream_event',
+					event: {
+						type: 'message_start',
+						message: {
+							model: 'claude-sonnet-4-20250514',
+							usage: {input_tokens: 1000, cache_read_input_tokens: 200},
+						},
+					},
+				}) + '\n',
+			);
+			expect(acc.getUsage().contextWindowSize).toBe(200_000);
+		});
+
+		it('resolves 1M context window for extended context models', () => {
+			const acc = createTokenAccumulator();
+			acc.feed(
+				JSON.stringify({
+					type: 'stream_event',
+					event: {
+						type: 'message_start',
+						message: {
+							model: 'claude-opus-4-20250514[1m]',
+							usage: {input_tokens: 500},
+						},
+					},
+				}) + '\n',
+			);
+			expect(acc.getUsage().contextWindowSize).toBe(1_000_000);
+		});
+
+		it('preserves contextWindowSize across reset()', () => {
+			const acc = createTokenAccumulator();
+			acc.feed(
+				JSON.stringify({
+					type: 'stream_event',
+					event: {
+						type: 'message_start',
+						message: {
+							model: 'claude-sonnet-4-20250514',
+							usage: {input_tokens: 1000},
+						},
+					},
+				}) + '\n',
+			);
+			expect(acc.getUsage().contextWindowSize).toBe(200_000);
+			acc.reset();
+			expect(acc.getUsage().contextWindowSize).toBe(200_000);
+		});
+	});
+
 	describe('contextSize tracking', () => {
 		it('updates to latest per-turn value', () => {
 			const acc = createTokenAccumulator();

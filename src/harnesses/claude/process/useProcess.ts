@@ -309,7 +309,11 @@ export function useClaudeProcess(
 									(base.input || 0) +
 										(finalAcc.input ?? 0) +
 										(base.output || 0) +
-										(finalAcc.output ?? 0) || null,
+										(finalAcc.output ?? 0) +
+										(base.cacheRead || 0) +
+										(finalAcc.cacheRead ?? 0) +
+										(base.cacheWrite || 0) +
+										(finalAcc.cacheWrite ?? 0) || null,
 								contextSize: finalAcc.contextSize,
 								contextWindowSize: finalAcc.contextWindowSize,
 							},
@@ -382,7 +386,11 @@ export function useClaudeProcess(
 									(base.input || 0) +
 										(acc.input ?? 0) +
 										(base.output || 0) +
-										(acc.output ?? 0) || null,
+										(acc.output ?? 0) +
+										(base.cacheRead || 0) +
+										(acc.cacheRead ?? 0) +
+										(base.cacheWrite || 0) +
+										(acc.cacheWrite ?? 0) || null,
 								contextSize: acc.contextSize,
 								contextWindowSize: acc.contextWindowSize,
 							});
