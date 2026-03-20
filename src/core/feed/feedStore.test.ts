@@ -1,19 +1,6 @@
 import {describe, it, expect, vi} from 'vitest';
 import {FeedStore} from './feedStore';
 import type {FeedEvent} from './types';
-import type {FeedMapper} from './mapper';
-
-// Helper to create a minimal mock mapper
-function createMockMapper(): FeedMapper {
-	return {
-		mapEvent: vi.fn(() => []),
-		mapDecision: vi.fn(() => null),
-		getSession: vi.fn(() => null),
-		getCurrentRun: vi.fn(() => null),
-		getActors: vi.fn(() => []),
-		allocateSeq: vi.fn(() => 0),
-	};
-}
 
 // Helper to create a minimal FeedEvent for testing
 function makeFeedEvent(
@@ -105,7 +92,7 @@ function makeFeedEvent(
 
 describe('FeedStore', () => {
 	it('empty store has getSnapshot() return empty frozen array', () => {
-		const store = new FeedStore({mapper: createMockMapper()});
+		const store = new FeedStore();
 		const snapshot = store.getSnapshot();
 		expect(snapshot).toEqual([]);
 		expect(Object.isFrozen(snapshot)).toBe(true);
@@ -134,7 +121,6 @@ describe('FeedStore', () => {
 		];
 
 		const store = new FeedStore({
-			mapper: createMockMapper(),
 			bootstrap: {
 				feedEvents: bootstrapEvents,
 				adapterSessionIds: ['s1'],
@@ -149,7 +135,7 @@ describe('FeedStore', () => {
 	});
 
 	it('pushEvents adds events, increments version, notifies listeners', () => {
-		const store = new FeedStore({mapper: createMockMapper()});
+		const store = new FeedStore();
 		const listener = vi.fn();
 		store.subscribe(listener);
 
@@ -161,7 +147,7 @@ describe('FeedStore', () => {
 	});
 
 	it('pushEvents with empty array does not notify', () => {
-		const store = new FeedStore({mapper: createMockMapper()});
+		const store = new FeedStore();
 		const listener = vi.fn();
 		store.subscribe(listener);
 
@@ -171,7 +157,7 @@ describe('FeedStore', () => {
 	});
 
 	it('pushEvents caps at MAX_EVENTS (200)', () => {
-		const store = new FeedStore({mapper: createMockMapper()});
+		const store = new FeedStore();
 
 		const events: FeedEvent[] = [];
 		for (let i = 0; i < 250; i++) {
@@ -192,7 +178,7 @@ describe('FeedStore', () => {
 	});
 
 	it('getSnapshot returns same reference between calls without pushEvents', () => {
-		const store = new FeedStore({mapper: createMockMapper()});
+		const store = new FeedStore();
 		store.pushEvents([makeFeedEvent({kind: 'notification'})]);
 
 		const snap1 = store.getSnapshot();
@@ -201,7 +187,7 @@ describe('FeedStore', () => {
 	});
 
 	it('getSnapshot returns new reference after pushEvents', () => {
-		const store = new FeedStore({mapper: createMockMapper()});
+		const store = new FeedStore();
 		store.pushEvents([makeFeedEvent({kind: 'notification'})]);
 
 		const snap1 = store.getSnapshot();
@@ -212,7 +198,7 @@ describe('FeedStore', () => {
 	});
 
 	it('subscribe/notify: listener called on pushEvents, not called after unsubscribe', () => {
-		const store = new FeedStore({mapper: createMockMapper()});
+		const store = new FeedStore();
 		const listener = vi.fn();
 		const unsub = store.subscribe(listener);
 
@@ -225,7 +211,7 @@ describe('FeedStore', () => {
 	});
 
 	it('incremental postByToolUseId: pushing tool.post updates the map', () => {
-		const store = new FeedStore({mapper: createMockMapper()});
+		const store = new FeedStore();
 
 		const event = makeFeedEvent({
 			kind: 'tool.post',
@@ -245,7 +231,7 @@ describe('FeedStore', () => {
 	});
 
 	it('tool.delta in-place update: same tool_use_id replaces without growing array', () => {
-		const store = new FeedStore({mapper: createMockMapper()});
+		const store = new FeedStore();
 
 		const delta1 = makeFeedEvent({
 			kind: 'tool.delta',
@@ -279,7 +265,7 @@ describe('FeedStore', () => {
 	});
 
 	it('clear() resets events, bumps version, notifies', () => {
-		const store = new FeedStore({mapper: createMockMapper()});
+		const store = new FeedStore();
 		store.pushEvents([makeFeedEvent({kind: 'notification'})]);
 
 		const listener = vi.fn();
@@ -292,64 +278,18 @@ describe('FeedStore', () => {
 		expect(listener).toHaveBeenCalledTimes(1);
 	});
 
-	it('reset() accepts new mapper, clears events', () => {
-		const mapper1 = createMockMapper();
-		const store = new FeedStore({mapper: mapper1});
+	it('reset() clears events and notifies', () => {
+		const store = new FeedStore();
 		store.pushEvents([makeFeedEvent({kind: 'notification'})]);
-
-		const mapper2 = createMockMapper();
-		(mapper2.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
-			session_id: 'new-session',
-		});
 
 		const listener = vi.fn();
 		store.subscribe(listener);
 
-		store.reset(mapper2);
+		store.reset();
 
 		expect(store.getSnapshot()).toHaveLength(0);
-		expect(store.getSession()).toEqual({session_id: 'new-session'});
+		expect(store.getPostByToolUseId().size).toBe(0);
 		expect(listener).toHaveBeenCalledTimes(1);
-	});
-
-	it('processRuntimeEvent delegates to mapper', () => {
-		const mapper = createMockMapper();
-		const mockFeedEvent = makeFeedEvent({kind: 'notification'});
-		(mapper.mapEvent as ReturnType<typeof vi.fn>).mockReturnValue([
-			mockFeedEvent,
-		]);
-
-		const store = new FeedStore({mapper});
-
-		const runtimeEvent = {
-			id: 'rt-1',
-		} as import('../runtime/types').RuntimeEvent;
-		const result = store.processRuntimeEvent(runtimeEvent);
-
-		expect(mapper.mapEvent).toHaveBeenCalledWith(runtimeEvent);
-		expect(result).toEqual([mockFeedEvent]);
-	});
-
-	it('processDecision delegates to mapper', () => {
-		const mapper = createMockMapper();
-		const mockFeedEvent = makeFeedEvent({
-			kind: 'permission.decision',
-		} as Partial<FeedEvent> & {kind: 'permission.decision'});
-		(mapper.mapDecision as ReturnType<typeof vi.fn>).mockReturnValue(
-			mockFeedEvent,
-		);
-
-		const store = new FeedStore({mapper});
-
-		const decision = {
-			type: 'json' as const,
-			source: 'user' as const,
-			intent: {kind: 'permission_allow' as const},
-		};
-		const result = store.processDecision('evt-1', decision);
-
-		expect(mapper.mapDecision).toHaveBeenCalledWith('evt-1', decision);
-		expect(result).toBe(mockFeedEvent);
 	});
 
 	it('bootstrap seeds postByToolUseId from historical events', () => {
@@ -374,7 +314,6 @@ describe('FeedStore', () => {
 		} as Partial<FeedEvent> & {kind: 'tool.failure'});
 
 		const store = new FeedStore({
-			mapper: createMockMapper(),
 			bootstrap: {
 				feedEvents: [toolPost, toolFailure],
 				adapterSessionIds: ['s1'],
@@ -387,26 +326,5 @@ describe('FeedStore', () => {
 		expect(map.get('historical-tu')).toBe(toolPost);
 		expect(map.has('historical-fail')).toBe(true);
 		expect(map.get('historical-fail')).toBe(toolFailure);
-	});
-
-	it('delegates getSession, getCurrentRun, getActors, allocateSeq to mapper', () => {
-		const mapper = createMockMapper();
-		(mapper.getSession as ReturnType<typeof vi.fn>).mockReturnValue({
-			session_id: 's1',
-		});
-		(mapper.getCurrentRun as ReturnType<typeof vi.fn>).mockReturnValue({
-			run_id: 'r1',
-		});
-		(mapper.getActors as ReturnType<typeof vi.fn>).mockReturnValue([
-			{id: 'a1'},
-		]);
-		(mapper.allocateSeq as ReturnType<typeof vi.fn>).mockReturnValue(42);
-
-		const store = new FeedStore({mapper});
-
-		expect(store.getSession()).toEqual({session_id: 's1'});
-		expect(store.getCurrentRun()).toEqual({run_id: 'r1'});
-		expect(store.getActors()).toEqual([{id: 'a1'}]);
-		expect(store.allocateSeq()).toBe(42);
 	});
 });

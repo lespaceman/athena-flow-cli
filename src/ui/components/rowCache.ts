@@ -42,16 +42,6 @@ export class RowCache {
 		}
 	}
 
-	/** Invalidate a specific entry (e.g., when tool.pre → tool.post). */
-	invalidate(entryId: string): void {
-		// Must scan all keys that start with this entryId
-		for (const key of this.cache.keys()) {
-			if (key.startsWith(entryId + ':')) {
-				this.cache.delete(key);
-			}
-		}
-	}
-
 	/** Bump generation counter — implicitly invalidates all cached entries
 	 * because new keys won't match old generation. Cache naturally refills. */
 	bumpGeneration(): void {

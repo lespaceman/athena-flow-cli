@@ -151,14 +151,6 @@ export class IndexedTimeline {
 		return matches;
 	}
 
-	/**
-	 * Invalidate all search cache entries. Called when entries are replaced
-	 * (e.g., tool pre→post merge) to ensure stale results aren't returned.
-	 */
-	invalidateSearchCache(): void {
-		this.searchCache.clear();
-	}
-
 	// ── Search text helpers ─────────────────────────────────
 
 	private getEntrySearchText(entry: TimelineEntry): string {

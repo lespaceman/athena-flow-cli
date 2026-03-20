@@ -73,7 +73,7 @@ function resolveActorLabel(
 	);
 }
 
-export type UseTimelineOptions = {
+type UseTimelineOptions = {
 	feedItems: FeedItem[];
 	feedEvents: FeedEvent[];
 	currentRun: {
@@ -88,7 +88,7 @@ export type UseTimelineOptions = {
 	verbose?: boolean;
 };
 
-export type UseTimelineResult = {
+type UseTimelineResult = {
 	timelineEntries: TimelineEntry[];
 	runSummaries: RunSummary[];
 	filteredEntries: TimelineEntry[];
@@ -466,7 +466,7 @@ export function appendTimelineCache(
 	};
 }
 
-export function getTimelineEntryDetails(entry: TimelineEntry): string {
+function getTimelineEntryDetails(entry: TimelineEntry): string {
 	if (entry.details) return entry.details;
 	if (!entry.feedEvent) return entry.summary;
 	const cached = detailCache.get(entry);

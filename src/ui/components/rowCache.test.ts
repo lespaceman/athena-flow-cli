@@ -42,17 +42,6 @@ describe('RowCache', () => {
 		expect(cache.get('d')).toBe('4');
 	});
 
-	it('invalidates all keys starting with a given entryId', () => {
-		const cache = new RowCache();
-		cache.set('entry1:f__:0', 'row1-focused');
-		cache.set('entry1:___:0', 'row1-normal');
-		cache.set('entry2:f__:0', 'row2-focused');
-		cache.invalidate('entry1');
-		expect(cache.get('entry1:f__:0')).toBeUndefined();
-		expect(cache.get('entry1:___:0')).toBeUndefined();
-		expect(cache.get('entry2:f__:0')).toBe('row2-focused');
-	});
-
 	it('bumpGeneration clears cache and increments generation counter', () => {
 		const cache = new RowCache();
 		cache.set('key1', 'value1');

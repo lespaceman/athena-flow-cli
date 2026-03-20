@@ -1,13 +1,10 @@
 import type {FeedEvent} from './types';
-import type {FeedMapper} from './mapper';
-import type {RuntimeEvent, RuntimeDecision} from '../runtime/types';
 import type {MapperBootstrap} from './bootstrap';
 import {buildPostByToolUseId} from './items';
 
 const MAX_EVENTS = 200;
 
-export type FeedStoreOptions = {
-	mapper: FeedMapper;
+type FeedStoreOptions = {
 	bootstrap?: MapperBootstrap;
 };
 
@@ -20,12 +17,7 @@ export class FeedStore {
 	// Derived index maintained incrementally
 	private postByToolUseIdMap: Map<string, FeedEvent>;
 
-	// Injected collaborators
-	private mapper: FeedMapper;
-
-	constructor(opts: FeedStoreOptions) {
-		this.mapper = opts.mapper;
-
+	constructor(opts: FeedStoreOptions = {}) {
 		// Bootstrap from stored session data
 		const bootstrapEvents = opts.bootstrap?.feedEvents ?? [];
 		this.events = [...bootstrapEvents];
@@ -81,19 +73,6 @@ export class FeedStore {
 		this.notify();
 	}
 
-	/** Delegate to injected mapper to convert runtime event to feed events. */
-	processRuntimeEvent(event: RuntimeEvent): FeedEvent[] {
-		return this.mapper.mapEvent(event);
-	}
-
-	/** Delegate to injected mapper to convert decision to feed event. */
-	processDecision(
-		eventId: string,
-		decision: RuntimeDecision,
-	): FeedEvent | null {
-		return this.mapper.mapDecision(eventId, decision);
-	}
-
 	// ── useSyncExternalStore contract ─────────────────────
 
 	subscribe = (listener: () => void): (() => void) => {
@@ -118,26 +97,9 @@ export class FeedStore {
 		return this.postByToolUseIdMap;
 	}
 
-	getSession() {
-		return this.mapper.getSession();
-	}
-
-	getCurrentRun() {
-		return this.mapper.getCurrentRun();
-	}
-
-	getActors() {
-		return this.mapper.getActors();
-	}
-
-	allocateSeq(): number {
-		return this.mapper.allocateSeq();
-	}
-
 	// ── Lifecycle ─────────────────────────────────────────
 
-	reset(newMapper: FeedMapper): void {
-		this.mapper = newMapper;
+	reset(): void {
 		this.events = [];
 		this.postByToolUseIdMap = new Map();
 		this.version++;

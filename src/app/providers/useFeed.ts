@@ -134,7 +134,6 @@ export function useFeed(
 	const feedStoreRef = useRef<FeedStore | null>(null);
 	if (!feedStoreRef.current) {
 		feedStoreRef.current = new FeedStore({
-			mapper: mapperRef.current,
 			bootstrap: mapperBootstrap ?? undefined,
 		});
 	}
@@ -182,7 +181,7 @@ export function useFeed(
 		// Reset mapper state — create fresh mapper
 		const newMapper = createFeedMapper();
 		mapperRef.current = newMapper;
-		feedStoreRef.current!.reset(newMapper);
+		feedStoreRef.current!.reset();
 	}, []);
 
 	const addRule = useCallback((rule: Omit<HookRule, 'id'>) => {
