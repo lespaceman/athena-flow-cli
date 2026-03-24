@@ -1,5 +1,5 @@
 {
-	"name": "athena-flow-cli",
+	"name": "@athenaflow/cli",
 	"description": "Workflow runtime for Claude Code with hooks, plugins, and interactive terminal observability",
 	"repository": {
 		"type": "git",
@@ -27,6 +27,9 @@
 	"type": "module",
 	"engines": {
 		"node": ">=20"
+	},
+	"publishConfig": {
+		"access": "public"
 	},
 	"scripts": {
 		"build": "tsup",
