@@ -1,4 +1,4 @@
-import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 const files: Record<string, string> = {};
 
@@ -17,10 +17,21 @@ vi.mock('node:fs', () => ({
 const {buildCodexPromptOptions} = await import('./promptOptions');
 
 describe('buildCodexPromptOptions', () => {
+	const savedEnv = {...process.env};
+
 	beforeEach(() => {
 		for (const key of Object.keys(files)) {
 			delete files[key];
 		}
+		// Clear session env vars so they don't leak into MCP shell wrapping
+		delete process.env['DISPLAY'];
+		delete process.env['XAUTHORITY'];
+		delete process.env['WAYLAND_DISPLAY'];
+		delete process.env['XDG_RUNTIME_DIR'];
+	});
+
+	afterEach(() => {
+		process.env = {...savedEnv};
 	});
 
 	it('merges session id, process model, and workflow overrides into Codex prompt options', () => {
