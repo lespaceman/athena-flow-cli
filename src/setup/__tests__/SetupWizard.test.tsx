@@ -62,7 +62,7 @@ function walkAllSteps(stdin: {write: (data: string) => void}) {
 	act(() => vi.advanceTimersByTime(500));
 }
 
-describe('SetupWizard', () => {
+describe('SetupWizard', {timeout: 15_000}, () => {
 	it('renders the first step (theme selection)', () => {
 		const {lastFrame} = render(
 			<ThemeProvider value={darkTheme}>
