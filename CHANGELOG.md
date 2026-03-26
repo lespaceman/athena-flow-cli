@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.15](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.14...cli-v0.3.15) (2026-03-26)
+
+
+### Features
+
+* add built-in default workflow for general-purpose long-horizon tasks ([fae5a3c](https://github.com/lespaceman/athena-flow-cli/commit/fae5a3ca66f990406df0f309e59975190189e8a3))
+
 ## [0.3.14](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.13...cli-v0.3.14) (2026-03-26)
 
 
