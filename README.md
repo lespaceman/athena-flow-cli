@@ -9,7 +9,7 @@
 
 AI coding agents are getting better at reasoning -- but long-horizon tasks still break. Prompts drift, results vary between runs, and there's no good way to package what worked into something your whole team can reuse. The agent isn't the bottleneck anymore. The harness is.
 
-Athenaflow is a **workflow runtime** for coding agent harnesses. It sits between you and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [OpenAI Codex](https://chatgpt.com/codex), adding structured workflows, real-time observability, session persistence, and a plugin system -- so agent-driven tasks produce consistent, reliable results you can reproduce across runs, across teams, and across models.
+Athenaflow is a **workflow runtime** for coding agent harnesses. It sits between you and [Claude Code](https://claude.com/product/claude-code) or [OpenAI Codex](https://chatgpt.com/codex), adding structured workflows, real-time observability, session persistence, and a plugin system -- so agent-driven tasks produce consistent, reliable results you can reproduce across runs, across teams, and across models.
 
 ```
 npm install -g @athenaflow/cli && athena
