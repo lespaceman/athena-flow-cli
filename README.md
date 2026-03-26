@@ -7,15 +7,9 @@
 
 **Deterministic orchestration for non-deterministic agents.**
 
-AI coding agents are getting better at reasoning -- but long-horizon tasks still break.
-Prompts drift, results vary between runs, and there's no way to package what worked
-into something your whole team can reuse. The agent isn't the bottleneck anymore.
-The harness is.
+AI coding agents are getting better at reasoning -- but long-horizon tasks still break. Prompts drift, results vary between runs, and there's no good way to package what worked into something your whole team can reuse. The agent isn't the bottleneck anymore. The harness is.
 
-Athenaflow is a **workflow runtime** for [Claude Code](https://claude.com/product/claude-code)
-and [OpenAI Codex](https://chatgpt.com/codex). It adds structured workflows, real-time
-observability, session persistence, and a plugin system -- so agent-driven tasks produce
-consistent results across runs, teams, and models.
+Athenaflow is a **workflow runtime** for [Claude Code](https://claude.com/product/claude-code) and [OpenAI Codex](https://chatgpt.com/codex). It adds structured workflows, real-time observability, session persistence, and a plugin system -- so agent-driven tasks produce consistent results across runs, teams, and models.
 
 ```
 npm install -g @athenaflow/cli && athena
@@ -103,6 +97,7 @@ Workflows package prompt templates, loop strategies, plugin dependencies, isolat
 ```bash
 athena workflow list                        # See what's installed
 athena workflow install e2e-test-builder    # Install from the marketplace
+athena workflow use e2e-test-builder        # Set as the active workflow
 athena workflow update                      # Re-sync from source
 athena workflow use-marketplace owner/repo  # Point to a different marketplace
 ```
@@ -143,7 +138,7 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
-      - run: npx athena-flow exec "summarize risk in this PR" \
+      - run: npx @athenaflow/cli exec "summarize risk in this PR" \
           --json --on-permission=deny --on-question=empty \
           --output-last-message athena-summary.md
       - uses: actions/upload-artifact@v4
@@ -162,7 +157,7 @@ athena_exec:
   image: node:20
   script:
     - npm ci
-    - npx athena-flow exec "summarize pipeline status" \
+    - npx @athenaflow/cli exec "summarize pipeline status" \
       --json --on-permission=deny --on-question=empty \
       --output-last-message athena-summary.md
   artifacts:
