@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.14](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.13...cli-v0.3.14) (2026-03-26)
+
+
+### Features
+
+* add codex WebSearch support and surface skill validation errors ([7fbd370](https://github.com/lespaceman/athena-flow-cli/commit/7fbd370e65a2e021f3e34cffd228e26f5f80f0ec))
+* **codex:** add dynamicToolCall support and MCP env shell-wrapping ([a56cb72](https://github.com/lespaceman/athena-flow-cli/commit/a56cb72c3a58fa01a9ad69961c4d0b63b54b0af9))
+* **codex:** add plugin agent lifecycle — discovery, config bridge, and injection ([c5073bc](https://github.com/lespaceman/athena-flow-cli/commit/c5073bc5147616f55cd979337b1c98bf33552682))
+* **codex:** add workflow switching with agent unload/reload and integration tests ([11d6e3c](https://github.com/lespaceman/athena-flow-cli/commit/11d6e3ce31f1c20ae497e21b0c8fb46f5c275cc8))
+* escalate interrupt to kill in workflow session controller ([09c32e9](https://github.com/lespaceman/athena-flow-cli/commit/09c32e9ca60051e69ad0413f9219704044b93308))
+* replace setup wizard stepper with growing receipt layout ([cd891c3](https://github.com/lespaceman/athena-flow-cli/commit/cd891c331244878b1f5a8fc0bdc4079eac039218))
+
+
+### Bug Fixes
+
+* clear session env vars in promptOptions tests to prevent CI failures ([b137ce0](https://github.com/lespaceman/athena-flow-cli/commit/b137ce0b20a66e6b0f64ddf9cb32d0478ad8b7b5))
+* **codex:** harden agent config — TOML escaping, name validation, dedup helpers ([1f00d16](https://github.com/lespaceman/athena-flow-cli/commit/1f00d163608041d46407ef7a17b843769e292de6))
+* header bugs and add token/run count display ([ff498e3](https://github.com/lespaceman/athena-flow-cli/commit/ff498e308a19beeeffb91d013ed45190d43fcd97))
+* improve color contrast and make all colors theme-aware ([3be877d](https://github.com/lespaceman/athena-flow-cli/commit/3be877dbb156e3252da52111a712d07b9796e05c))
+* increase SetupWizard test timeout for slower CI runners ([deea03b](https://github.com/lespaceman/athena-flow-cli/commit/deea03b8c868ad9a4fa2cf4220c006c494254ad4))
+* invalidate row cache when RESULT column appears or entry outcome changes ([c7311e0](https://github.com/lespaceman/athena-flow-cli/commit/c7311e0466d564e576da0c18adecba196713018f))
+* resolve OOM crash and optimize feed rendering pipeline ([bf9ceed](https://github.com/lespaceman/athena-flow-cli/commit/bf9ceedffc3804c1c8a46c5892c9f710467561f9))
+* thread theme through pager and simplify header palette fallback ([83a967f](https://github.com/lespaceman/athena-flow-cli/commit/83a967f13cc77af917486098a50679daa3c8154d))
+
 ## [0.3.13](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.12...cli-v0.3.13) (2026-03-10)
 
 
