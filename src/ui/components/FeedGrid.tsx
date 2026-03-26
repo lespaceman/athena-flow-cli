@@ -64,18 +64,19 @@ function FeedGridImpl({
 
 	const rowCacheRef = React.useRef(new RowCache());
 
-	const prevGlobalsRef = React.useRef({innerWidth, ascii, theme});
+	const prevGlobalsRef = React.useRef({innerWidth, ascii, theme, cols});
 	React.useEffect(() => {
 		const prev = prevGlobalsRef.current;
 		if (
 			prev.innerWidth !== innerWidth ||
 			prev.ascii !== ascii ||
-			prev.theme !== theme
+			prev.theme !== theme ||
+			prev.cols !== cols
 		) {
 			rowCacheRef.current.bumpGeneration();
-			prevGlobalsRef.current = {innerWidth, ascii, theme};
+			prevGlobalsRef.current = {innerWidth, ascii, theme, cols};
 		}
-	}, [innerWidth, ascii, theme]);
+	}, [innerWidth, ascii, theme, cols]);
 
 	// Delegate all line rendering to the extracted surface model.
 	const surface = React.useMemo(

@@ -256,7 +256,6 @@ function lineParts({
 	const tool = formatTool(toolText, cols.toolW, theme, {
 		pill: isToolRow || isSubagentRow || hasSyntheticPill,
 		category: toolCategory,
-		ascii,
 	});
 
 	const detailSummaryInfo = trimVerbPrefix(entry);

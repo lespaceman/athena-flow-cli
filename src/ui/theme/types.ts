@@ -1,7 +1,6 @@
 export type ThemeName = 'dark' | 'light' | 'high-contrast';
 
 export type ToolPillPalette = {
-	dot: string;
 	bg: string;
 	fg: string;
 };

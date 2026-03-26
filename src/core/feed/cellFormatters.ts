@@ -139,7 +139,6 @@ export function formatTool(
 	options?: {
 		pill?: boolean;
 		category?: ToolPillCategory;
-		ascii?: boolean;
 	},
 ): string {
 	if (contentWidth <= 0) return '';
@@ -151,21 +150,17 @@ export function formatTool(
 
 	const category = options.category ?? 'neutral';
 	const palette = theme.toolPill[category];
-	if (contentWidth < 8) {
-		return chalk.hex(palette.dot)(fitImpl(toolColumn, contentWidth));
+	if (contentWidth < 4) {
+		return chalk.hex(palette.fg)(fitImpl(toolColumn, contentWidth));
 	}
 
 	// Fixed-width pill without bracket caps. Keep plain trailing padding so
 	// adjacent rows don't visually fuse into a single vertical block.
-	const maxLabelWidth = Math.max(1, contentWidth - 7); // keep at least 2 plain cols
-	const fitted = fitImpl(toolColumn, maxLabelWidth).trimEnd();
-	const pillLabel = fitted;
-	const visiblePillWidth = 5 + pillLabel.length; // left gap + dot+spacer + padded pill
-	const trailingPad = ' '.repeat(Math.max(0, contentWidth - visiblePillWidth));
-	const toolGlyphs = getGlyphs(options.ascii ?? false);
-	const dot = chalk.hex(palette.dot)(toolGlyphs['tool.bullet']);
-	const pill = chalk.bgHex(palette.bg).hex(palette.fg)(` ${pillLabel} `);
-	return ` ${dot} ${pill}${trailingPad}`;
+	const maxLabelWidth = Math.max(1, contentWidth - 4); // pill padding (2) + min 2 trailing
+	const label = fitImpl(toolColumn, maxLabelWidth).trimEnd();
+	const trailingPad = ' '.repeat(Math.max(0, contentWidth - 2 - label.length));
+	const pill = chalk.bgHex(palette.bg).hex(palette.fg)(` ${label} `);
+	return `${pill}${trailingPad}`;
 }
 
 export function formatResult(

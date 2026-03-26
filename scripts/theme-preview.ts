@@ -93,8 +93,6 @@ function renderSection(theme: Theme, bg: string): void {
 				: (s: string) => s;
 
 		const pill =
-			c(pal.dot)('●') +
-			' ' +
 			chalk.bgHex(pal.bg).hex(pal.fg)(` ${p.label} `) +
 			'  ' +
 			c(theme.textMuted)(p.detail);

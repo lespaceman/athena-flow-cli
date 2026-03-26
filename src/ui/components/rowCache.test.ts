@@ -54,7 +54,9 @@ describe('RowCache', () => {
 
 	it('produces deterministic cache keys with all params encoded', () => {
 		const key = RowCache.key('entry-42', true, false, true, 3);
-		expect(key).toBe('entry-42:f_m:3');
+		expect(key).toBe('entry-42:f_m:3:');
+		const keyWithOutcome = RowCache.key('entry-42', true, false, true, 3, 'ok');
+		expect(keyWithOutcome).toBe('entry-42:f_m:3:ok');
 	});
 
 	it('produces different keys for different focused/striped/matched flags', () => {

@@ -184,6 +184,7 @@ export function buildFeedSurface(params: BuildFeedSurfaceParams): FeedSurface {
 				isStriped,
 				isMatched,
 				rowCache.getGeneration(),
+				entry.summaryOutcome ?? '',
 			);
 			const cached = rowCache.get(cacheKey);
 			if (cached !== undefined) {

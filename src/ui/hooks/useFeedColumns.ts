@@ -43,9 +43,9 @@ export function computeFeedColumns(
 	}
 
 	const gapW = innerWidth >= 120 ? 2 : 1;
-	// Pill rendering adds visual overhead ("• " + "(label)"), so reserve
+	// Pill rendering adds visual overhead (" label " padding), so reserve
 	// a wider TOOL column to avoid truncating labels like "General Purpose".
-	const toolW = Math.min(24, Math.max(12, maxToolLen + 7));
+	const toolW = Math.min(24, Math.max(12, maxToolLen + 4));
 	const resultMaxW =
 		innerWidth >= 240
 			? 48
@@ -159,14 +159,15 @@ export function useFeedColumns(
 			return previous.cols;
 		}
 
-		const appendedEntries = entries.slice(previous.entries.length);
 		const done = startPerfStage('feed.columns', {
-			op: 'append',
+			op: 'append-full',
 			entries: entries.length,
-			appended_entries: appendedEntries.length,
 			inner_width: innerWidth,
 		});
-		const nextCols = computeFeedColumns(appendedEntries, innerWidth);
+		// Compute from ALL entries so that existing entries whose
+		// summaryOutcome appeared after the initial computation (e.g. via
+		// paired tool.post merge) are accounted for in resultW / toolW.
+		const nextCols = computeFeedColumns(entries, innerWidth);
 		const cols = stabilizeFeedColumns(previous.cols, nextCols, innerWidth);
 		done();
 		cacheRef.current = {entries, innerWidth, cols};

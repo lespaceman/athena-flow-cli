@@ -72,13 +72,13 @@ export const darkTheme: Theme = {
 
 	// ── Tool pills ──────────────────────────────────────────
 	toolPill: {
-		safe: {dot: '#2d8abf', bg: '#0e2233', fg: '#5ba3cc'},
-		mutating: {dot: '#b8862e', bg: '#2a1d0a', fg: '#d4a44a'},
-		browser: {dot: '#2aaa9e', bg: '#0b2625', fg: '#5cc4ba'},
-		neutral: {dot: '#5a6270', bg: '#141a22', fg: '#7d8590'},
-		skill: {dot: '#b06a9e', bg: '#2a0f24', fg: '#c98ab8'},
-		'subagent.spawn': {dot: '#2ea87a', bg: '#0a2e22', fg: '#5cc4a0'},
-		'subagent.return': {dot: '#2ea87a', bg: '#0a2e22', fg: '#56b492'},
+		safe: {bg: '#0e2233', fg: '#5ba3cc'},
+		mutating: {bg: '#2a1d0a', fg: '#d4a44a'},
+		browser: {bg: '#0b2625', fg: '#5cc4ba'},
+		neutral: {bg: '#141a22', fg: '#7d8590'},
+		skill: {bg: '#2a0f24', fg: '#c98ab8'},
+		'subagent.spawn': {bg: '#0a2e22', fg: '#5cc4a0'},
+		'subagent.return': {bg: '#0a2e22', fg: '#56b492'},
 	},
 };
 
@@ -154,13 +154,13 @@ export const lightTheme: Theme = {
 
 	// ── Tool pills ──────────────────────────────────────────
 	toolPill: {
-		safe: {dot: '#0969da', bg: '#ddf4ff', fg: '#0550ae'},
-		mutating: {dot: '#9a6700', bg: '#fff8c5', fg: '#7c5200'},
-		browser: {dot: '#1a7f37', bg: '#dafbe1', fg: '#116329'},
-		neutral: {dot: '#656d76', bg: '#f6f8fa', fg: '#424a53'},
-		skill: {dot: '#8250df', bg: '#fbefff', fg: '#6639ba'},
-		'subagent.spawn': {dot: '#1a7f37', bg: '#dafbe1', fg: '#116329'},
-		'subagent.return': {dot: '#1a7f37', bg: '#dafbe1', fg: '#1a7f37'},
+		safe: {bg: '#ddf4ff', fg: '#0550ae'},
+		mutating: {bg: '#fff8c5', fg: '#7c5200'},
+		browser: {bg: '#dafbe1', fg: '#116329'},
+		neutral: {bg: '#f6f8fa', fg: '#424a53'},
+		skill: {bg: '#fbefff', fg: '#6639ba'},
+		'subagent.spawn': {bg: '#dafbe1', fg: '#116329'},
+		'subagent.return': {bg: '#dafbe1', fg: '#1a7f37'},
 	},
 };
 
@@ -240,13 +240,13 @@ export const highContrastTheme: Theme = {
 
 	// ── Tool pills ──────────────────────────────────────────
 	toolPill: {
-		safe: {dot: '#71b7ff', bg: '#122d42', fg: '#a2d2ff'},
-		mutating: {dot: '#e3b341', bg: '#3a2e10', fg: '#f0d070'},
-		browser: {dot: '#56d364', bg: '#0f3520', fg: '#7ee28b'},
-		neutral: {dot: '#9ea7b3', bg: '#1c2128', fg: '#b1bac4'},
-		skill: {dot: '#d2a8ff', bg: '#2b1a40', fg: '#e0c0ff'},
-		'subagent.spawn': {dot: '#56d364', bg: '#0f3520', fg: '#7ee28b'},
-		'subagent.return': {dot: '#56d364', bg: '#0f3520', fg: '#6bcc79'},
+		safe: {bg: '#122d42', fg: '#a2d2ff'},
+		mutating: {bg: '#3a2e10', fg: '#f0d070'},
+		browser: {bg: '#0f3520', fg: '#7ee28b'},
+		neutral: {bg: '#1c2128', fg: '#b1bac4'},
+		skill: {bg: '#2b1a40', fg: '#e0c0ff'},
+		'subagent.spawn': {bg: '#0f3520', fg: '#7ee28b'},
+		'subagent.return': {bg: '#0f3520', fg: '#6bcc79'},
 	},
 };
 

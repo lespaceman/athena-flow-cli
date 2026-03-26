@@ -189,9 +189,10 @@ describe('formatTool', () => {
 		expect(stripAnsi(r)).toHaveLength(12);
 	});
 
-	test('uses ASCII-safe tool bullet in ascii mode', () => {
-		const r = formatTool('Read', 12, theme, {pill: true, ascii: true});
-		expect(stripAnsi(r)).toContain('*');
+	test('pill mode renders label without bullet', () => {
+		const r = formatTool('Read', 12, theme, {pill: true});
+		expect(stripAnsi(r)).toContain('Read');
+		expect(stripAnsi(r)).not.toContain('*');
 		expect(stripAnsi(r)).toHaveLength(12);
 	});
 

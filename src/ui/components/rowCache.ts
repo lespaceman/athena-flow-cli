@@ -2,9 +2,8 @@
  * LRU row cache for feed surface rendering.
  *
  * Caches formatted ANSI strings by entry identity + rendering context.
- * Uses a generation counter for global params (width, theme, ascii) —
- * bumping generation implicitly invalidates the entire cache without
- * explicit clearing.
+ * Uses a generation counter for global params (width, theme, ascii, cols) —
+ * bumping generation clears the cache so stale rows are never served.
  */
 
 const DEFAULT_MAX_SIZE = 100;
@@ -61,19 +60,14 @@ export class RowCache {
 		return this.cache.size;
 	}
 
-	/**
-	 * Build a cache key that encodes all rendering-relevant parameters.
-	 * Generation counter encodes width+theme+ascii state — when any changes,
-	 * generation bumps and entire cache is invalidated.
-	 */
 	static key(
 		entryId: string,
 		focused: boolean,
 		striped: boolean,
 		matched: boolean,
 		generation: number,
+		outcome = '',
 	): string {
-		// Use compact encoding: f=focused, s=striped, m=matched
-		return `${entryId}:${focused ? 'f' : '_'}${striped ? 's' : '_'}${matched ? 'm' : '_'}:${generation}`;
+		return `${entryId}:${focused ? 'f' : '_'}${striped ? 's' : '_'}${matched ? 'm' : '_'}:${generation}:${outcome}`;
 	}
 }
