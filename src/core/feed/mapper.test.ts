@@ -122,4 +122,97 @@ describe('createFeedMapper', () => {
 		// NOT done during bootstrap. Actors are registered when SubagentStart
 		// events arrive in the new adapter session.
 	});
+
+	describe('getTasks', () => {
+		it('returns empty array by default', () => {
+			const mapper = createFeedMapper();
+			expect(mapper.getTasks()).toEqual([]);
+		});
+
+		it('captures tasks from root-level TodoWrite events', () => {
+			const mapper = createFeedMapper();
+			mapper.mapEvent(
+				makeRuntimeEvent({
+					id: 'rt-todo-1',
+					kind: 'tool.pre',
+					hookName: 'PreToolUse',
+					toolName: 'TodoWrite',
+					payload: {
+						tool_name: 'TodoWrite',
+						tool_input: {
+							todos: [
+								{content: 'Fix bug', status: 'in_progress'},
+								{content: 'Add test', status: 'pending'},
+							],
+						},
+					},
+				}),
+			);
+			expect(mapper.getTasks()).toEqual([
+				{content: 'Fix bug', status: 'in_progress'},
+				{content: 'Add test', status: 'pending'},
+			]);
+		});
+
+		it('updates tasks when a new TodoWrite arrives', () => {
+			const mapper = createFeedMapper();
+			mapper.mapEvent(
+				makeRuntimeEvent({
+					id: 'rt-todo-1',
+					kind: 'tool.pre',
+					hookName: 'PreToolUse',
+					toolName: 'TodoWrite',
+					payload: {
+						tool_name: 'TodoWrite',
+						tool_input: {
+							todos: [{content: 'Fix bug', status: 'in_progress'}],
+						},
+					},
+				}),
+			);
+			mapper.mapEvent(
+				makeRuntimeEvent({
+					id: 'rt-todo-2',
+					kind: 'tool.pre',
+					hookName: 'PreToolUse',
+					toolName: 'TodoWrite',
+					payload: {
+						tool_name: 'TodoWrite',
+						tool_input: {
+							todos: [{content: 'Fix bug', status: 'completed'}],
+						},
+					},
+				}),
+			);
+			expect(mapper.getTasks()).toEqual([
+				{content: 'Fix bug', status: 'completed'},
+			]);
+		});
+
+		it('restores tasks from bootstrap', () => {
+			const bootstrap: MapperBootstrap = {
+				adapterSessionIds: ['cs-1'],
+				createdAt: 1000,
+				feedEvents: [
+					makeFeedEvent({
+						event_id: 'cs-1:R1:E1',
+						seq: 1,
+						run_id: 'cs-1:R1',
+						kind: 'tool.pre',
+						actor_id: 'agent:root',
+						data: {
+							tool_name: 'TodoWrite',
+							tool_input: {
+								todos: [{content: 'Deploy', status: 'pending'}],
+							},
+						},
+					}),
+				],
+			};
+			const mapper = createFeedMapper(bootstrap);
+			expect(mapper.getTasks()).toEqual([
+				{content: 'Deploy', status: 'pending'},
+			]);
+		});
+	});
 });

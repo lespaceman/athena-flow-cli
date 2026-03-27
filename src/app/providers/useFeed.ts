@@ -26,7 +26,7 @@ import {
 import {type FeedItem, mergeFeedItems} from '../../core/feed/items';
 import type {Message} from '../../shared/types/common';
 import type {TokenUsage} from '../../shared/types/headerMetrics';
-import type {TodoItem, TodoWriteInput} from '../../core/feed/todo';
+import type {TodoItem} from '../../core/feed/todo';
 import {createFeedMapper, type FeedMapper} from '../../core/feed/mapper';
 import {
 	handleEvent,
@@ -519,29 +519,10 @@ export function useFeed(
 		}
 	}, [messages, feedEvents]);
 
-	// Extract tasks from latest TodoWrite
 	const tasks = useMemo((): TodoItem[] => {
-		const done = startPerfStage('state.derive', {
-			op: 'todo.extract',
-			feed_events: feedEvents.length,
-		});
-		try {
-			const lastTodoWrite = feedEvents
-				.filter(
-					e =>
-						e.kind === 'tool.pre' &&
-						e.data.tool_name === 'TodoWrite' &&
-						e.actor_id === 'agent:root',
-				)
-				.at(-1);
-			if (!lastTodoWrite || lastTodoWrite.kind !== 'tool.pre') return [];
-			const input = lastTodoWrite.data.tool_input as unknown as
-				| TodoWriteInput
-				| undefined;
-			return Array.isArray(input?.todos) ? input.todos : [];
-		} finally {
-			done();
-		}
+		// feedEvents is in deps to trigger recomputation on store snapshot change
+		void feedEvents;
+		return mapperRef.current.getTasks();
 	}, [feedEvents]);
 
 	const postByToolUseId = useMemo(() => {

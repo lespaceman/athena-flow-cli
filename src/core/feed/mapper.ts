@@ -9,6 +9,7 @@ import type {
 } from './types';
 import type {Session, Run, Actor} from './entities';
 import type {MapperBootstrap} from './bootstrap';
+import type {TodoItem, TodoWriteInput} from './todo';
 import {ActorRegistry} from './entities';
 import {generateTitle} from './titleGen';
 import {createTranscriptReader} from './transcript';
@@ -19,6 +20,7 @@ export type FeedMapper = {
 	getSession(): Session | null;
 	getCurrentRun(): Run | null;
 	getActors(): Actor[];
+	getTasks(): TodoItem[];
 	allocateSeq(): number;
 };
 
@@ -28,6 +30,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 		'[streaming output truncated to recent content]\n';
 	let currentSession: Session | null = null;
 	let currentRun: Run | null = null;
+	let lastRootTasks: TodoItem[] = [];
 	const actors = new ActorRegistry();
 	let seq = 0;
 	let runSeq = 0;
@@ -49,9 +52,21 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 
 	// Bootstrap from stored session
 	if (bootstrap) {
-		// Restore seq counter from stored events
+		// Restore seq, runSeq, and tasks from stored events (single pass)
 		for (const e of bootstrap.feedEvents) {
 			if (e.seq > seq) seq = e.seq;
+			const m = e.run_id.match(/:R(\d+)$/);
+			if (m) {
+				const n = parseInt(m[1]!, 10);
+				if (n > runSeq) runSeq = n;
+			}
+			if (
+				e.kind === 'tool.pre' &&
+				e.actor_id === 'agent:root' &&
+				e.data.tool_name === 'TodoWrite'
+			) {
+				lastRootTasks = extractTodoItems(e.data.tool_input);
+			}
 		}
 
 		// Restore session identity from last adapter session
@@ -62,15 +77,6 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 				started_at: bootstrap.createdAt,
 				source: 'resume',
 			};
-		}
-
-		// Restore runSeq from highest run number in stored events
-		for (const e of bootstrap.feedEvents) {
-			const m = e.run_id.match(/:R(\d+)$/);
-			if (m) {
-				const n = parseInt(m[1]!, 10);
-				if (n > runSeq) runSeq = n;
-			}
 		}
 
 		// Rebuild currentRun from last open run
@@ -107,6 +113,11 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 					currentRun.counters.permission_requests++;
 			}
 		}
+	}
+
+	function extractTodoItems(toolInput: unknown): TodoItem[] {
+		const input = toolInput as TodoWriteInput | undefined;
+		return Array.isArray(input?.todos) ? input.todos : [];
 	}
 
 	function nextSeq(): number {
@@ -673,6 +684,10 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 				}
 				results.push(fe);
 
+				if (toolName === 'TodoWrite' && fe.actor_id === 'agent:root') {
+					lastRootTasks = extractTodoItems(readObject(d['tool_input']));
+				}
+
 				// Track Task description for subagent enrichment
 				if (toolName === 'Task') {
 					const input = readObject(d['tool_input']);
@@ -1087,6 +1102,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 		getSession: () => currentSession,
 		getCurrentRun: () => currentRun,
 		getActors: () => actors.all(),
+		getTasks: () => lastRootTasks,
 		allocateSeq: nextSeq,
 	};
 }

@@ -202,6 +202,39 @@ describe('useFeed task extraction', () => {
 			{content: 'Capture logs', status: 'completed'},
 		]);
 	});
+
+	it('tasks survive event eviction beyond MAX_EVENTS', () => {
+		const runtime = createMockRuntime();
+		const {result} = renderHook(() => useFeed(runtime));
+
+		// Write tasks
+		act(() => {
+			runtime.emitEvent(
+				makeTodoWriteEvent('todo-1', [
+					{content: 'Investigate bug', status: 'in_progress'},
+					{content: 'Write fix', status: 'pending'},
+				]),
+			);
+		});
+
+		expect(result.current.tasks).toEqual([
+			{content: 'Investigate bug', status: 'in_progress'},
+			{content: 'Write fix', status: 'pending'},
+		]);
+
+		// Flood with 250 unrelated events to exceed MAX_EVENTS (200)
+		act(() => {
+			for (let i = 0; i < 250; i++) {
+				runtime.emitEvent(makeBashEvent(`bash-flood-${i}`));
+			}
+		});
+
+		// Tasks must survive even though the TodoWrite event was evicted
+		expect(result.current.tasks).toEqual([
+			{content: 'Investigate bug', status: 'in_progress'},
+			{content: 'Write fix', status: 'pending'},
+		]);
+	});
 });
 
 describe('useFeed session store lifecycle', () => {
