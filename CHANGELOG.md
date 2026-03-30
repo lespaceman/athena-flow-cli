@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.16](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.15...cli-v0.3.16) (2026-03-30)
+
+
+### Features
+
+* add Agent tool support, scoped permissions, remote workflow list, and Codex plan tasks ([4a97556](https://github.com/lespaceman/athena-flow-cli/commit/4a97556763f7562d14bbc6cb3cb5609703baecae))
+* align codex workflow plugins with native lifecycle ([433166d](https://github.com/lespaceman/athena-flow-cli/commit/433166d52846bfcf689f72d784d4088ed2bd779b))
+
+
+### Bug Fixes
+
+* handle Codex MCP permission requests ([68253bb](https://github.com/lespaceman/athena-flow-cli/commit/68253bb35db58b0bc5162d8a8b1d7b239b3c632d))
+* maintain task state in mapper to survive feed event eviction ([1092f34](https://github.com/lespaceman/athena-flow-cli/commit/1092f349a391a51cc9443b631c841b8068b7c38b))
+
 ## [0.3.15](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.14...cli-v0.3.15) (2026-03-26)
 
 
