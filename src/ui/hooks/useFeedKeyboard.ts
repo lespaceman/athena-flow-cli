@@ -57,11 +57,11 @@ export function useFeedKeyboard({
 					return;
 				}
 
-				if (key.home) {
+				if (key.home || input === 'g') {
 					callbacks.jumpToTop();
 					return;
 				}
-				if (key.end) {
+				if (key.end || input === 'G') {
 					callbacks.jumpToTail();
 					return;
 				}
