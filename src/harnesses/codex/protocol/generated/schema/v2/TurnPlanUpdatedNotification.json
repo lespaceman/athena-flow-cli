@@ -1,17 +1,32 @@
 {
 	"$schema": "http://json-schema.org/draft-07/schema#",
-	"title": "TurnPlanUpdatedNotification",
-	"type": "object",
-	"required": ["plan", "threadId", "turnId"],
+	"definitions": {
+		"TurnPlanStep": {
+			"properties": {
+				"status": {
+					"$ref": "#/definitions/TurnPlanStepStatus"
+				},
+				"step": {
+					"type": "string"
+				}
+			},
+			"required": ["status", "step"],
+			"type": "object"
+		},
+		"TurnPlanStepStatus": {
+			"enum": ["pending", "inProgress", "completed"],
+			"type": "string"
+		}
+	},
 	"properties": {
 		"explanation": {
 			"type": ["string", "null"]
 		},
 		"plan": {
-			"type": "array",
 			"items": {
 				"$ref": "#/definitions/TurnPlanStep"
-			}
+			},
+			"type": "array"
 		},
 		"threadId": {
 			"type": "string"
@@ -20,22 +35,7 @@
 			"type": "string"
 		}
 	},
-	"definitions": {
-		"TurnPlanStep": {
-			"type": "object",
-			"required": ["status", "step"],
-			"properties": {
-				"status": {
-					"$ref": "#/definitions/TurnPlanStepStatus"
-				},
-				"step": {
-					"type": "string"
-				}
-			}
-		},
-		"TurnPlanStepStatus": {
-			"type": "string",
-			"enum": ["pending", "inProgress", "completed"]
-		}
-	}
+	"required": ["plan", "threadId", "turnId"],
+	"title": "TurnPlanUpdatedNotification",
+	"type": "object"
 }

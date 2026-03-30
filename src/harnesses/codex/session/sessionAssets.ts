@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import type {WorkflowPlan} from '../../../core/workflows';
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -107,35 +106,6 @@ function normalizeCodexMcpServerConfig(
 	return normalized;
 }
 
-function resolveCodexWorkflowPluginSubdirs(
-	workflowPlan: WorkflowPlan | undefined,
-	subdir: string,
-): string[] {
-	if (!workflowPlan) {
-		return [];
-	}
-
-	return [
-		...new Set(
-			workflowPlan.pluginDirs
-				.map(pluginDir => path.join(pluginDir, subdir))
-				.filter(dir => fs.existsSync(dir)),
-		),
-	];
-}
-
-export function resolveCodexWorkflowSkillRoots(
-	workflowPlan?: WorkflowPlan,
-): string[] {
-	return resolveCodexWorkflowPluginSubdirs(workflowPlan, 'skills');
-}
-
-export function resolveCodexWorkflowAgentRoots(
-	workflowPlan?: WorkflowPlan,
-): string[] {
-	return resolveCodexWorkflowPluginSubdirs(workflowPlan, 'agents');
-}
-
 function readMcpServers(
 	configPath: string,
 ): Record<string, Record<string, unknown>> {
@@ -179,9 +149,19 @@ export function resolveCodexMcpConfig(
 		? readMcpServers(workflowPlan.pluginMcpConfig)
 		: {};
 
+	const pluginTargets = workflowPlan?.pluginTargets ?? [];
 	const merged = {...sessionServers, ...workflowServers};
 	if (Object.keys(merged).length === 0) {
-		return undefined;
+		return pluginTargets.length
+			? {
+					_athenaWorkflowPluginTargets: pluginTargets,
+				}
+			: undefined;
 	}
-	return {mcp_servers: merged};
+	return {
+		mcp_servers: merged,
+		...(pluginTargets.length
+			? {_athenaWorkflowPluginTargets: pluginTargets}
+			: {}),
+	};
 }

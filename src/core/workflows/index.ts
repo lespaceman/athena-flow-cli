@@ -3,6 +3,7 @@ export type {
 	LoopConfig,
 	ResolvedWorkflowConfig,
 	WorkflowSourceMetadata,
+	WorkflowPluginTarget,
 } from './types';
 export type {WorkflowPlan} from './plan';
 export {applyPromptTemplate} from './applyWorkflow';
@@ -14,6 +15,7 @@ export {
 	removeWorkflow,
 } from './registry';
 export {installWorkflowPlugins} from './installer';
+export {resolveWorkflowPluginTargets} from './installer';
 export {compileWorkflowPlan} from './plan';
 export {
 	cleanupWorkflowRun,

@@ -8,5 +8,6 @@ export type SessionSource =
 	| 'vscode'
 	| 'exec'
 	| 'appServer'
+	| {custom: string}
 	| {subAgent: SubAgentSource}
 	| 'unknown';

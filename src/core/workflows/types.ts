@@ -45,3 +45,10 @@ export type WorkflowSourceMetadata =
 export type ResolvedWorkflowConfig = WorkflowConfig & {
 	__source?: WorkflowSourceMetadata;
 };
+
+export type WorkflowPluginTarget = {
+	ref: string;
+	pluginName: string;
+	marketplacePath: string;
+	pluginDir: string;
+};

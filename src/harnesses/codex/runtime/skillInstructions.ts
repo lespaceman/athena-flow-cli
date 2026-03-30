@@ -2,6 +2,7 @@ import path from 'node:path';
 import type {AppServerManager} from './appServerManager';
 import * as M from '../protocol/methods';
 import {asRecord} from './eventTranslator';
+import type {WorkflowPluginTarget} from '../../../core/workflows';
 
 export type CodexWorkflowSkill = {
 	name: string;
@@ -20,6 +21,28 @@ export type CodexSkillInstructionsResult = {
 	skills: CodexWorkflowSkill[];
 	errors: CodexWorkflowSkillError[];
 };
+
+function dedupeSkills(skills: CodexWorkflowSkill[]): CodexWorkflowSkill[] {
+	return skills.filter(
+		(skill, index, array) =>
+			array.findIndex(
+				candidate =>
+					candidate.name === skill.name && candidate.path === skill.path,
+			) === index,
+	);
+}
+
+function dedupeErrors(
+	errors: CodexWorkflowSkillError[],
+): CodexWorkflowSkillError[] {
+	return errors.filter(
+		(error, index, array) =>
+			array.findIndex(
+				candidate =>
+					candidate.message === error.message && candidate.path === error.path,
+			) === index,
+	);
+}
 
 function isUnderAnyRoot(filePath: string, roots: string[]): boolean {
 	return roots.some(root => {
@@ -115,6 +138,43 @@ function extractWorkflowSkillErrors(
 	});
 }
 
+function extractPluginReadSkills(result: unknown): CodexWorkflowSkill[] {
+	const response = asRecord(result);
+	const plugin = asRecord(response['plugin']);
+	const skills = Array.isArray(plugin['skills']) ? plugin['skills'] : [];
+	return skills
+		.map(skill => asRecord(skill))
+		.filter(
+			(skill): skill is Record<string, unknown> =>
+				skill['enabled'] !== false && typeof skill['name'] === 'string',
+		)
+		.map(skill => ({
+			name: typeof skill['name'] === 'string' ? skill['name'] : 'unknown',
+			description:
+				typeof skill['description'] === 'string'
+					? skill['description']
+					: undefined,
+			path: typeof skill['path'] === 'string' ? skill['path'] : undefined,
+			dependencySummary: [],
+		}));
+}
+
+async function readPluginWorkflowSkills(input: {
+	manager: AppServerManager;
+	pluginTargets: WorkflowPluginTarget[];
+}): Promise<CodexWorkflowSkill[]> {
+	const skills = await Promise.all(
+		input.pluginTargets.map(async target => {
+			const result = await input.manager.sendRequest(M.PLUGIN_READ, {
+				marketplacePath: target.marketplacePath,
+				pluginName: target.pluginName,
+			});
+			return extractPluginReadSkills(result);
+		}),
+	);
+	return dedupeSkills(skills.flat());
+}
+
 function buildSkillInstructions(
 	workflowSkills: CodexWorkflowSkill[],
 	workflowSkillErrors: CodexWorkflowSkillError[],
@@ -126,6 +186,8 @@ function buildSkillInstructions(
 	const lines = [
 		'## Skills',
 		'These skills are available from Athena workflow plugins in this session.',
+		'Only the skills explicitly listed below are available through Athena workflow plugins.',
+		'Do not claim that any other skills, bundled skills, Claude skills, or utility skills are available unless they are listed here.',
 	];
 
 	for (const skill of workflowSkills) {
@@ -155,28 +217,44 @@ export async function resolveCodexSkillInstructions(input: {
 	manager: AppServerManager;
 	projectDir: string;
 	skillRoots?: string[];
+	pluginTargets?: WorkflowPluginTarget[];
 }): Promise<CodexSkillInstructionsResult> {
 	const skillRoots = input.skillRoots?.filter(Boolean) ?? [];
-	if (skillRoots.length === 0) {
+	const pluginTargets = input.pluginTargets ?? [];
+	if (skillRoots.length === 0 && pluginTargets.length === 0) {
 		return {instructions: undefined, skills: [], errors: []};
 	}
 
-	const result = await input.manager.sendRequest(M.SKILLS_LIST, {
-		cwds: [input.projectDir],
-		forceReload: true,
-		perCwdExtraUserRoots: [
-			{
-				cwd: input.projectDir,
-				extraUserRoots: skillRoots,
-			},
-		],
-	});
+	const pluginSkills =
+		pluginTargets.length > 0
+			? await readPluginWorkflowSkills({
+					manager: input.manager,
+					pluginTargets,
+				})
+			: [];
 
-	const skills = extractWorkflowSkills(result, skillRoots);
-	const errors = extractWorkflowSkillErrors(result);
+	const scanResult =
+		skillRoots.length > 0
+			? await input.manager.sendRequest(M.SKILLS_LIST, {
+					cwds: [input.projectDir],
+					forceReload: true,
+					perCwdExtraUserRoots: [
+						{
+							cwd: input.projectDir,
+							extraUserRoots: skillRoots,
+						},
+					],
+				})
+			: undefined;
+
+	const scannedSkills = scanResult
+		? extractWorkflowSkills(scanResult, skillRoots)
+		: [];
+	const errors = scanResult ? extractWorkflowSkillErrors(scanResult) : [];
+	const skills = dedupeSkills([...pluginSkills, ...scannedSkills]);
 	return {
-		instructions: buildSkillInstructions(skills, errors),
+		instructions: buildSkillInstructions(skills, dedupeErrors(errors)),
 		skills,
-		errors,
+		errors: dedupeErrors(errors),
 	};
 }

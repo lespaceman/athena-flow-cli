@@ -16,6 +16,10 @@ import {mapDecisionToCodexResult} from './decisionMapper';
 import {asRecord} from './eventTranslator';
 import {resolveCodexSkillInstructions} from './skillInstructions';
 import {
+	buildCodexPluginInstallMessage,
+	ensureCodexWorkflowPluginsInstalled,
+} from './pluginManager';
+import {
 	resolveCodexAgentConfig,
 	buildAgentRemovalEdits,
 	cleanupAgentConfig,
@@ -523,6 +527,29 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 				const shouldConfigureThread =
 					shouldResume || shouldStartFresh || (shouldReuseCurrent && !threadId);
 				let skillInstructions: string | undefined;
+				const workflowPluginTargets = Array.isArray(
+					(options?.config as Record<string, unknown> | undefined)?.[
+						'_athenaWorkflowPluginTargets'
+					],
+				)
+					? (
+							(options?.config as Record<string, unknown>)[
+								'_athenaWorkflowPluginTargets'
+							] as Array<Record<string, unknown>>
+						)
+							.map(target => ({
+								ref: String(target['ref'] ?? ''),
+								pluginName: String(target['pluginName'] ?? ''),
+								marketplacePath: String(target['marketplacePath'] ?? ''),
+								pluginDir: String(target['pluginDir'] ?? ''),
+							}))
+							.filter(
+								target =>
+									target.ref.length > 0 &&
+									target.pluginName.length > 0 &&
+									target.marketplacePath.length > 0,
+							)
+					: [];
 				if (shouldConfigureThread) {
 					configuredSkillRoots = skillRoots;
 					try {
@@ -530,6 +557,7 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 							manager,
 							projectDir,
 							skillRoots,
+							pluginTargets: workflowPluginTargets,
 						});
 						skillInstructions = skillResolution.instructions;
 						if (skillRoots.length > 0) {
@@ -652,6 +680,33 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 					}
 				}
 
+				if (shouldConfigureThread && workflowPluginTargets.length > 0) {
+					try {
+						const installedPlugins = await ensureCodexWorkflowPluginsInstalled({
+							manager,
+							projectDir,
+							pluginTargets: workflowPluginTargets,
+						});
+						if (workflowPluginTargets.length > 0) {
+							emitNotification({
+								hookName: M.PLUGINS_ENSURED,
+								title: 'Plugins ensured',
+								message: buildCodexPluginInstallMessage(installedPlugins),
+								notificationType: M.PLUGINS_ENSURED,
+								payload: {
+									plugins: installedPlugins,
+								},
+							});
+						}
+					} catch (error) {
+						console.error(
+							`[athena:codex] failed to ensure workflow plugins: ${
+								error instanceof Error ? error.message : String(error)
+							}`,
+						);
+					}
+				}
+
 				const developerInstructions = shouldConfigureThread
 					? combineDeveloperInstructions(
 							options?.developerInstructions,
@@ -667,7 +722,15 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 						cwd: projectDir,
 						...(options?.model ? {model: options.model} : {}),
 						...(developerInstructions ? {developerInstructions} : {}),
-						...(options?.config ? {config: options.config} : {}),
+						...(options?.config
+							? {
+									config: Object.fromEntries(
+										Object.entries(options.config).filter(
+											([key]) => key !== '_athenaWorkflowPluginTargets',
+										),
+									),
+								}
+							: {}),
 						persistExtendedHistory: !options?.ephemeral,
 					});
 					const response = asRecord(result);
@@ -686,7 +749,15 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 						cwd: projectDir,
 						...(options?.model ? {model: options.model} : {}),
 						...(developerInstructions ? {developerInstructions} : {}),
-						...(options?.config ? {config: options.config} : {}),
+						...(options?.config
+							? {
+									config: Object.fromEntries(
+										Object.entries(options.config).filter(
+											([key]) => key !== '_athenaWorkflowPluginTargets',
+										),
+									),
+								}
+							: {}),
 						experimentalRawEvents: false,
 						...(options?.ephemeral ? {ephemeral: true} : {}),
 						persistExtendedHistory: !options?.ephemeral,

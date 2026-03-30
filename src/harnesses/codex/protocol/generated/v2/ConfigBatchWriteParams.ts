@@ -10,4 +10,8 @@ export type ConfigBatchWriteParams = {
 	 */
 	filePath?: string | null;
 	expectedVersion?: string | null;
+	/**
+	 * When true, hot-reload the updated user config into all loaded threads after writing.
+	 */
+	reloadUserConfig?: boolean;
 };

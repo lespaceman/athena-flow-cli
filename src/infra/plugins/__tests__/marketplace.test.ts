@@ -95,7 +95,7 @@ describe('isMarketplaceSlug', () => {
 describe('resolveMarketplacePlugin', () => {
 	const cacheBase =
 		'/home/testuser/.config/athena/marketplaces/lespaceman/athena-workflow-marketplace';
-	const manifestPath = `${cacheBase}/.claude-plugin/marketplace.json`;
+	const manifestPath = `${cacheBase}/.agents/plugins/marketplace.json`;
 
 	const validManifest = JSON.stringify({
 		name: 'athena-workflow-marketplace',
@@ -293,37 +293,34 @@ describe('resolveMarketplacePlugin', () => {
 		).toThrow('remote source type which is not supported');
 	});
 
-	it('prepends pluginRoot to bare-name sources', () => {
+	it('throws when plugin source does not start with ./', () => {
 		dirs.add(cacheBase);
-		dirs.add(`${cacheBase}/plugins/web-testing-toolkit`);
 		files[manifestPath] = JSON.stringify({
 			name: 'marketplace',
 			owner: {name: 'Test'},
-			metadata: {pluginRoot: './plugins'},
 			plugins: [
 				{
 					name: 'web-testing-toolkit',
-					source: 'web-testing-toolkit',
+					source: 'plugins/web-testing-toolkit',
 				},
 			],
 		});
 
 		execFileSyncMock.mockImplementation(() => {});
 
-		const result = resolveMarketplacePlugin(
-			'web-testing-toolkit@lespaceman/athena-workflow-marketplace',
-		);
-
-		expect(result).toBe(`${cacheBase}/plugins/web-testing-toolkit`);
+		expect(() =>
+			resolveMarketplacePlugin(
+				'web-testing-toolkit@lespaceman/athena-workflow-marketplace',
+			),
+		).toThrow('source must start with "./"');
 	});
 
-	it('does not prepend pluginRoot when source starts with ./', () => {
+	it('resolves plugin source relative to the marketplace root', () => {
 		dirs.add(cacheBase);
 		dirs.add(`${cacheBase}/plugins/web-testing-toolkit`);
 		files[manifestPath] = JSON.stringify({
 			name: 'marketplace',
 			owner: {name: 'Test'},
-			metadata: {pluginRoot: './plugins'},
 			plugins: [
 				{
 					name: 'web-testing-toolkit',
@@ -338,11 +335,10 @@ describe('resolveMarketplacePlugin', () => {
 			'web-testing-toolkit@lespaceman/athena-workflow-marketplace',
 		);
 
-		// Should NOT double-prefix to plugins/plugins/...
 		expect(result).toBe(`${cacheBase}/plugins/web-testing-toolkit`);
 	});
 
-	it('throws when source resolves outside the repo (path traversal)', () => {
+	it('throws when source traverses outside the repo (path traversal)', () => {
 		dirs.add(cacheBase);
 		files[manifestPath] = JSON.stringify({
 			name: 'marketplace',
@@ -350,7 +346,7 @@ describe('resolveMarketplacePlugin', () => {
 			plugins: [
 				{
 					name: 'web-testing-toolkit',
-					source: '../../../etc',
+					source: './../plugins/web-testing-toolkit',
 				},
 			],
 		});
@@ -361,7 +357,29 @@ describe('resolveMarketplacePlugin', () => {
 			resolveMarketplacePlugin(
 				'web-testing-toolkit@lespaceman/athena-workflow-marketplace',
 			),
-		).toThrow('resolves outside the marketplace repo');
+		).toThrow('source must stay within the marketplace root');
+	});
+
+	it('throws when source contains empty path segments', () => {
+		dirs.add(cacheBase);
+		files[manifestPath] = JSON.stringify({
+			name: 'marketplace',
+			owner: {name: 'Test'},
+			plugins: [
+				{
+					name: 'web-testing-toolkit',
+					source: './plugins//web-testing-toolkit',
+				},
+			],
+		});
+
+		execFileSyncMock.mockImplementation(() => {});
+
+		expect(() =>
+			resolveMarketplacePlugin(
+				'web-testing-toolkit@lespaceman/athena-workflow-marketplace',
+			),
+		).toThrow('source must stay within the marketplace root');
 	});
 
 	it('throws when manifest plugins field is not an array', () => {
@@ -385,7 +403,7 @@ describe('resolveMarketplacePlugin', () => {
 describe('resolveMarketplacePluginFromRepo', () => {
 	it('resolves a plugin directly from a local marketplace repo', () => {
 		const repoDir = '/tmp/workflow-marketplace';
-		files[`${repoDir}/.claude-plugin/marketplace.json`] = JSON.stringify({
+		files[`${repoDir}/.agents/plugins/marketplace.json`] = JSON.stringify({
 			name: 'athena-workflow-marketplace',
 			owner: {name: 'Test Team'},
 			plugins: [{name: 'local-plugin', source: './plugins/local-plugin'}],

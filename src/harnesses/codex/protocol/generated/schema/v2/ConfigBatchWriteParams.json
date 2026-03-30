@@ -1,27 +1,7 @@
 {
 	"$schema": "http://json-schema.org/draft-07/schema#",
-	"title": "ConfigBatchWriteParams",
-	"type": "object",
-	"required": ["edits"],
-	"properties": {
-		"edits": {
-			"type": "array",
-			"items": {
-				"$ref": "#/definitions/ConfigEdit"
-			}
-		},
-		"expectedVersion": {
-			"type": ["string", "null"]
-		},
-		"filePath": {
-			"description": "Path to the config file to write; defaults to the user's `config.toml` when omitted.",
-			"type": ["string", "null"]
-		}
-	},
 	"definitions": {
 		"ConfigEdit": {
-			"type": "object",
-			"required": ["keyPath", "mergeStrategy", "value"],
 			"properties": {
 				"keyPath": {
 					"type": "string"
@@ -30,11 +10,35 @@
 					"$ref": "#/definitions/MergeStrategy"
 				},
 				"value": true
-			}
+			},
+			"required": ["keyPath", "mergeStrategy", "value"],
+			"type": "object"
 		},
 		"MergeStrategy": {
-			"type": "string",
-			"enum": ["replace", "upsert"]
+			"enum": ["replace", "upsert"],
+			"type": "string"
 		}
-	}
+	},
+	"properties": {
+		"edits": {
+			"items": {
+				"$ref": "#/definitions/ConfigEdit"
+			},
+			"type": "array"
+		},
+		"expectedVersion": {
+			"type": ["string", "null"]
+		},
+		"filePath": {
+			"description": "Path to the config file to write; defaults to the user's `config.toml` when omitted.",
+			"type": ["string", "null"]
+		},
+		"reloadUserConfig": {
+			"description": "When true, hot-reload the updated user config into all loaded threads after writing.",
+			"type": "boolean"
+		}
+	},
+	"required": ["edits"],
+	"title": "ConfigBatchWriteParams",
+	"type": "object"
 }

@@ -3,8 +3,10 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 const readGlobalConfigMock = vi.fn();
 const readConfigMock = vi.fn();
 const registerPluginsMock = vi.fn();
+const buildPluginMcpConfigMock = vi.fn();
 const resolveWorkflowMock = vi.fn();
 const installWorkflowPluginsMock = vi.fn();
+const resolveWorkflowPluginTargetsMock = vi.fn();
 const readClaudeSettingsModelMock = vi.fn();
 
 vi.mock('../../infra/plugins/index', () => ({
@@ -13,26 +15,37 @@ vi.mock('../../infra/plugins/index', () => ({
 	registerPlugins: (
 		dirs: string[],
 		mcpServerOptions?: Record<string, string[]>,
-	) => registerPluginsMock(dirs, mcpServerOptions),
+		includeMcpConfig?: boolean,
+	) => registerPluginsMock(dirs, mcpServerOptions, includeMcpConfig),
+	buildPluginMcpConfig: (
+		dirs: string[],
+		mcpServerOptions?: Record<string, string[]>,
+	) => buildPluginMcpConfigMock(dirs, mcpServerOptions),
 }));
 
 vi.mock('../../core/workflows/index', () => ({
 	resolveWorkflow: (name: string) => resolveWorkflowMock(name),
 	installWorkflowPlugins: (workflow: unknown) =>
 		installWorkflowPluginsMock(workflow),
+	resolveWorkflowPluginTargets: (workflow: unknown) =>
+		resolveWorkflowPluginTargetsMock(workflow),
 	compileWorkflowPlan: ({
 		workflow,
 		pluginDirs,
+		pluginTargets,
 		pluginMcpConfig,
 	}: {
 		workflow?: unknown;
 		pluginDirs?: string[];
+		pluginTargets?: unknown[];
 		pluginMcpConfig?: string;
 	}) =>
 		workflow
 			? {
 					workflow,
 					pluginDirs: pluginDirs ?? installWorkflowPluginsMock(workflow),
+					pluginTargets:
+						pluginTargets ?? resolveWorkflowPluginTargetsMock(workflow),
 					pluginMcpConfig,
 				}
 			: undefined,
@@ -54,9 +67,12 @@ describe('bootstrapRuntimeConfig', () => {
 		readGlobalConfigMock.mockReset();
 		readConfigMock.mockReset();
 		registerPluginsMock.mockReset();
+		buildPluginMcpConfigMock.mockReset();
 		resolveWorkflowMock.mockReset();
 		installWorkflowPluginsMock.mockReset();
 		installWorkflowPluginsMock.mockReturnValue([]);
+		resolveWorkflowPluginTargetsMock.mockReset();
+		resolveWorkflowPluginTargetsMock.mockReturnValue([]);
 		readClaudeSettingsModelMock.mockReset();
 	});
 
@@ -115,12 +131,14 @@ describe('bootstrapRuntimeConfig', () => {
 			{
 				'agent-web-interface': ['--headless'],
 			},
+			true,
 		);
 		expect(result.workflow?.name).toBe('e2e-test-builder');
 		expect(result.workflowRef).toBe('e2e-test-builder');
 		expect(result.workflowPlan).toEqual({
 			workflow: result.workflow,
 			pluginDirs: ['/workflow-plugin'],
+			pluginTargets: [],
 			pluginMcpConfig: '/tmp/mcp.json',
 		});
 		expect(result.harness).toBe('claude-code');
@@ -167,6 +185,7 @@ describe('bootstrapRuntimeConfig', () => {
 		expect(result.workflowPlan).toEqual({
 			workflow: result.workflow,
 			pluginDirs: [],
+			pluginTargets: [],
 			pluginMcpConfig: undefined,
 		});
 		expect(result.harness).toBe('claude-code');
@@ -279,5 +298,116 @@ describe('bootstrapRuntimeConfig', () => {
 		expect(result.harness).toBe('openai-codex');
 		expect(result.modelName).toBe('gpt-5.3-codex');
 		expect(readClaudeSettingsModelMock).not.toHaveBeenCalled();
+	});
+
+	it('keeps workflow plugin MCP merging for Claude harnesses', () => {
+		readGlobalConfigMock.mockReturnValue({
+			...emptyConfig,
+			activeWorkflow: 'claude-workflow',
+		});
+		readConfigMock.mockReturnValue(emptyConfig);
+		resolveWorkflowMock.mockReturnValue({
+			name: 'claude-workflow',
+			plugins: [],
+			promptTemplate: '{input}',
+		});
+		installWorkflowPluginsMock.mockReturnValue(['/workflow-plugin']);
+		resolveWorkflowPluginTargetsMock.mockReturnValue([
+			{
+				ref: 'plugin@marketplace',
+				pluginName: 'plugin',
+				marketplacePath: '/marketplace/.agents/plugins/marketplace.json',
+				pluginDir: '/workflow-plugin',
+			},
+		]);
+		registerPluginsMock.mockReturnValue({
+			mcpConfig: '/tmp/workflow-mcp.json',
+			workflows: [],
+		});
+
+		const result = bootstrapRuntimeConfig({
+			projectDir: '/project',
+			showSetup: false,
+			isolationPreset: 'strict',
+		});
+
+		expect(buildPluginMcpConfigMock).not.toHaveBeenCalled();
+		expect(result.pluginMcpConfig).toBe('/tmp/workflow-mcp.json');
+		expect(result.workflowPlan).toEqual({
+			workflow: result.workflow,
+			pluginDirs: ['/workflow-plugin'],
+			pluginTargets: [
+				{
+					ref: 'plugin@marketplace',
+					pluginName: 'plugin',
+					marketplacePath: '/marketplace/.agents/plugins/marketplace.json',
+					pluginDir: '/workflow-plugin',
+				},
+			],
+			pluginMcpConfig: '/tmp/workflow-mcp.json',
+		});
+	});
+
+	it('limits Codex MCP config to workflow plugin MCP only', () => {
+		readGlobalConfigMock.mockReturnValue({
+			...emptyConfig,
+			harness: 'openai-codex',
+			activeWorkflow: 'codex-workflow',
+			plugins: ['/global-plugin'],
+		});
+		readConfigMock.mockReturnValue({
+			...emptyConfig,
+			plugins: ['/project-plugin'],
+		});
+		resolveWorkflowMock.mockReturnValue({
+			name: 'codex-workflow',
+			plugins: [],
+			promptTemplate: '{input}',
+		});
+		installWorkflowPluginsMock.mockReturnValue(['/workflow-plugin']);
+		resolveWorkflowPluginTargetsMock.mockReturnValue([
+			{
+				ref: 'plugin@marketplace',
+				pluginName: 'plugin',
+				marketplacePath: '/marketplace/.agents/plugins/marketplace.json',
+				pluginDir: '/workflow-plugin',
+			},
+		]);
+		registerPluginsMock.mockReturnValue({
+			mcpConfig: '/tmp/all-plugin-mcp.json',
+			workflows: [],
+		});
+		buildPluginMcpConfigMock.mockReturnValue('/tmp/workflow-only-mcp.json');
+
+		const result = bootstrapRuntimeConfig({
+			projectDir: '/project',
+			showSetup: false,
+			pluginFlags: ['/cli-plugin'],
+			isolationPreset: 'strict',
+		});
+
+		expect(registerPluginsMock).toHaveBeenCalledWith(
+			['/workflow-plugin', '/global-plugin', '/project-plugin', '/cli-plugin'],
+			undefined,
+			false,
+		);
+		expect(buildPluginMcpConfigMock).toHaveBeenCalledWith(
+			['/workflow-plugin'],
+			undefined,
+		);
+		expect(result.pluginMcpConfig).toBeUndefined();
+		expect(result.workflowPlan).toEqual({
+			workflow: result.workflow,
+			pluginDirs: ['/workflow-plugin'],
+			pluginTargets: [
+				{
+					ref: 'plugin@marketplace',
+					pluginName: 'plugin',
+					marketplacePath: '/marketplace/.agents/plugins/marketplace.json',
+					pluginDir: '/workflow-plugin',
+				},
+			],
+			pluginMcpConfig: '/tmp/workflow-only-mcp.json',
+		});
 	});
 });

@@ -8,11 +8,16 @@ export const TURN_INTERRUPT = 'turn/interrupt';
 export const ACCOUNT_READ = 'account/read';
 export const MODEL_LIST = 'model/list';
 export const SKILLS_LIST = 'skills/list';
+export const PLUGIN_LIST = 'plugin/list';
+export const PLUGIN_READ = 'plugin/read';
+export const PLUGIN_INSTALL = 'plugin/install';
+export const PLUGIN_UNINSTALL = 'plugin/uninstall';
 export const CONFIG_BATCH_WRITE = 'config/batchWrite';
 export const CONFIG_MCP_SERVER_RELOAD = 'config/mcpServer/reload';
 
 // Athena-local notification hook names (not Codex protocol methods)
 export const AGENTS_LOADED = 'agents.loaded';
+export const PLUGINS_ENSURED = 'plugins.ensured';
 
 // Server → client notifications
 export const TURN_STARTED = 'turn/started';

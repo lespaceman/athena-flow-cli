@@ -9,6 +9,7 @@ import type {CommandExecutionRequestApprovalParams} from './v2/CommandExecutionR
 import type {DynamicToolCallParams} from './v2/DynamicToolCallParams';
 import type {FileChangeRequestApprovalParams} from './v2/FileChangeRequestApprovalParams';
 import type {McpServerElicitationRequestParams} from './v2/McpServerElicitationRequestParams';
+import type {PermissionsRequestApprovalParams} from './v2/PermissionsRequestApprovalParams';
 import type {ToolRequestUserInputParams} from './v2/ToolRequestUserInputParams';
 
 /**
@@ -34,6 +35,11 @@ export type ServerRequest =
 			method: 'mcpServer/elicitation/request';
 			id: RequestId;
 			params: McpServerElicitationRequestParams;
+	  }
+	| {
+			method: 'item/permissions/requestApproval';
+			id: RequestId;
+			params: PermissionsRequestApprovalParams;
 	  }
 	| {method: 'item/tool/call'; id: RequestId; params: DynamicToolCallParams}
 	| {

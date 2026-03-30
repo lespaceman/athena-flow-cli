@@ -73,9 +73,7 @@ describe('buildCodexPromptOptions', () => {
 		});
 	});
 
-	it('resolves workflow skill roots and Codex mcp config from workflow artifacts', () => {
-		files['/plugins/e2e-test-builder/skills'] = '';
-		files['/plugins/md-export/skills'] = '';
+	it('uses workflow MCP config without deriving filesystem roots for Codex plugins', () => {
 		files['/tmp/plugin-mcp.json'] = JSON.stringify({
 			mcpServers: {
 				'agent-web-interface': {
@@ -95,6 +93,7 @@ describe('buildCodexPromptOptions', () => {
 						promptTemplate: '{input}',
 					},
 					pluginDirs: ['/plugins/e2e-test-builder', '/plugins/md-export'],
+					pluginTargets: [],
 					pluginMcpConfig: '/tmp/plugin-mcp.json',
 				},
 			}),
@@ -102,10 +101,8 @@ describe('buildCodexPromptOptions', () => {
 			continuation: undefined,
 			model: undefined,
 			developerInstructions: undefined,
-			skillRoots: [
-				'/plugins/e2e-test-builder/skills',
-				'/plugins/md-export/skills',
-			],
+			skillRoots: undefined,
+			agentRoots: undefined,
 			config: {
 				mcp_servers: {
 					'agent-web-interface': {
@@ -191,6 +188,7 @@ describe('buildCodexPromptOptions', () => {
 					promptTemplate: '{input}',
 				},
 				pluginDirs: [],
+				pluginTargets: [],
 				pluginMcpConfig: '/tmp/workflow-mcp.json',
 			},
 		});
@@ -248,9 +246,7 @@ describe('buildCodexPromptOptions', () => {
 		});
 	});
 
-	it('resolves workflow agent roots from plugin dirs with agents/', () => {
-		files['/plugins/my-plugin/agents'] = '';
-		files['/plugins/my-plugin/skills'] = '';
+	it('does not derive workflow agent or skill roots from plugin dirs', () => {
 		const result = buildCodexPromptOptions({
 			workflowPlan: {
 				workflow: {
@@ -259,24 +255,10 @@ describe('buildCodexPromptOptions', () => {
 					promptTemplate: '{input}',
 				},
 				pluginDirs: ['/plugins/my-plugin'],
-			},
-		});
-		expect(result.agentRoots).toEqual(['/plugins/my-plugin/agents']);
-		expect(result.skillRoots).toEqual(['/plugins/my-plugin/skills']);
-	});
-
-	it('omits agentRoots when no plugin dirs have agents/', () => {
-		files['/plugins/my-plugin/skills'] = '';
-		const result = buildCodexPromptOptions({
-			workflowPlan: {
-				workflow: {
-					name: 'test',
-					plugins: [],
-					promptTemplate: '{input}',
-				},
-				pluginDirs: ['/plugins/my-plugin'],
+				pluginTargets: [],
 			},
 		});
 		expect(result.agentRoots).toBeUndefined();
+		expect(result.skillRoots).toBeUndefined();
 	});
 });

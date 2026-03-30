@@ -14,6 +14,7 @@ import {execFileSync} from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type {WorkflowPluginTarget} from '../../core/workflows/types';
 
 /** A single plugin entry inside a marketplace manifest. */
 export type MarketplaceEntry = {
@@ -62,6 +63,10 @@ const MARKETPLACE_REF_RE = /^[a-zA-Z0-9_-]+@[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 const MARKETPLACE_SLUG_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 
 function resolvePluginManifestPath(repoDir: string): string {
+	return path.join(repoDir, '.agents', 'plugins', 'marketplace.json');
+}
+
+function resolveLegacyPluginManifestPath(repoDir: string): string {
 	return path.join(repoDir, '.claude-plugin', 'marketplace.json');
 }
 
@@ -71,7 +76,7 @@ function resolveWorkflowManifestPath(repoDir: string): string {
 		'.athena-workflow',
 		'marketplace.json',
 	);
-	const legacyManifestPath = resolvePluginManifestPath(repoDir);
+	const legacyManifestPath = resolveLegacyPluginManifestPath(repoDir);
 	return fs.existsSync(preferredManifestPath)
 		? preferredManifestPath
 		: legacyManifestPath;
@@ -108,30 +113,51 @@ function resolvePluginDirFromManifest(
 		);
 	}
 
-	if (typeof entry.source !== 'string') {
+	let sourcePath: string;
+	if (typeof entry.source === 'string') {
+		sourcePath = entry.source;
+	} else {
+		const sourceRecord = entry.source;
+		if (
+			sourceRecord?.source !== 'local' ||
+			typeof sourceRecord?.path !== 'string'
+		) {
+			throw new Error(
+				`Plugin "${pluginName}" uses a remote source type which is not supported by athena-cli. Only local relative path sources are supported.`,
+			);
+		}
+		sourcePath = sourceRecord.path;
+	}
+
+	if (!sourcePath.startsWith('./')) {
 		throw new Error(
-			`Plugin "${pluginName}" uses a remote source type which is not supported by athena-cli. Only relative path sources are supported.`,
+			`Plugin "${pluginName}" source must start with "./": ${sourcePath}`,
 		);
 	}
 
-	const {pluginRoot} = manifest.metadata ?? {};
-	let sourcePath = entry.source;
+	const relativeSourcePath = sourcePath.slice(2);
+	if (relativeSourcePath.length === 0) {
+		throw new Error(`Plugin "${pluginName}" source must not be empty`);
+	}
+
+	if (relativeSourcePath.includes('\\')) {
+		throw new Error(
+			`Plugin "${pluginName}" source must stay within the marketplace root: ${sourcePath}`,
+		);
+	}
+
+	const segments = relativeSourcePath.split('/');
 	if (
-		pluginRoot &&
-		!sourcePath.startsWith('./') &&
-		!sourcePath.startsWith('../')
+		segments.some(
+			segment => segment === '' || segment === '.' || segment === '..',
+		)
 	) {
-		sourcePath = path.join(pluginRoot, sourcePath);
-	}
-
-	const pluginDir = path.resolve(repoDir, sourcePath);
-
-	if (!pluginDir.startsWith(repoDir + path.sep) && pluginDir !== repoDir) {
 		throw new Error(
-			`Plugin "${pluginName}" source resolves outside the marketplace repo: ${pluginDir}`,
+			`Plugin "${pluginName}" source must stay within the marketplace root: ${sourcePath}`,
 		);
 	}
 
+	const pluginDir = path.join(repoDir, relativeSourcePath);
 	if (!fs.existsSync(pluginDir)) {
 		throw new Error(`Plugin source directory not found: ${pluginDir}`);
 	}
@@ -267,6 +293,20 @@ function parseRef(ref: string): {
 	};
 }
 
+function buildMarketplacePluginTarget(
+	ref: string,
+	repoDir: string,
+	manifestPath: string,
+): WorkflowPluginTarget {
+	const {pluginName} = parseRef(ref);
+	return {
+		ref,
+		pluginName,
+		marketplacePath: manifestPath,
+		pluginDir: resolvePluginDirFromManifest(pluginName, repoDir, manifestPath),
+	};
+}
+
 /**
  * Ensure the marketplace repo is cloned locally.
  * Only clones if repo doesn't exist. No automatic pull on startup.
@@ -352,13 +392,40 @@ export function resolveMarketplacePlugin(ref: string): string {
 	);
 }
 
+export function resolveMarketplacePluginTarget(
+	ref: string,
+): WorkflowPluginTarget {
+	try {
+		execFileSync('git', ['--version'], {stdio: 'ignore'});
+	} catch {
+		throw new Error(
+			'git is not installed. Install git to use marketplace plugins.',
+		);
+	}
+
+	const {owner, repo} = parseRef(ref);
+	const cacheDir = path.join(os.homedir(), '.config', 'athena', 'marketplaces');
+	const repoDir = ensureRepo(cacheDir, owner, repo);
+	return buildMarketplacePluginTarget(
+		ref,
+		repoDir,
+		resolvePluginManifestPath(repoDir),
+	);
+}
+
 export function resolveMarketplacePluginFromRepo(
 	ref: string,
 	repoDir: string,
 ): string {
-	const {pluginName} = parseRef(ref);
-	return resolvePluginDirFromManifest(
-		pluginName,
+	return resolveMarketplacePluginTargetFromRepo(ref, repoDir).pluginDir;
+}
+
+export function resolveMarketplacePluginTargetFromRepo(
+	ref: string,
+	repoDir: string,
+): WorkflowPluginTarget {
+	return buildMarketplacePluginTarget(
+		ref,
 		repoDir,
 		resolvePluginManifestPath(repoDir),
 	);

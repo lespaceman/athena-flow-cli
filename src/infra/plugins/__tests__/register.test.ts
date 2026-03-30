@@ -1,5 +1,5 @@
 import {describe, it, expect, vi, beforeEach} from 'vitest';
-import {registerPlugins} from '../register';
+import {buildPluginMcpConfig, registerPlugins} from '../register';
 import {clear, get} from '../../../app/commands/registry';
 
 // Virtual file system for tests
@@ -272,5 +272,52 @@ describe('registerPlugins', () => {
 			'my-server',
 			'--default',
 		]);
+	});
+});
+
+describe('buildPluginMcpConfig', () => {
+	it('builds MCP config for a subset of plugin dirs', async () => {
+		const fs = await import('node:fs');
+		addPlugin('/plugins/a', {
+			mcpServers: {serverA: {command: 'node', args: ['a.js']}},
+		});
+		addPlugin('/plugins/b', {
+			mcpServers: {serverB: {command: 'node', args: ['b.js']}},
+		});
+
+		buildPluginMcpConfig(['/plugins/b']);
+
+		const writeCall = vi.mocked(fs.default.writeFileSync).mock.calls[0];
+		const written = JSON.parse(writeCall![1] as string);
+		expect(written.mcpServers).toHaveProperty('serverB');
+		expect(written.mcpServers).not.toHaveProperty('serverA');
+	});
+});
+
+describe('registerPlugins with MCP disabled', () => {
+	it('discovers workflows and commands without building MCP config', async () => {
+		const fs = await import('node:fs');
+		addPlugin('/plugins/a', {
+			mcpServers: {serverA: {command: 'node', args: ['a.js']}},
+			skillName: 'cmd-a',
+			workflow: {
+				name: 'test-workflow',
+				plugins: [],
+				promptTemplate: '{input}',
+			},
+		});
+
+		const result = registerPlugins(['/plugins/a'], undefined, false);
+
+		expect(result.mcpConfig).toBeUndefined();
+		expect(result.workflows).toEqual([
+			{
+				name: 'test-workflow',
+				plugins: [],
+				promptTemplate: '{input}',
+			},
+		]);
+		expect(get('cmd-a')).toBeDefined();
+		expect(vi.mocked(fs.default.writeFileSync)).not.toHaveBeenCalled();
 	});
 });

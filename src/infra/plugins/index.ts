@@ -1,4 +1,4 @@
-export {registerPlugins} from './register';
+export {registerPlugins, buildPluginMcpConfig} from './register';
 export type {PluginRegistrationResult} from './register';
 export {readConfig, readGlobalConfig} from './config';
 export type {

@@ -1,8 +1,11 @@
 {
 	"$schema": "http://json-schema.org/draft-07/schema#",
-	"title": "WindowsSandboxSetupCompletedNotification",
-	"type": "object",
-	"required": ["mode", "success"],
+	"definitions": {
+		"WindowsSandboxSetupMode": {
+			"enum": ["elevated", "unelevated"],
+			"type": "string"
+		}
+	},
 	"properties": {
 		"error": {
 			"type": ["string", "null"]
@@ -14,10 +17,7 @@
 			"type": "boolean"
 		}
 	},
-	"definitions": {
-		"WindowsSandboxSetupMode": {
-			"type": "string",
-			"enum": ["elevated", "unelevated"]
-		}
-	}
+	"required": ["mode", "success"],
+	"title": "WindowsSandboxSetupCompletedNotification",
+	"type": "object"
 }

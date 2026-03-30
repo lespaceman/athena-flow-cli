@@ -303,4 +303,34 @@ describe('resolveCodexMcpConfig', () => {
 		expect(servers['myServer']['command']).toBe('npx');
 		expect(servers['myServer']['args']).toEqual(['server']);
 	});
+
+	it('includes workflow plugin targets for Codex-native plugin install', () => {
+		const result = resolveCodexMcpConfig(undefined, {
+			workflow: {
+				name: 'wf',
+				plugins: [],
+				promptTemplate: '{input}',
+			},
+			pluginDirs: [],
+			pluginTargets: [
+				{
+					ref: 'plugin-a@owner/repo',
+					pluginName: 'plugin-a',
+					marketplacePath: '/cache/repo/.agents/plugins/marketplace.json',
+					pluginDir: '/cache/repo/plugins/plugin-a',
+				},
+			],
+		});
+
+		expect(result).toEqual({
+			_athenaWorkflowPluginTargets: [
+				{
+					ref: 'plugin-a@owner/repo',
+					pluginName: 'plugin-a',
+					marketplacePath: '/cache/repo/.agents/plugins/marketplace.json',
+					pluginDir: '/cache/repo/plugins/plugin-a',
+				},
+			],
+		});
+	});
 });

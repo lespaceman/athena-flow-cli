@@ -1,5 +1,6 @@
 import {
 	registerPlugins,
+	buildPluginMcpConfig,
 	readConfig,
 	readGlobalConfig,
 	type AthenaConfig,
@@ -13,9 +14,14 @@ import type {
 import {
 	compileWorkflowPlan,
 	installWorkflowPlugins,
+	resolveWorkflowPluginTargets,
 	resolveWorkflow,
 } from '../../core/workflows/index';
-import type {WorkflowConfig, WorkflowPlan} from '../../core/workflows';
+import type {
+	WorkflowConfig,
+	WorkflowPlan,
+	WorkflowPluginTarget,
+} from '../../core/workflows';
 import {DEFAULT_HARNESS} from '../runtime/createRuntime';
 import {resolveHarnessConfigProfile} from '../../harnesses/configProfiles';
 
@@ -80,6 +86,7 @@ export function bootstrapRuntimeConfig({
 	const configuredActiveWorkflow = globalConfig.activeWorkflow ?? 'default';
 
 	let workflowPluginDirs: string[] = [];
+	let workflowPluginTargets: WorkflowPluginTarget[] = [];
 	let resolvedWorkflow: WorkflowConfig | undefined;
 
 	const workflowToResolve = shouldResolveWorkflow({
@@ -92,6 +99,7 @@ export function bootstrapRuntimeConfig({
 	if (workflowToResolve) {
 		resolvedWorkflow = resolveWorkflow(workflowToResolve);
 		workflowPluginDirs = installWorkflowPlugins(resolvedWorkflow);
+		workflowPluginTargets = resolveWorkflowPluginTargets(resolvedWorkflow);
 	}
 
 	const pluginDirs = mergePluginDirs({
@@ -108,9 +116,21 @@ export function bootstrapRuntimeConfig({
 						? globalConfig.workflowSelections?.[workflowToResolve]
 								?.mcpServerOptions
 						: undefined,
+					harness !== 'openai-codex',
 				)
 			: {mcpConfig: undefined, workflows: [] as WorkflowConfig[]};
-	const pluginMcpConfig = pluginResult.mcpConfig;
+	const workflowPluginMcpConfig =
+		harness === 'openai-codex'
+			? buildPluginMcpConfig(
+					workflowPluginDirs,
+					workflowToResolve
+						? globalConfig.workflowSelections?.[workflowToResolve]
+								?.mcpServerOptions
+						: undefined,
+				)
+			: undefined;
+	const pluginMcpConfig =
+		harness === 'openai-codex' ? undefined : pluginResult.mcpConfig;
 	const workflows = pluginResult.workflows;
 
 	let activeWorkflow: WorkflowConfig | undefined = resolvedWorkflow;
@@ -133,7 +153,16 @@ export function bootstrapRuntimeConfig({
 			activeWorkflow && resolvedWorkflow?.name === activeWorkflow.name
 				? workflowPluginDirs
 				: undefined,
-		pluginMcpConfig,
+		pluginTargets:
+			activeWorkflow && resolvedWorkflow?.name === activeWorkflow.name
+				? workflowPluginTargets
+				: undefined,
+		pluginMcpConfig:
+			harness === 'openai-codex' &&
+			activeWorkflow &&
+			resolvedWorkflow?.name === activeWorkflow.name
+				? workflowPluginMcpConfig
+				: pluginResult.mcpConfig,
 	});
 
 	const configModel =

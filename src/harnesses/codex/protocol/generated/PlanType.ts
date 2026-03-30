@@ -8,7 +8,9 @@ export type PlanType =
 	| 'plus'
 	| 'pro'
 	| 'team'
+	| 'self_serve_business_usage_based'
 	| 'business'
+	| 'enterprise_cbp_usage_based'
 	| 'enterprise'
 	| 'edu'
 	| 'unknown';

@@ -5,11 +5,7 @@ import type {
 	TurnContinuation,
 } from '../../../core/runtime/process';
 import type {WorkflowPlan} from '../../../core/workflows';
-import {
-	resolveCodexMcpConfig,
-	resolveCodexWorkflowAgentRoots,
-	resolveCodexWorkflowSkillRoots,
-} from './sessionAssets';
+import {resolveCodexMcpConfig} from './sessionAssets';
 
 export type CodexApprovalPolicy = 'on-request' | 'auto-edit' | 'full-auto';
 export type CodexSandbox = 'locked-network' | 'workspace-write' | 'off';
@@ -67,16 +63,14 @@ export function buildCodexPromptOptions(input: {
 		typeof input.processConfig?.model === 'string'
 			? input.processConfig.model
 			: undefined;
-	const skillRoots = resolveCodexWorkflowSkillRoots(input.workflowPlan);
-	const agentRoots = resolveCodexWorkflowAgentRoots(input.workflowPlan);
 	const isolation = resolveIsolation(input.processConfig?.preset);
 
 	return {
 		continuation: input.continuation,
 		model: modelFromOverride ?? modelFromProcess,
 		developerInstructions,
-		skillRoots: skillRoots.length > 0 ? skillRoots : undefined,
-		agentRoots: agentRoots.length > 0 ? agentRoots : undefined,
+		skillRoots: undefined,
+		agentRoots: undefined,
 		config: resolveCodexMcpConfig(input.pluginMcpConfig, input.workflowPlan),
 		ephemeral: input.ephemeral,
 		approvalPolicy: isolation.approvalPolicy,

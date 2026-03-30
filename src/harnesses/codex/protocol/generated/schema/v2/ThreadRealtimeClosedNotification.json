@@ -1,9 +1,6 @@
 {
 	"$schema": "http://json-schema.org/draft-07/schema#",
-	"title": "ThreadRealtimeClosedNotification",
 	"description": "EXPERIMENTAL - emitted when thread realtime transport closes.",
-	"type": "object",
-	"required": ["threadId"],
 	"properties": {
 		"reason": {
 			"type": ["string", "null"]
@@ -11,5 +8,8 @@
 		"threadId": {
 			"type": "string"
 		}
-	}
+	},
+	"required": ["threadId"],
+	"title": "ThreadRealtimeClosedNotification",
+	"type": "object"
 }

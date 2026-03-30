@@ -5,6 +5,7 @@
 export type LoginAccountParams =
 	| {type: 'apiKey'; apiKey: string}
 	| {type: 'chatgpt'}
+	| {type: 'chatgptDeviceCode'}
 	| {
 			type: 'chatgptAuthTokens';
 			/**

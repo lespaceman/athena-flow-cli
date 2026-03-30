@@ -18,6 +18,51 @@ export type PluginRegistrationResult = {
 	workflows: WorkflowConfig[];
 };
 
+export function buildPluginMcpConfig(
+	pluginDirs: string[],
+	mcpServerOptions?: McpServerChoices,
+): string | undefined {
+	const mergedServers: Record<string, Record<string, unknown>> = {};
+
+	for (const dir of pluginDirs) {
+		const mcpPath = path.join(dir, '.mcp.json');
+		if (!fs.existsSync(mcpPath)) {
+			continue;
+		}
+
+		const config = JSON.parse(fs.readFileSync(mcpPath, 'utf-8')) as {
+			mcpServers?: Record<string, Record<string, unknown>>;
+		};
+
+		for (const [serverName, serverConfig] of Object.entries(
+			config.mcpServers ?? {},
+		)) {
+			if (serverName in mergedServers) {
+				throw new Error(
+					`MCP server name collision: "${serverName}" is defined by multiple plugins. ` +
+						'Each MCP server must have a unique name across all plugins.',
+				);
+			}
+
+			const {options: _options, ...rest} = serverConfig;
+
+			if (mcpServerOptions && serverName in mcpServerOptions) {
+				rest.args = mcpServerOptions[serverName];
+			}
+
+			mergedServers[serverName] = rest;
+		}
+	}
+
+	if (Object.keys(mergedServers).length === 0) {
+		return undefined;
+	}
+
+	const mcpConfig = path.join(os.tmpdir(), `athena-mcp-${process.pid}.json`);
+	fs.writeFileSync(mcpConfig, JSON.stringify({mcpServers: mergedServers}));
+	return mcpConfig;
+}
+
 /**
  * Load plugins from the given directories, register their commands,
  * and return merged MCP config + discovered workflows.
@@ -29,42 +74,14 @@ export type PluginRegistrationResult = {
 export function registerPlugins(
 	pluginDirs: string[],
 	mcpServerOptions?: McpServerChoices,
+	includeMcpConfig = true,
 ): PluginRegistrationResult {
-	const mergedServers: Record<string, Record<string, unknown>> = {};
 	const workflows: WorkflowConfig[] = [];
 
 	for (const dir of pluginDirs) {
 		const commands = loadPlugin(dir);
 		for (const command of commands) {
 			register(command);
-		}
-
-		// Collect MCP configs
-		const mcpPath = path.join(dir, '.mcp.json');
-		if (fs.existsSync(mcpPath)) {
-			const config = JSON.parse(fs.readFileSync(mcpPath, 'utf-8')) as {
-				mcpServers?: Record<string, Record<string, unknown>>;
-			};
-
-			for (const [serverName, serverConfig] of Object.entries(
-				config.mcpServers ?? {},
-			)) {
-				if (serverName in mergedServers) {
-					throw new Error(
-						`MCP server name collision: "${serverName}" is defined by multiple plugins. ` +
-							'Each MCP server must have a unique name across all plugins.',
-					);
-				}
-
-				const {options: _options, ...rest} = serverConfig;
-
-				// Apply user-chosen args if available
-				if (mcpServerOptions && serverName in mcpServerOptions) {
-					rest.args = mcpServerOptions[serverName];
-				}
-
-				mergedServers[serverName] = rest;
-			}
 		}
 
 		// Discover workflow config
@@ -77,11 +94,9 @@ export function registerPlugins(
 		}
 	}
 
-	let mcpConfig: string | undefined;
-	if (Object.keys(mergedServers).length > 0) {
-		mcpConfig = path.join(os.tmpdir(), `athena-mcp-${process.pid}.json`);
-		fs.writeFileSync(mcpConfig, JSON.stringify({mcpServers: mergedServers}));
-	}
+	const mcpConfig = includeMcpConfig
+		? buildPluginMcpConfig(pluginDirs, mcpServerOptions)
+		: undefined;
 
 	return {mcpConfig, workflows};
 }

@@ -1,21 +1,21 @@
 {
 	"$schema": "http://json-schema.org/draft-07/schema#",
-	"title": "McpServerOauthLoginParams",
-	"type": "object",
-	"required": ["name"],
 	"properties": {
 		"name": {
 			"type": "string"
 		},
 		"scopes": {
-			"type": ["array", "null"],
 			"items": {
 				"type": "string"
-			}
+			},
+			"type": ["array", "null"]
 		},
 		"timeoutSecs": {
-			"type": ["integer", "null"],
-			"format": "int64"
+			"format": "int64",
+			"type": ["integer", "null"]
 		}
-	}
+	},
+	"required": ["name"],
+	"title": "McpServerOauthLoginParams",
+	"type": "object"
 }

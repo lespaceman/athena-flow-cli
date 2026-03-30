@@ -7,4 +7,5 @@ export type DynamicToolSpec = {
 	name: string;
 	description: string;
 	inputSchema: JsonValue;
+	deferLoading?: boolean;
 };

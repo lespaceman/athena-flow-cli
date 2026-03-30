@@ -9,7 +9,7 @@ import type {Verbosity} from '../Verbosity';
 import type {WebSearchMode} from '../WebSearchMode';
 import type {JsonValue} from '../serde_json/JsonValue';
 import type {AnalyticsConfig} from './AnalyticsConfig';
-import type {AppsConfig} from './AppsConfig';
+import type {ApprovalsReviewer} from './ApprovalsReviewer';
 import type {AskForApproval} from './AskForApproval';
 import type {ProfileV2} from './ProfileV2';
 import type {SandboxMode} from './SandboxMode';
@@ -22,7 +22,11 @@ export type Config = {
 	model_context_window: bigint | null;
 	model_auto_compact_token_limit: bigint | null;
 	model_provider: string | null;
-	approval_policy: AskForApproval | null;
+	approval_policy: AskForApproval | null; /**
+	 * [UNSTABLE] Optional default for where approval requests are routed for
+	 * review.
+	 */
+	approvals_reviewer: ApprovalsReviewer | null;
 	sandbox_mode: SandboxMode | null;
 	sandbox_workspace_write: SandboxWorkspaceWrite | null;
 	forced_chatgpt_workspace_id: string | null;
@@ -39,7 +43,6 @@ export type Config = {
 	model_verbosity: Verbosity | null;
 	service_tier: ServiceTier | null;
 	analytics: AnalyticsConfig | null;
-	apps: AppsConfig | null;
 } & {
 	[key in string]?:
 		| number

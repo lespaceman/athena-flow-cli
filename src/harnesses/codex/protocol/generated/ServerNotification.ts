@@ -8,15 +8,22 @@ import type {AccountRateLimitsUpdatedNotification} from './v2/AccountRateLimitsU
 import type {AccountUpdatedNotification} from './v2/AccountUpdatedNotification';
 import type {AgentMessageDeltaNotification} from './v2/AgentMessageDeltaNotification';
 import type {AppListUpdatedNotification} from './v2/AppListUpdatedNotification';
+import type {CommandExecOutputDeltaNotification} from './v2/CommandExecOutputDeltaNotification';
 import type {CommandExecutionOutputDeltaNotification} from './v2/CommandExecutionOutputDeltaNotification';
 import type {ConfigWarningNotification} from './v2/ConfigWarningNotification';
 import type {ContextCompactedNotification} from './v2/ContextCompactedNotification';
 import type {DeprecationNoticeNotification} from './v2/DeprecationNoticeNotification';
 import type {ErrorNotification} from './v2/ErrorNotification';
 import type {FileChangeOutputDeltaNotification} from './v2/FileChangeOutputDeltaNotification';
+import type {FsChangedNotification} from './v2/FsChangedNotification';
+import type {HookCompletedNotification} from './v2/HookCompletedNotification';
+import type {HookStartedNotification} from './v2/HookStartedNotification';
 import type {ItemCompletedNotification} from './v2/ItemCompletedNotification';
+import type {ItemGuardianApprovalReviewCompletedNotification} from './v2/ItemGuardianApprovalReviewCompletedNotification';
+import type {ItemGuardianApprovalReviewStartedNotification} from './v2/ItemGuardianApprovalReviewStartedNotification';
 import type {ItemStartedNotification} from './v2/ItemStartedNotification';
 import type {McpServerOauthLoginCompletedNotification} from './v2/McpServerOauthLoginCompletedNotification';
+import type {McpServerStatusUpdatedNotification} from './v2/McpServerStatusUpdatedNotification';
 import type {McpToolCallProgressNotification} from './v2/McpToolCallProgressNotification';
 import type {ModelReroutedNotification} from './v2/ModelReroutedNotification';
 import type {PlanDeltaNotification} from './v2/PlanDeltaNotification';
@@ -35,6 +42,7 @@ import type {ThreadRealtimeErrorNotification} from './v2/ThreadRealtimeErrorNoti
 import type {ThreadRealtimeItemAddedNotification} from './v2/ThreadRealtimeItemAddedNotification';
 import type {ThreadRealtimeOutputAudioDeltaNotification} from './v2/ThreadRealtimeOutputAudioDeltaNotification';
 import type {ThreadRealtimeStartedNotification} from './v2/ThreadRealtimeStartedNotification';
+import type {ThreadRealtimeTranscriptUpdatedNotification} from './v2/ThreadRealtimeTranscriptUpdatedNotification';
 import type {ThreadStartedNotification} from './v2/ThreadStartedNotification';
 import type {ThreadStatusChangedNotification} from './v2/ThreadStatusChangedNotification';
 import type {ThreadTokenUsageUpdatedNotification} from './v2/ThreadTokenUsageUpdatedNotification';
@@ -63,10 +71,20 @@ export type ServerNotification =
 			params: ThreadTokenUsageUpdatedNotification;
 	  }
 	| {method: 'turn/started'; params: TurnStartedNotification}
+	| {method: 'hook/started'; params: HookStartedNotification}
 	| {method: 'turn/completed'; params: TurnCompletedNotification}
+	| {method: 'hook/completed'; params: HookCompletedNotification}
 	| {method: 'turn/diff/updated'; params: TurnDiffUpdatedNotification}
 	| {method: 'turn/plan/updated'; params: TurnPlanUpdatedNotification}
 	| {method: 'item/started'; params: ItemStartedNotification}
+	| {
+			method: 'item/autoApprovalReview/started';
+			params: ItemGuardianApprovalReviewStartedNotification;
+	  }
+	| {
+			method: 'item/autoApprovalReview/completed';
+			params: ItemGuardianApprovalReviewCompletedNotification;
+	  }
 	| {method: 'item/completed'; params: ItemCompletedNotification}
 	| {
 			method: 'rawResponseItem/completed';
@@ -74,6 +92,10 @@ export type ServerNotification =
 	  }
 	| {method: 'item/agentMessage/delta'; params: AgentMessageDeltaNotification}
 	| {method: 'item/plan/delta'; params: PlanDeltaNotification}
+	| {
+			method: 'command/exec/outputDelta';
+			params: CommandExecOutputDeltaNotification;
+	  }
 	| {
 			method: 'item/commandExecution/outputDelta';
 			params: CommandExecutionOutputDeltaNotification;
@@ -98,12 +120,17 @@ export type ServerNotification =
 			method: 'mcpServer/oauthLogin/completed';
 			params: McpServerOauthLoginCompletedNotification;
 	  }
+	| {
+			method: 'mcpServer/startupStatus/updated';
+			params: McpServerStatusUpdatedNotification;
+	  }
 	| {method: 'account/updated'; params: AccountUpdatedNotification}
 	| {
 			method: 'account/rateLimits/updated';
 			params: AccountRateLimitsUpdatedNotification;
 	  }
 	| {method: 'app/list/updated'; params: AppListUpdatedNotification}
+	| {method: 'fs/changed'; params: FsChangedNotification}
 	| {
 			method: 'item/reasoning/summaryTextDelta';
 			params: ReasoningSummaryTextDeltaNotification;
@@ -132,6 +159,10 @@ export type ServerNotification =
 	| {
 			method: 'thread/realtime/itemAdded';
 			params: ThreadRealtimeItemAddedNotification;
+	  }
+	| {
+			method: 'thread/realtime/transcriptUpdated';
+			params: ThreadRealtimeTranscriptUpdatedNotification;
 	  }
 	| {
 			method: 'thread/realtime/outputAudio/delta';

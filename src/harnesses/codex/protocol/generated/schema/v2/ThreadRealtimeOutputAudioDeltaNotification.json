@@ -1,9 +1,36 @@
 {
 	"$schema": "http://json-schema.org/draft-07/schema#",
-	"title": "ThreadRealtimeOutputAudioDeltaNotification",
+	"definitions": {
+		"ThreadRealtimeAudioChunk": {
+			"description": "EXPERIMENTAL - thread realtime audio chunk.",
+			"properties": {
+				"data": {
+					"type": "string"
+				},
+				"itemId": {
+					"type": ["string", "null"]
+				},
+				"numChannels": {
+					"format": "uint16",
+					"minimum": 0.0,
+					"type": "integer"
+				},
+				"sampleRate": {
+					"format": "uint32",
+					"minimum": 0.0,
+					"type": "integer"
+				},
+				"samplesPerChannel": {
+					"format": "uint32",
+					"minimum": 0.0,
+					"type": ["integer", "null"]
+				}
+			},
+			"required": ["data", "numChannels", "sampleRate"],
+			"type": "object"
+		}
+	},
 	"description": "EXPERIMENTAL - streamed output audio emitted by thread realtime.",
-	"type": "object",
-	"required": ["audio", "threadId"],
 	"properties": {
 		"audio": {
 			"$ref": "#/definitions/ThreadRealtimeAudioChunk"
@@ -12,31 +39,7 @@
 			"type": "string"
 		}
 	},
-	"definitions": {
-		"ThreadRealtimeAudioChunk": {
-			"description": "EXPERIMENTAL - thread realtime audio chunk.",
-			"type": "object",
-			"required": ["data", "numChannels", "sampleRate"],
-			"properties": {
-				"data": {
-					"type": "string"
-				},
-				"numChannels": {
-					"type": "integer",
-					"format": "uint16",
-					"minimum": 0.0
-				},
-				"sampleRate": {
-					"type": "integer",
-					"format": "uint32",
-					"minimum": 0.0
-				},
-				"samplesPerChannel": {
-					"type": ["integer", "null"],
-					"format": "uint32",
-					"minimum": 0.0
-				}
-			}
-		}
-	}
+	"required": ["audio", "threadId"],
+	"title": "ThreadRealtimeOutputAudioDeltaNotification",
+	"type": "object"
 }

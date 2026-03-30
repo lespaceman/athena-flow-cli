@@ -2,6 +2,55 @@ import {describe, expect, it, vi} from 'vitest';
 import {resolveCodexSkillInstructions} from '../skillInstructions';
 
 describe('resolveCodexSkillInstructions', () => {
+	it('prefers plugin/read metadata for workflow plugin skills', async () => {
+		const manager = {
+			sendRequest: vi.fn().mockImplementation((method: string) => {
+				if (method === 'plugin/read') {
+					return Promise.resolve({
+						plugin: {
+							skills: [
+								{
+									name: 'plugin-skill',
+									description: 'From plugin metadata',
+									enabled: true,
+									path: '/installed/plugin/skills/plugin-skill/SKILL.md',
+								},
+							],
+						},
+					});
+				}
+				throw new Error(`unexpected method: ${method}`);
+			}),
+		};
+
+		const result = await resolveCodexSkillInstructions({
+			manager: manager as never,
+			projectDir: '/project',
+			pluginTargets: [
+				{
+					ref: 'plugin-a@owner/repo',
+					pluginName: 'plugin-a',
+					marketplacePath: '/cache/repo/.agents/plugins/marketplace.json',
+					pluginDir: '/cache/repo/plugins/plugin-a',
+				},
+			],
+		});
+
+		expect(manager.sendRequest).toHaveBeenCalledWith('plugin/read', {
+			marketplacePath: '/cache/repo/.agents/plugins/marketplace.json',
+			pluginName: 'plugin-a',
+		});
+		expect(result.instructions).toContain('plugin-skill');
+		expect(result.skills).toEqual([
+			{
+				name: 'plugin-skill',
+				description: 'From plugin metadata',
+				path: '/installed/plugin/skills/plugin-skill/SKILL.md',
+				dependencySummary: [],
+			},
+		]);
+	});
+
 	it('omits disabled workflow skills from injected instructions', async () => {
 		const manager = {
 			sendRequest: vi.fn().mockResolvedValue({

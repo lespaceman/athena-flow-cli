@@ -10,4 +10,5 @@ export type ThreadRealtimeAudioChunk = {
 	sampleRate: number;
 	numChannels: number;
 	samplesPerChannel: number | null;
+	itemId: string | null;
 };
