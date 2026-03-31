@@ -123,6 +123,9 @@ function inkRenderOptions() {
 	return {};
 }
 
+// Set terminal tab title immediately so it appears before React renders.
+process.stdout.write('\x1b]1;Athena\x07\x1b]2;Athena\x07');
+
 // Register cleanup handlers early to catch all exit scenarios
 processRegistry.registerCleanupHandlers();
 

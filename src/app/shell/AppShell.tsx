@@ -461,7 +461,7 @@ function AppContent({
 	const metrics = useHeaderMetrics(feedEvents);
 	sessionTelemetryMetricsRef.current = metrics;
 
-	useTerminalTitle(feedEvents, isHarnessRunning);
+	useTerminalTitle(workflow?.name, isHarnessRunning);
 	const appMode = useAppMode(
 		isHarnessRunning,
 		currentPermissionRequest,
