@@ -333,12 +333,102 @@ function buildMarketplacePluginResolution(
 	manifestPath: string,
 ): CodexWorkflowPluginRef & ResolvedLocalWorkflowPlugin {
 	const {pluginName} = parseRef(ref);
+	const pluginDir = resolvePluginDirFromManifest(
+		pluginName,
+		repoDir,
+		manifestPath,
+	);
+	const version = resolvePluginVersionFromDir(pluginDir);
+	const artifactLayout = version
+		? resolvePackagedArtifactLayout(pluginDir, version)
+		: undefined;
 	return {
 		ref,
 		pluginName,
-		marketplacePath: manifestPath,
-		pluginDir: resolvePluginDirFromManifest(pluginName, repoDir, manifestPath),
+		marketplacePath: artifactLayout?.codexMarketplacePath ?? manifestPath,
+		pluginDir: artifactLayout?.claudeArtifactDir ?? pluginDir,
 	};
+}
+
+type PackagedArtifactLayout = {
+	claudeArtifactDir: string;
+	codexMarketplacePath: string;
+	codexPluginDir: string;
+};
+
+type ReleaseArtifactManifest = {
+	version: string;
+	artifacts?: {
+		claude?: {path?: string};
+		codex?: {marketplacePath?: string; pluginPath?: string};
+	};
+};
+
+function resolvePluginVersionFromDir(pluginDir: string): string | undefined {
+	const manifestPaths = [
+		path.join(pluginDir, '.codex-plugin', 'plugin.json'),
+		path.join(pluginDir, '.claude-plugin', 'plugin.json'),
+	];
+	for (const manifestPath of manifestPaths) {
+		if (!fs.existsSync(manifestPath)) continue;
+		try {
+			const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8')) as {
+				version?: string;
+			};
+			if (typeof manifest.version === 'string' && manifest.version.length > 0) {
+				return manifest.version;
+			}
+		} catch {
+			// Ignore malformed manifests and fall back to raw plugin layout.
+		}
+	}
+	return undefined;
+}
+
+function resolvePackagedArtifactLayout(
+	pluginRoot: string,
+	version: string,
+): PackagedArtifactLayout | undefined {
+	const releasePath = path.join(pluginRoot, 'dist', version, 'release.json');
+	if (!fs.existsSync(releasePath)) {
+		return undefined;
+	}
+	try {
+		const release = JSON.parse(
+			fs.readFileSync(releasePath, 'utf-8'),
+		) as ReleaseArtifactManifest;
+		const claudePath = release.artifacts?.claude?.path;
+		const codexMarketplacePath = release.artifacts?.codex?.marketplacePath;
+		const codexPluginPath = release.artifacts?.codex?.pluginPath;
+		if (
+			typeof claudePath !== 'string' ||
+			typeof codexMarketplacePath !== 'string' ||
+			typeof codexPluginPath !== 'string'
+		) {
+			return undefined;
+		}
+		const releaseDir = path.dirname(releasePath);
+		const claudeArtifactDir = path.resolve(releaseDir, claudePath);
+		const resolvedCodexMarketplacePath = path.resolve(
+			releaseDir,
+			codexMarketplacePath,
+		);
+		const codexPluginDir = path.resolve(releaseDir, codexPluginPath);
+		if (
+			!fs.existsSync(claudeArtifactDir) ||
+			!fs.existsSync(resolvedCodexMarketplacePath) ||
+			!fs.existsSync(codexPluginDir)
+		) {
+			return undefined;
+		}
+		return {
+			claudeArtifactDir,
+			codexMarketplacePath: resolvedCodexMarketplacePath,
+			codexPluginDir,
+		};
+	} catch {
+		return undefined;
+	}
 }
 
 /**
@@ -564,36 +654,6 @@ function fetchPluginPackage(
 }
 
 /**
- * Write a per-version synthetic marketplace manifest for a cached plugin.
- *
- * Codex's plugin/install requires a marketplace manifest file on disk —
- * it cannot install from a bare plugin directory. This generates a minimal
- * manifest inside the version directory so each pinned version has its own
- * manifest and concurrent resolves of different versions don't collide.
- */
-function writeSyntheticCodexManifest(
-	pluginName: string,
-	pluginDir: string,
-): string {
-	const manifestDir = path.join(pluginDir, '.agents', 'plugins');
-	const manifestPath = path.join(manifestDir, 'marketplace.json');
-	fs.mkdirSync(manifestDir, {recursive: true});
-	fs.writeFileSync(
-		manifestPath,
-		JSON.stringify({
-			name: `athena-versioned-${pluginName}`,
-			plugins: [
-				{
-					name: pluginName,
-					source: {source: 'local', path: '../..'},
-				},
-			],
-		}) + '\n',
-	);
-	return manifestPath;
-}
-
-/**
  * Resolve a marketplace plugin pinned to a specific version.
  *
  * Resolution: local cache → npm registry → marketplace git repo fallback.
@@ -607,24 +667,34 @@ export function resolveVersionedMarketplacePluginTarget(
 
 	const cachedDir = resolveVersionedPluginDir(owner, repo, pluginName, version);
 	if (cachedDir) {
-		const manifestPath = writeSyntheticCodexManifest(pluginName, cachedDir);
+		const artifactLayout = resolvePackagedArtifactLayout(cachedDir, version);
+		if (!artifactLayout) {
+			throw new Error(
+				`Plugin "${pluginName}" version ${version} is missing packaged runtime artifacts`,
+			);
+		}
 		return {
 			ref,
 			pluginName,
-			marketplacePath: manifestPath,
-			pluginDir: cachedDir,
+			marketplacePath: artifactLayout.codexMarketplacePath,
+			pluginDir: artifactLayout.claudeArtifactDir,
 		};
 	}
 
 	let npmError: Error | undefined;
 	try {
 		const fetchedDir = fetchPluginPackage(owner, repo, pluginName, version);
-		const manifestPath = writeSyntheticCodexManifest(pluginName, fetchedDir);
+		const artifactLayout = resolvePackagedArtifactLayout(fetchedDir, version);
+		if (!artifactLayout) {
+			throw new Error(
+				`Plugin "${pluginName}" version ${version} is missing packaged runtime artifacts`,
+			);
+		}
 		return {
 			ref,
 			pluginName,
-			marketplacePath: manifestPath,
-			pluginDir: fetchedDir,
+			marketplacePath: artifactLayout.codexMarketplacePath,
+			pluginDir: artifactLayout.claudeArtifactDir,
 		};
 	} catch (error) {
 		npmError = error as Error;
