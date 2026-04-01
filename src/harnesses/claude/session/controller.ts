@@ -65,6 +65,7 @@ export function createClaudeSessionController(
 		}): Promise<SessionControllerTurnResult> {
 			const tokenAccumulator = createTokenAccumulator();
 			const messageAccumulator = createAssistantMessageAccumulator();
+			let lastStderr = '';
 
 			const turnPromise = new Promise<SessionControllerTurnResult>(resolve => {
 				let settled = false;
@@ -80,6 +81,7 @@ export function createClaudeSessionController(
 						error,
 						tokens: tokenAccumulator.getUsage(),
 						streamMessage: messageAccumulator.getLastMessage(),
+						lastStderr,
 					});
 				};
 
@@ -100,8 +102,12 @@ export function createClaudeSessionController(
 							messageAccumulator.feed(data);
 						},
 						onStderr: (data: string) => {
+							const trimmed = data.trim();
+							if (!lastStderr) {
+								lastStderr = trimmed;
+							}
 							if (!input.verbose) return;
-							onStderrLine?.(data.trim());
+							onStderrLine?.(trimmed);
 						},
 						onExit: code => finalize(code, null),
 						onError: error => finalize(null, error),

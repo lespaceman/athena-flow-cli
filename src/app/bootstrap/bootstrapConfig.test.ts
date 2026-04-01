@@ -386,6 +386,27 @@ describe('bootstrapRuntimeConfig', () => {
 		expect(readClaudeSettingsModelMock).not.toHaveBeenCalled();
 	});
 
+	it('uses harnessOverride when provided, ignoring config', () => {
+		readGlobalConfigMock.mockReturnValue({
+			...emptyConfig,
+			harness: 'openai-codex',
+		});
+		readConfigMock.mockReturnValue(emptyConfig);
+		registerPluginsMock.mockReturnValue({
+			mcpConfig: undefined,
+			workflows: [],
+		});
+
+		const result = bootstrapRuntimeConfig({
+			projectDir: '/project',
+			showSetup: false,
+			isolationPreset: 'strict',
+			harnessOverride: 'claude-code',
+		});
+
+		expect(result.harness).toBe('claude-code');
+	});
+
 	it('keeps workflow plugin MCP merging for Claude harnesses', () => {
 		readGlobalConfigMock.mockReturnValue({
 			...emptyConfig,

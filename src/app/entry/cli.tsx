@@ -9,6 +9,8 @@ import {fileURLToPath} from 'node:url';
 import App from '../shell/AppShell';
 import {processRegistry} from '../../shared/utils/processRegistry';
 import {type IsolationPreset} from '../../harnesses/claude/config/isolation';
+import type {AthenaHarness} from '../../infra/plugins/config';
+import {listHarnessAdapters} from '../../harnesses/registry';
 import {registerBuiltins} from '../commands/builtins/index';
 import {readConfig, readGlobalConfig} from '../../infra/plugins/index';
 import {
@@ -72,11 +74,17 @@ const KNOWN_COMMANDS = new Set([
 	'telemetry',
 ]);
 const VALID_ISOLATION_PRESETS = ['strict', 'minimal', 'permissive'] as const;
+const VALID_HARNESSES = listHarnessAdapters()
+	.filter(a => a.enabled)
+	.map(a => a.id);
 const EXEC_PERMISSION_POLICIES_HELP = EXEC_PERMISSION_POLICIES.join(', ');
 const EXEC_QUESTION_POLICIES_HELP = EXEC_QUESTION_POLICIES.join(', ');
 
-function isIsolationPreset(value: string): value is IsolationPreset {
-	return (VALID_ISOLATION_PRESETS as readonly string[]).includes(value);
+function isOneOf<T extends string>(
+	value: string,
+	set: readonly T[],
+): value is T {
+	return (set as readonly string[]).includes(value);
 }
 
 async function exitWith(code: number): Promise<never> {
@@ -145,6 +153,7 @@ const cli = meow(
 		Options
 			--project-dir   Project directory for hook socket (default: cwd)
 			--plugin        Path to a Claude Code plugin directory (repeatable)
+			--harness       Runtime harness: claude-code (default), openai-codex
 			--isolation     Isolation preset for spawned Claude process:
 			                  strict (default) - Full isolation, no MCP servers
 			                  minimal - Full isolation, allow project MCP servers
@@ -199,6 +208,9 @@ const cli = meow(
 			plugin: {
 				type: 'string',
 				isMultiple: true,
+			},
+			harness: {
+				type: 'string',
 			},
 			isolation: {
 				type: 'string',
@@ -341,9 +353,22 @@ async function main(): Promise<void> {
 		return;
 	}
 
+	let harnessOverride: AthenaHarness | undefined;
+	if (cli.flags.harness) {
+		if (isOneOf(cli.flags.harness, VALID_HARNESSES)) {
+			harnessOverride = cli.flags.harness as AthenaHarness;
+		} else {
+			console.error(
+				`Error: Invalid harness '${cli.flags.harness}'. Valid options: ${VALID_HARNESSES.join(', ')}`,
+			);
+			await exitWith(command === 'exec' ? EXEC_EXIT_CODE.USAGE : 1);
+			return;
+		}
+	}
+
 	// Validate isolation preset
 	let isolationPreset: IsolationPreset = 'strict';
-	if (isIsolationPreset(cli.flags.isolation)) {
+	if (isOneOf(cli.flags.isolation, VALID_ISOLATION_PRESETS)) {
 		isolationPreset = cli.flags.isolation;
 	} else if (cli.flags.isolation !== 'strict') {
 		console.error(
@@ -378,6 +403,7 @@ async function main(): Promise<void> {
 			verbose: cli.flags.verbose,
 			globalConfig,
 			projectConfig,
+			harnessOverride,
 		});
 	} catch (error) {
 		console.error(`Error: ${(error as Error).message}`);

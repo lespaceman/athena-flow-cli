@@ -32,6 +32,8 @@ export type RuntimeBootstrapInput = {
 	verbose?: boolean;
 	globalConfig?: AthenaConfig;
 	projectConfig?: AthenaConfig;
+	/** CLI --harness override (highest priority). */
+	harnessOverride?: AthenaHarness;
 };
 
 export type RuntimeBootstrapOutput = {
@@ -76,12 +78,16 @@ export function bootstrapRuntimeConfig({
 	verbose = false,
 	globalConfig: providedGlobalConfig,
 	projectConfig: providedProjectConfig,
+	harnessOverride,
 }: RuntimeBootstrapInput): RuntimeBootstrapOutput {
 	const globalConfig = providedGlobalConfig ?? readGlobalConfig();
 	const projectConfig = providedProjectConfig ?? readConfig(projectDir);
 	const warnings: string[] = [];
 	const harness =
-		projectConfig.harness ?? globalConfig.harness ?? DEFAULT_HARNESS;
+		harnessOverride ??
+		projectConfig.harness ??
+		globalConfig.harness ??
+		DEFAULT_HARNESS;
 	const configuredActiveWorkflow = globalConfig.activeWorkflow ?? 'default';
 
 	let workflowPluginDirs: string[] = [];

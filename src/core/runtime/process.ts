@@ -10,6 +10,8 @@ export type TurnExecutionResult = {
 	error: Error | null;
 	tokens: TokenUsage;
 	streamMessage: string | null;
+	/** First stderr line captured from the harness process (root-cause diagnostics). */
+	lastStderr?: string;
 };
 
 export type HarnessProcessFailureCode =

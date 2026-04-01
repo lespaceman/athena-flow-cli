@@ -99,6 +99,14 @@ vi.mock('../../shared/utils/processRegistry', () => ({
 	},
 }));
 
+vi.mock('../../harnesses/registry', () => ({
+	listHarnessAdapters: () => [
+		{id: 'claude-code', label: 'Claude Code', enabled: true},
+		{id: 'openai-codex', label: 'OpenAI Codex', enabled: true},
+		{id: 'opencode', label: 'OpenCode', enabled: false},
+	],
+}));
+
 type CliRunResult = {
 	exitSpy: ReturnType<typeof vi.spyOn>;
 	errorSpy: ReturnType<typeof vi.spyOn>;
@@ -359,6 +367,46 @@ describe('cli exec mode', () => {
 			expect(runExecMock).not.toHaveBeenCalled();
 			expect(renderMock).not.toHaveBeenCalled();
 			expect(cli.exitSpy).toHaveBeenCalledWith(1);
+		} finally {
+			cli.restore();
+		}
+	});
+
+	it('passes --harness override to bootstrapRuntimeConfig', async () => {
+		const cli = await runCli(['exec', 'hello', '--harness=openai-codex']);
+		try {
+			expect(bootstrapRuntimeConfigMock).toHaveBeenCalledWith(
+				expect.objectContaining({
+					harnessOverride: 'openai-codex',
+				}),
+			);
+			expect(cli.exitSpy).toHaveBeenCalledWith(EXEC_EXIT_CODE.SUCCESS);
+		} finally {
+			cli.restore();
+		}
+	});
+
+	it('rejects invalid --harness value', async () => {
+		const cli = await runCli(['exec', 'hello', '--harness=invalid']);
+		try {
+			expect(bootstrapRuntimeConfigMock).not.toHaveBeenCalled();
+			expect(cli.exitSpy).toHaveBeenCalledWith(EXEC_EXIT_CODE.USAGE);
+			expect(cli.errorSpy).toHaveBeenCalledWith(
+				expect.stringContaining('Invalid harness'),
+			);
+		} finally {
+			cli.restore();
+		}
+	});
+
+	it('omits harnessOverride when --harness is not provided', async () => {
+		const cli = await runCli(['exec', 'hello']);
+		try {
+			expect(bootstrapRuntimeConfigMock).toHaveBeenCalledWith(
+				expect.objectContaining({
+					harnessOverride: undefined,
+				}),
+			);
 		} finally {
 			cli.restore();
 		}

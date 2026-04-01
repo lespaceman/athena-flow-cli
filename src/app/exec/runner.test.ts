@@ -462,6 +462,43 @@ describe('runExec', () => {
 		}
 	});
 
+	it('surfaces stderr in failure message when process exits non-zero', async () => {
+		const runtime = new MockRuntime();
+		const stdout = createWriteCapture();
+		const stderr = createWriteCapture();
+
+		const spawnProcess = (opts: SpawnArgs): ChildProcess => {
+			const child = makeChildProcess();
+
+			setImmediate(() => {
+				opts.onStderr?.('Authentication failed: invalid API key');
+				opts.onStderr?.('Hook cancelled');
+				opts.onExit?.(1);
+			});
+
+			return child;
+		};
+
+		const result = await runExec({
+			prompt: 'hello',
+			projectDir: '/tmp',
+			harness: 'claude-code',
+			isolationConfig: {},
+			onPermission: 'fail',
+			onQuestion: 'fail',
+			ephemeral: true,
+			stdout: stdout.writer,
+			stderr: stderr.writer,
+			runtimeFactory: () => runtime,
+			spawnProcess,
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.exitCode).toBe(EXEC_EXIT_CODE.RUNTIME);
+		expect(result.failure?.message).toContain('exited with code 1');
+		expect(result.failure?.message).toContain('Authentication failed');
+	});
+
 	it('returns runtime failure when session store initialization throws', async () => {
 		const runtime = new MockRuntime();
 		const stdout = createWriteCapture();

@@ -419,9 +419,12 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 			}
 
 			if (turnResult.exitCode !== 0) {
+				const stderrDetail = turnResult.lastStderr
+					? ` Stderr: ${turnResult.lastStderr}`
+					: '';
 				registerFailure({
 					kind: 'process',
-					message: `Harness process exited with code ${turnResult.exitCode}.`,
+					message: `Harness process exited with code ${turnResult.exitCode}.${stderrDetail}`,
 				});
 				break;
 			}
