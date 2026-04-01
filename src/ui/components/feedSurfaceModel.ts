@@ -8,7 +8,7 @@ import chalk from 'chalk';
 import {type TimelineEntry} from '../../core/feed/timeline';
 import {type Theme} from '../theme/types';
 import {frameGlyphs} from '../glyphs/index';
-import {fitAnsi, spaces} from '../../shared/utils/format';
+import {centerAnsi, spaces} from '../../shared/utils/format';
 import {type FeedColumnWidths, formatFeedRowLine} from './FeedRow';
 import {formatFeedHeaderLine} from './FeedHeader';
 import {RowCache} from './rowCache';
@@ -42,9 +42,78 @@ export type BuildFeedSurfaceParams = {
 	innerWidth: number;
 	cols: FeedColumnWidths;
 	rowCache?: RowCache;
+	onboarding?: OnboardingInfo;
+};
+
+export type OnboardingInfo = {
+	name?: string;
+	description?: string;
+	examplePrompts?: string[];
 };
 
 // ── Internal helpers ───────────────────────────────────────────────
+
+function wordWrap(text: string, maxWidth: number): string[] {
+	const words = text.split(/\s+/);
+	const lines: string[] = [];
+	let current = '';
+	for (const word of words) {
+		const candidate = current ? `${current} ${word}` : word;
+		if (candidate.length > maxWidth && current) {
+			lines.push(current);
+			current = word;
+		} else {
+			current = candidate;
+		}
+	}
+	if (current) lines.push(current);
+	return lines;
+}
+
+function buildOnboardingLines(
+	innerWidth: number,
+	visibleContentRows: number,
+	theme: Theme,
+	onboarding?: OnboardingInfo,
+): string[] {
+	const title = (t: string) => chalk.hex(theme.text).bold(t);
+	const muted = (t: string) => chalk.hex(theme.textMuted)(t);
+	const center = (t: string) => centerAnsi(t, innerWidth);
+	const blank = spaces(innerWidth);
+	const contentWidth = Math.min(innerWidth, 80);
+	const lines: string[] = [];
+
+	if (onboarding?.name) {
+		lines.push(center(title(onboarding.name)));
+	}
+	if (onboarding?.description) {
+		for (const wrapped of wordWrap(onboarding.description, contentWidth)) {
+			lines.push(center(muted(wrapped)));
+		}
+	}
+	if (lines.length > 0) {
+		lines.push(blank);
+	}
+
+	if (onboarding?.examplePrompts && onboarding.examplePrompts.length > 0) {
+		for (const example of onboarding.examplePrompts) {
+			lines.push(center(muted(`"${example}"`)));
+		}
+		lines.push(blank);
+	}
+
+	lines.push(center(muted('Enter a prompt below to get started')));
+
+	if (lines.length >= visibleContentRows) {
+		return lines.slice(0, visibleContentRows);
+	}
+	const topPad = Math.floor((visibleContentRows - lines.length) / 2);
+	const result: string[] = [];
+	for (let i = 0; i < topPad; i++) result.push(blank);
+	for (const line of lines) result.push(line);
+	while (result.length < visibleContentRows) result.push(blank);
+	return result;
+}
 
 function formatRow(
 	entry: TimelineEntry,
@@ -105,6 +174,7 @@ export function buildFeedSurface(params: BuildFeedSurfaceParams): FeedSurface {
 		innerWidth,
 		cols,
 		rowCache,
+		onboarding,
 	} = params;
 
 	const fr = frameGlyphs(ascii);
@@ -145,9 +215,14 @@ export function buildFeedSurface(params: BuildFeedSurfaceParams): FeedSurface {
 	}
 
 	if (filteredEntries.length === 0) {
-		bodyLines.push(fl(fitAnsi('(no feed events)', innerWidth)));
-		for (let i = 1; i < visibleContentRows; i++) {
-			bodyLines.push(fl(blank));
+		const onboardingLines = buildOnboardingLines(
+			innerWidth,
+			visibleContentRows,
+			theme,
+			onboarding,
+		);
+		for (const line of onboardingLines) {
+			bodyLines.push(fl(line));
 		}
 		return {
 			headerLines,

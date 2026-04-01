@@ -895,6 +895,17 @@ function AppContent({
 	// ── Feed backend & feedStartRow ────────────────────────────────
 	// Resolve once per render so all consumers agree on the backend.
 	const feedBackend = resolveFeedBackend();
+	const feedOnboarding = useMemo(
+		() =>
+			workflow
+				? {
+						name: workflow.name,
+						description: workflow.description,
+						examplePrompts: workflow.examplePrompts,
+					}
+				: undefined,
+		[workflow?.name, workflow?.description, workflow?.examplePrompts],
+	);
 	// Rows above the feed region in Ink's render tree:
 	//   3  = header frame (topBorder + headerLine + sectionBorder)
 	//   +  actualTodoRows  (header line + body lines incl. divider)
@@ -1332,6 +1343,7 @@ function AppContent({
 					cols={feedCols}
 					feedStartRow={feedStartRow}
 					backend={feedBackend}
+					onboarding={feedOnboarding}
 				/>
 			</MaybeProfiler>
 			<MaybeProfiler

@@ -1,4 +1,4 @@
-import {createClaudeHookRuntime} from './runtime';
+import {createClaudeHookRuntime, type ClaudeRuntime} from './runtime';
 import {resolveClaudeModel} from './config/modelResolver';
 import {verifyClaudeHarness} from './system/verifyHarness';
 import {createTokenAccumulator} from './process/tokenAccumulator';
@@ -57,6 +57,7 @@ export const claudeHarnessAdapter: HarnessAdapter = {
 		}),
 	createSessionController: input => createClaudeSessionController(input),
 	useSessionController: input => {
+		const claudeRuntime = input.runtime as ClaudeRuntime | null | undefined;
 		const process = useClaudeProcess(
 			input.projectDir,
 			input.instanceId,
@@ -68,6 +69,7 @@ export const claudeHarnessAdapter: HarnessAdapter = {
 				...(input.options as UseClaudeProcessOptions | undefined),
 				tokenParserFactory:
 					input.options?.tokenParserFactory ?? createTokenAccumulator,
+				onStdoutChunk: claudeRuntime?.feedStdout.bind(claudeRuntime),
 			},
 		);
 

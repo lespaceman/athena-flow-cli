@@ -92,6 +92,26 @@ describe('buildCodexPromptOptions', () => {
 						plugins: [],
 						promptTemplate: '{input}',
 					},
+					resolvedPlugins: [
+						{
+							ref: 'e2e-test-builder@owner/repo',
+							pluginName: 'e2e-test-builder',
+							marketplaceName: 'owner/repo',
+							pluginDir: '/plugins/e2e-test-builder',
+							claudeArtifactDir: '/plugins/e2e-test-builder',
+							codexPluginDir: '/plugins/e2e-test-builder',
+							codexMarketplacePath: '/marketplace/e2e-test-builder.json',
+						},
+						{
+							ref: 'md-export@owner/repo',
+							pluginName: 'md-export',
+							marketplaceName: 'owner/repo',
+							pluginDir: '/plugins/md-export',
+							claudeArtifactDir: '/plugins/md-export',
+							codexPluginDir: '/plugins/md-export',
+							codexMarketplacePath: '/marketplace/md-export.json',
+						},
+					],
 					localPlugins: [
 						{
 							ref: 'e2e-test-builder@owner/repo',
@@ -119,6 +139,18 @@ describe('buildCodexPromptOptions', () => {
 				'/plugins/md-export/agents',
 			],
 			config: {
+				_athenaWorkflowCodexPlugins: [
+					{
+						ref: 'e2e-test-builder@owner/repo',
+						pluginName: 'e2e-test-builder',
+						marketplacePath: '/marketplace/e2e-test-builder.json',
+					},
+					{
+						ref: 'md-export@owner/repo',
+						pluginName: 'md-export',
+						marketplacePath: '/marketplace/md-export.json',
+					},
+				],
 				mcp_servers: {
 					'agent-web-interface': {
 						command: 'npx',
@@ -202,6 +234,7 @@ describe('buildCodexPromptOptions', () => {
 					plugins: [],
 					promptTemplate: '{input}',
 				},
+				resolvedPlugins: [],
 				localPlugins: [],
 				agentRoots: [],
 				codexPlugins: [],
@@ -269,6 +302,17 @@ describe('buildCodexPromptOptions', () => {
 					plugins: [],
 					promptTemplate: '{input}',
 				},
+				resolvedPlugins: [
+					{
+						ref: 'my-plugin@owner/repo',
+						pluginName: 'my-plugin',
+						marketplaceName: 'owner/repo',
+						pluginDir: '/plugins/my-plugin',
+						claudeArtifactDir: '/plugins/my-plugin',
+						codexPluginDir: '/plugins/my-plugin',
+						codexMarketplacePath: '/marketplace/my-plugin.json',
+					},
+				],
 				localPlugins: [
 					{
 						ref: 'my-plugin@owner/repo',

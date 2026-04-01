@@ -124,7 +124,7 @@ describe('FeedGrid line-buffer via buildFeedSurface', () => {
 
 		// header(1) + divider(1) + visibleContentRows(4) = 6 lines
 		expect(lines.length).toBe(6);
-		expect(stripAnsi(lines[2]!)).toContain('(no feed events)');
+		expect(stripAnsi(output)).toContain('Enter a prompt below to get started');
 	});
 
 	test('single entry produces correct line count', () => {

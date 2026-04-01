@@ -76,16 +76,10 @@ describe('buildFeedSurface', () => {
 		// visibleContentRows = feedContentRows - 1 (divider) = 4
 		expect(surface.visibleContentRows).toBe(4);
 
-		// First body line should contain the empty-state message
+		// Body lines should contain the onboarding call-to-action
 		expect(surface.bodyLines.length).toBe(4);
-		expect(stripAnsi(surface.bodyLines[0]!)).toContain('(no feed events)');
-
-		// Remaining body lines should be blank fill (border + spaces + border)
-		for (let i = 1; i < surface.bodyLines.length; i++) {
-			const stripped = stripAnsi(surface.bodyLines[i]!);
-			// Content between the two border glyphs should be all spaces
-			expect(stripped.slice(1, -1).trim()).toBe('');
-		}
+		const bodyText = surface.bodyLines.map(l => stripAnsi(l)).join('\n');
+		expect(bodyText).toContain('Enter a prompt below to get started');
 
 		// allLines = headerLines + bodyLines
 		expect(surface.allLines.length).toBe(

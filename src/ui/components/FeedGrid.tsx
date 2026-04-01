@@ -3,7 +3,7 @@ import {Text} from 'ink';
 import {type TimelineEntry} from '../../core/feed/timeline';
 import {type Theme} from '../theme/types';
 import {type FeedColumnWidths} from './FeedRow';
-import {buildFeedSurface} from './feedSurfaceModel';
+import {buildFeedSurface, type OnboardingInfo} from './feedSurfaceModel';
 import {RowCache} from './rowCache';
 import {logFeedViewportDiff} from '../../shared/utils/perf';
 import {FeedSurfaceView, resolveFeedBackend} from './FeedSurface';
@@ -28,6 +28,8 @@ type Props = {
 	feedStartRow?: number;
 	/** Override the feed rendering backend (defaults to env-var resolution). */
 	backend?: FeedSurfaceBackend;
+	/** Workflow metadata for empty-state onboarding */
+	onboarding?: OnboardingInfo;
 };
 
 export function shouldUseLiveFeedScrollback({
@@ -58,6 +60,7 @@ function FeedGridImpl({
 	cols,
 	feedStartRow,
 	backend: backendProp,
+	onboarding,
 }: Props) {
 	const backend = resolveFeedBackend(backendProp);
 	const isIncremental = backend === 'incremental';
@@ -94,6 +97,7 @@ function FeedGridImpl({
 				innerWidth,
 				cols,
 				rowCache: rowCacheRef.current,
+				onboarding,
 			}),
 		[
 			feedHeaderRows,
@@ -107,6 +111,7 @@ function FeedGridImpl({
 			theme,
 			innerWidth,
 			cols,
+			onboarding,
 		],
 	);
 

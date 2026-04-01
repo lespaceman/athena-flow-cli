@@ -149,7 +149,14 @@ export function resolveCodexMcpConfig(
 		? readMcpServers(workflowPlan.pluginMcpConfig)
 		: {};
 
-	const codexPlugins = workflowPlan?.codexPlugins ?? [];
+	const codexPlugins =
+		workflowPlan?.resolvedPlugins.map(plugin => ({
+			ref: plugin.ref,
+			pluginName: plugin.pluginName,
+			marketplacePath: plugin.codexMarketplacePath,
+		})) ??
+		workflowPlan?.codexPlugins ??
+		[];
 	const merged = {...sessionServers, ...workflowServers};
 	if (Object.keys(merged).length === 0) {
 		return codexPlugins.length

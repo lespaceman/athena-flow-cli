@@ -111,6 +111,15 @@ export function fitAnsi(text: string, width: number): string {
 	return sliceAnsi(text, 0, width - 3) + '...';
 }
 
+export function centerAnsi(text: string, width: number): string {
+	if (width <= 0) return '';
+	const visualWidth = cachedStringWidth(text);
+	if (visualWidth >= width) return sliceAnsi(text, 0, width);
+	const left = Math.floor((width - visualWidth) / 2);
+	const right = width - left - visualWidth;
+	return spaces(left) + text + spaces(right);
+}
+
 export function formatClock(timestamp: number): string {
 	const d = new Date(timestamp);
 	const hh = String(d.getHours()).padStart(2, '0');

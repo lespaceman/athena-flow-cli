@@ -17,8 +17,7 @@ import {
 	resolveWorkflow,
 } from '../../core/workflows/index';
 import type {
-	CodexWorkflowPluginRef,
-	ResolvedLocalWorkflowPlugin,
+	ResolvedWorkflowPlugin,
 	WorkflowConfig,
 	WorkflowPlan,
 } from '../../core/workflows';
@@ -86,8 +85,7 @@ export function bootstrapRuntimeConfig({
 	const configuredActiveWorkflow = globalConfig.activeWorkflow ?? 'default';
 
 	let workflowPluginDirs: string[] = [];
-	let workflowLocalPlugins: ResolvedLocalWorkflowPlugin[] = [];
-	let workflowCodexPlugins: CodexWorkflowPluginRef[] = [];
+	let workflowResolvedPlugins: ResolvedWorkflowPlugin[] = [];
 	let resolvedWorkflow: WorkflowConfig | undefined;
 
 	const workflowToResolve = shouldResolveWorkflow({
@@ -100,9 +98,10 @@ export function bootstrapRuntimeConfig({
 	if (workflowToResolve) {
 		resolvedWorkflow = resolveWorkflow(workflowToResolve);
 		const plugins = resolveWorkflowPlugins(resolvedWorkflow);
-		workflowLocalPlugins = plugins.localPlugins;
-		workflowPluginDirs = workflowLocalPlugins.map(plugin => plugin.pluginDir);
-		workflowCodexPlugins = plugins.codexPlugins;
+		workflowResolvedPlugins = plugins.resolvedPlugins;
+		workflowPluginDirs = workflowResolvedPlugins.map(
+			plugin => plugin.claudeArtifactDir,
+		);
 	}
 
 	const pluginDirs = mergePluginDirs({
@@ -152,13 +151,9 @@ export function bootstrapRuntimeConfig({
 	const harnessConfigProfile = resolveHarnessConfigProfile(harness);
 	const workflowPlan = compileWorkflowPlan({
 		workflow: activeWorkflow,
-		localPlugins:
+		resolvedPlugins:
 			activeWorkflow && resolvedWorkflow?.name === activeWorkflow.name
-				? workflowLocalPlugins
-				: undefined,
-		codexPlugins:
-			activeWorkflow && resolvedWorkflow?.name === activeWorkflow.name
-				? workflowCodexPlugins
+				? workflowResolvedPlugins
 				: undefined,
 		pluginMcpConfig:
 			harness === 'openai-codex' &&

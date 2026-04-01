@@ -10,6 +10,8 @@ vi.mock('../../../infra/plugins/marketplace', () => ({
 		resolveMarketplacePluginTargetMock(ref),
 	resolveMarketplacePluginTargetFromRepo: (ref: string, repoDir: string) =>
 		resolveMarketplacePluginTargetFromRepoMock(ref, repoDir),
+	resolveVersionedMarketplacePluginTarget: (ref: string, version: string) =>
+		resolveMarketplacePluginTargetMock(ref, version),
 }));
 
 const {installWorkflowPlugins, resolveWorkflowPlugins} =
@@ -118,6 +120,17 @@ describe('resolveWorkflowPlugins', () => {
 			{
 				ref: 'plugin-a@owner/repo',
 				pluginDir: '/resolved/plugin-a',
+			},
+		]);
+		expect(result.resolvedPlugins).toEqual([
+			{
+				ref: 'plugin-a@owner/repo',
+				pluginName: 'plugin-a',
+				marketplaceName: 'owner/repo',
+				pluginDir: '/resolved/plugin-a',
+				claudeArtifactDir: '/resolved/plugin-a',
+				codexPluginDir: '/resolved/plugin-a',
+				codexMarketplacePath: '/repo/.agents/plugins/marketplace.json',
 			},
 		]);
 		expect(result.codexPlugins).toEqual([

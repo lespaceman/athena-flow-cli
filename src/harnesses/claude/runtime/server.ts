@@ -3,6 +3,9 @@
  *
  * This module encapsulates all network I/O and NDJSON protocol handling.
  * It is the ONLY place that reads/writes to Unix Domain Sockets.
+ *
+ * Also accepts stream-json stdout data via feedStdout() to translate
+ * tool result events into RuntimeEvents (same emit path as hook events).
  */
 
 import * as net from 'node:net';
@@ -25,6 +28,8 @@ import type {RuntimeConnector} from '../../../core/runtime/connector';
 import {mapEnvelopeToRuntimeEvent} from './mapper';
 import {mapDecisionToResult} from './decisionMapper';
 import {BoundedLineParser} from './boundedLineParser';
+import {getInteractionHints} from './interactionRules';
+import {createStreamJsonToolParser} from './streamJsonToolParser';
 
 type PendingRequest = {
 	event: RuntimeEvent;
@@ -96,6 +101,29 @@ export function createServer(opts: ServerOptions) {
 	let socketPath = '';
 	let lastError: RuntimeStartupError | null = null;
 	let startPromise: Promise<void> | null = null;
+	let sessionId = '';
+
+	const streamParser = createStreamJsonToolParser((toolEvent): void => {
+		const event: RuntimeEvent = {
+			id: `stream-${toolEvent.tool_use_id ?? 'unknown'}-${Date.now()}`,
+			timestamp: Date.now(),
+			kind: 'tool.delta',
+			data: {
+				tool_name: toolEvent.tool_name,
+				tool_input: {},
+				tool_use_id: toolEvent.tool_use_id,
+				delta: toolEvent.content,
+			},
+			hookName: 'stream-json',
+			sessionId,
+			toolName: toolEvent.tool_name,
+			toolUseId: toolEvent.tool_use_id,
+			context: {cwd: projectDir, transcriptPath: ''},
+			interaction: getInteractionHints('tool.delta'),
+			payload: null,
+		};
+		emit(event);
+	});
 
 	function emit(event: RuntimeEvent): void {
 		for (const handler of handlers) {
@@ -221,6 +249,9 @@ export function createServer(opts: ServerOptions) {
 							}
 
 							const envelope = parsed as HookEventEnvelope;
+							if (envelope.session_id) {
+								sessionId = envelope.session_id;
+							}
 							const runtimeEvent = mapEnvelopeToRuntimeEvent(envelope);
 
 							// Set up timeout — use event-specific or global TTL
@@ -373,6 +404,9 @@ export function createServer(opts: ServerOptions) {
 		...connector,
 		_getPendingCount(): number {
 			return pending.size;
+		},
+		feedStdout(chunk: string): void {
+			streamParser.feed(chunk);
 		},
 	};
 }

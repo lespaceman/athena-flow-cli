@@ -1,6 +1,7 @@
 export type {
 	CodexWorkflowPluginRef,
 	ResolvedLocalWorkflowPlugin,
+	ResolvedWorkflowPlugin,
 	WorkflowConfig,
 	LoopConfig,
 	ResolvedWorkflowConfig,

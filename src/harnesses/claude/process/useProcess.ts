@@ -173,6 +173,8 @@ export type UseClaudeProcessOptions = {
 	tokenUpdateMs?: number;
 	/** Parser strategy for streaming token usage extraction. */
 	tokenParserFactory?: TokenUsageParserFactory;
+	/** Called with each raw stdout chunk for additional processing (e.g., tool result streaming). */
+	onStdoutChunk?: (data: string) => void;
 };
 
 export function useClaudeProcess(
@@ -207,6 +209,8 @@ export function useClaudeProcess(
 	trackOutputRef.current = options?.trackOutput ?? true;
 	const trackStreamingTextRef = useRef(options?.trackStreamingText ?? true);
 	trackStreamingTextRef.current = options?.trackStreamingText ?? true;
+	const onStdoutChunkRef = useRef(options?.onStdoutChunk);
+	onStdoutChunkRef.current = options?.onStdoutChunk;
 	const tokenUpdateMsRef = useRef(Math.max(0, options?.tokenUpdateMs ?? 0));
 	tokenUpdateMsRef.current = Math.max(0, options?.tokenUpdateMs ?? 0);
 	const [tokenUsage, setTokenUsage] = useState<TokenUsage>(
@@ -388,6 +392,7 @@ export function useClaudeProcess(
 							if (abortRef.current.signal.aborted) return;
 							tokenAccRef.current.feed(data);
 							messageAccumulator.feed(data);
+							onStdoutChunkRef.current?.(data);
 							const acc = tokenAccRef.current.getUsage();
 							publishTokenUsage(mergeTokenBase(tokenBaseRef.current, acc));
 

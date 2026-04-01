@@ -165,8 +165,12 @@ describe('Parity: empty feed', () => {
 		const incrementalLines = simulateIncrementalRender(surface, 1);
 		const incOutput = incrementalLines.join('\n');
 
-		expect(stripAnsi(inkOutput)).toContain('(no feed events)');
-		expect(stripAnsi(incOutput)).toContain('(no feed events)');
+		expect(stripAnsi(inkOutput)).toContain(
+			'Enter a prompt below to get started',
+		);
+		expect(stripAnsi(incOutput)).toContain(
+			'Enter a prompt below to get started',
+		);
 	});
 
 	test('blank fill lines have fixed width in both backends', () => {

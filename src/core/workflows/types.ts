@@ -73,6 +73,17 @@ export type ResolvedWorkflowConfig = WorkflowConfig & {
 	__source?: WorkflowSourceMetadata;
 };
 
+export type ResolvedWorkflowPlugin = {
+	ref: string;
+	pluginName: string;
+	marketplaceName: string;
+	version?: string;
+	pluginDir: string;
+	claudeArtifactDir: string;
+	codexPluginDir: string;
+	codexMarketplacePath: string;
+};
+
 export type ResolvedLocalWorkflowPlugin = {
 	ref: string;
 	pluginDir: string;

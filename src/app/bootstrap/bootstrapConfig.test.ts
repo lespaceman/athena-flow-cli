@@ -31,24 +31,54 @@ vi.mock('../../core/workflows/index', () => ({
 		resolveWorkflowPluginsMock(workflow),
 	compileWorkflowPlan: ({
 		workflow,
+		resolvedPlugins,
 		localPlugins,
 		codexPlugins,
 		pluginMcpConfig,
 	}: {
 		workflow?: unknown;
+		resolvedPlugins?: Array<{
+			ref: string;
+			pluginName: string;
+			claudeArtifactDir: string;
+			codexMarketplacePath: string;
+		}>;
 		localPlugins?: unknown[];
 		codexPlugins?: unknown[];
 		pluginMcpConfig?: string;
 	}) => {
 		if (!workflow) return undefined;
 		const resolved = resolveWorkflowPluginsMock(workflow);
-		const lp = localPlugins ?? resolved?.localPlugins ?? [];
-		const cp = codexPlugins ?? resolved?.codexPlugins ?? [];
+		const rp = resolvedPlugins ?? resolved?.resolvedPlugins ?? [];
+		const lp =
+			localPlugins ??
+			rp.map((plugin: {ref: string; claudeArtifactDir: string}) => ({
+				ref: plugin.ref,
+				pluginDir: plugin.claudeArtifactDir,
+			})) ??
+			resolved?.localPlugins ??
+			[];
+		const cp =
+			codexPlugins ??
+			rp.map(
+				(plugin: {
+					ref: string;
+					pluginName: string;
+					codexMarketplacePath: string;
+				}) => ({
+					ref: plugin.ref,
+					pluginName: plugin.pluginName,
+					marketplacePath: plugin.codexMarketplacePath,
+				}),
+			) ??
+			resolved?.codexPlugins ??
+			[];
 		return {
 			workflow,
+			resolvedPlugins: rp,
 			localPlugins: lp,
-			agentRoots: (lp as Array<{pluginDir: string}>).map(
-				plugin => `${plugin.pluginDir}/agents`,
+			agentRoots: (rp as Array<{claudeArtifactDir: string}>).map(
+				plugin => `${plugin.claudeArtifactDir}/agents`,
 			),
 			codexPlugins: cp,
 			pluginMcpConfig,
@@ -78,6 +108,7 @@ describe('bootstrapRuntimeConfig', () => {
 		installWorkflowPluginsMock.mockReturnValue([]);
 		resolveWorkflowPluginsMock.mockReset();
 		resolveWorkflowPluginsMock.mockReturnValue({
+			resolvedPlugins: [],
 			localPlugins: [],
 			codexPlugins: [],
 		});
@@ -119,6 +150,18 @@ describe('bootstrapRuntimeConfig', () => {
 			isolation: 'minimal',
 		});
 		resolveWorkflowPluginsMock.mockReturnValue({
+			resolvedPlugins: [
+				{
+					ref: 'plugin@marketplace',
+					pluginName: 'plugin',
+					marketplaceName: 'marketplace',
+					pluginDir: '/workflow-plugin',
+					claudeArtifactDir: '/workflow-plugin',
+					codexPluginDir: '/workflow-plugin',
+					codexMarketplacePath:
+						'/workflow-marketplace/.agents/plugins/marketplace.json',
+				},
+			],
 			localPlugins: [
 				{
 					ref: 'plugin@marketplace',
@@ -153,6 +196,18 @@ describe('bootstrapRuntimeConfig', () => {
 		expect(result.workflowRef).toBe('e2e-test-builder');
 		expect(result.workflowPlan).toEqual({
 			workflow: result.workflow,
+			resolvedPlugins: [
+				{
+					ref: 'plugin@marketplace',
+					pluginName: 'plugin',
+					marketplaceName: 'marketplace',
+					pluginDir: '/workflow-plugin',
+					claudeArtifactDir: '/workflow-plugin',
+					codexPluginDir: '/workflow-plugin',
+					codexMarketplacePath:
+						'/workflow-marketplace/.agents/plugins/marketplace.json',
+				},
+			],
 			localPlugins: [
 				{
 					ref: 'plugin@marketplace',
@@ -160,7 +215,14 @@ describe('bootstrapRuntimeConfig', () => {
 				},
 			],
 			agentRoots: ['/workflow-plugin/agents'],
-			codexPlugins: [],
+			codexPlugins: [
+				{
+					ref: 'plugin@marketplace',
+					pluginName: 'plugin',
+					marketplacePath:
+						'/workflow-marketplace/.agents/plugins/marketplace.json',
+				},
+			],
 			pluginMcpConfig: '/tmp/mcp.json',
 		});
 		expect(result.harness).toBe('claude-code');
@@ -206,6 +268,7 @@ describe('bootstrapRuntimeConfig', () => {
 		expect(result.workflowRef).toBe('plugin-workflow');
 		expect(result.workflowPlan).toEqual({
 			workflow: result.workflow,
+			resolvedPlugins: [],
 			localPlugins: [],
 			agentRoots: [],
 			codexPlugins: [],
@@ -336,6 +399,17 @@ describe('bootstrapRuntimeConfig', () => {
 		});
 		installWorkflowPluginsMock.mockReturnValue(['/workflow-plugin']);
 		resolveWorkflowPluginsMock.mockReturnValue({
+			resolvedPlugins: [
+				{
+					ref: 'plugin@marketplace',
+					pluginName: 'plugin',
+					marketplaceName: 'marketplace',
+					pluginDir: '/workflow-plugin',
+					claudeArtifactDir: '/workflow-plugin',
+					codexPluginDir: '/workflow-plugin',
+					codexMarketplacePath: '/marketplace/.agents/plugins/marketplace.json',
+				},
+			],
 			localPlugins: [
 				{
 					ref: 'plugin@marketplace',
@@ -365,6 +439,17 @@ describe('bootstrapRuntimeConfig', () => {
 		expect(result.pluginMcpConfig).toBe('/tmp/workflow-mcp.json');
 		expect(result.workflowPlan).toEqual({
 			workflow: result.workflow,
+			resolvedPlugins: [
+				{
+					ref: 'plugin@marketplace',
+					pluginName: 'plugin',
+					marketplaceName: 'marketplace',
+					pluginDir: '/workflow-plugin',
+					claudeArtifactDir: '/workflow-plugin',
+					codexPluginDir: '/workflow-plugin',
+					codexMarketplacePath: '/marketplace/.agents/plugins/marketplace.json',
+				},
+			],
 			localPlugins: [
 				{
 					ref: 'plugin@marketplace',
@@ -400,6 +485,17 @@ describe('bootstrapRuntimeConfig', () => {
 			promptTemplate: '{input}',
 		});
 		resolveWorkflowPluginsMock.mockReturnValue({
+			resolvedPlugins: [
+				{
+					ref: 'plugin@marketplace',
+					pluginName: 'plugin',
+					marketplaceName: 'marketplace',
+					pluginDir: '/workflow-plugin',
+					claudeArtifactDir: '/workflow-plugin',
+					codexPluginDir: '/workflow-plugin',
+					codexMarketplacePath: '/marketplace/.agents/plugins/marketplace.json',
+				},
+			],
 			localPlugins: [
 				{
 					ref: 'plugin@marketplace',
@@ -439,6 +535,17 @@ describe('bootstrapRuntimeConfig', () => {
 		expect(result.pluginMcpConfig).toBeUndefined();
 		expect(result.workflowPlan).toEqual({
 			workflow: result.workflow,
+			resolvedPlugins: [
+				{
+					ref: 'plugin@marketplace',
+					pluginName: 'plugin',
+					marketplaceName: 'marketplace',
+					pluginDir: '/workflow-plugin',
+					claudeArtifactDir: '/workflow-plugin',
+					codexPluginDir: '/workflow-plugin',
+					codexMarketplacePath: '/marketplace/.agents/plugins/marketplace.json',
+				},
+			],
 			localPlugins: [
 				{
 					ref: 'plugin@marketplace',

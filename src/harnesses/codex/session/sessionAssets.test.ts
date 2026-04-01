@@ -311,15 +311,20 @@ describe('resolveCodexMcpConfig', () => {
 				plugins: [],
 				promptTemplate: '{input}',
 			},
-			localPlugins: [],
-			agentRoots: [],
-			codexPlugins: [
+			resolvedPlugins: [
 				{
 					ref: 'plugin-a@owner/repo',
 					pluginName: 'plugin-a',
-					marketplacePath: '/cache/repo/.agents/plugins/marketplace.json',
+					marketplaceName: 'owner/repo',
+					pluginDir: '/cache/repo/plugin-a',
+					claudeArtifactDir: '/cache/repo/plugin-a',
+					codexPluginDir: '/cache/repo/plugin-a',
+					codexMarketplacePath: '/cache/repo/.agents/plugins/marketplace.json',
 				},
 			],
+			localPlugins: [],
+			agentRoots: [],
+			codexPlugins: [],
 		});
 
 		expect(result).toEqual({

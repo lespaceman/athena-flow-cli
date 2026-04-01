@@ -9,6 +9,7 @@ import {
 	renderMarkdownToLines,
 } from '../layout/renderDetailLines';
 import {type TimelineEntry} from '../../core/feed/timeline';
+import type {FeedEvent} from '../../core/feed/types';
 import {termColumns, termRows} from '../../shared/utils/terminal';
 import type {Theme} from '../theme/types';
 
@@ -43,6 +44,8 @@ export function usePager({
 	const pagerScrollRef = useRef(0);
 	const copyToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const pagerActiveRef = useRef(false);
+	const pagerEntryIdRef = useRef<string | null>(null);
+	const lastPairedPostRef = useRef<FeedEvent | undefined>(undefined);
 
 	const clearCopyToastTimer = useCallback(() => {
 		if (copyToastTimerRef.current) {
@@ -104,6 +107,7 @@ export function usePager({
 		// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- entry can be undefined at runtime when feedCursor is out of bounds
 		if (!entry?.expandable) return;
 		pendingPagerEntryRef.current = entry;
+		pagerEntryIdRef.current = entry.id;
 		setPagerActive(true);
 	}, [filteredEntriesRef, feedCursor]);
 
@@ -127,6 +131,7 @@ export function usePager({
 
 		pagerLinesRef.current = lines.map(line => margin + line);
 		pagerScrollRef.current = 0;
+		lastPairedPostRef.current = entry.pairedPostEvent;
 
 		// Enter alternate screen and enable SGR mouse tracking for wheel events
 		process.stdout.write('\x1B[?1049h');
@@ -137,9 +142,52 @@ export function usePager({
 	// While pager is active, AppShell still re-renders as feed events arrive.
 	// Ink can repaint an empty frame over the alternate-screen content, so
 	// repaint the pager after every active render to keep the detail view visible.
+	// Also detect when the viewed entry's pairedPostEvent has changed (streaming
+	// tool output) and re-render the content with auto-scroll.
 	useEffect(() => {
 		if (!pagerActive) return;
 		if (pagerLinesRef.current.length === 0) return;
+
+		const entryId = pagerEntryIdRef.current;
+		if (entryId) {
+			const currentEntry = filteredEntriesRef.current.find(
+				e => e.id === entryId,
+			);
+			if (
+				currentEntry &&
+				currentEntry.pairedPostEvent !== lastPairedPostRef.current
+			) {
+				lastPairedPostRef.current = currentEntry.pairedPostEvent;
+
+				const contentWidth = Math.max(10, termColumns() - PAGER_MARGIN * 2);
+				const margin = ' '.repeat(PAGER_MARGIN);
+				const lines = currentEntry.feedEvent
+					? renderDetailLines(
+							currentEntry.feedEvent,
+							contentWidth,
+							currentEntry.pairedPostEvent,
+							theme,
+						).lines
+					: renderMarkdownToLines(
+							currentEntry.details || currentEntry.summary,
+							contentWidth,
+						);
+
+				const oldLength = pagerLinesRef.current.length;
+				const contentRows = pagerContentRows();
+				const wasAtBottom = pagerScrollRef.current >= oldLength - contentRows;
+
+				pagerLinesRef.current = lines.map(line => margin + line);
+
+				if (wasAtBottom) {
+					pagerScrollRef.current = Math.max(
+						0,
+						pagerLinesRef.current.length - contentRows,
+					);
+				}
+			}
+		}
+
 		paintPager();
 	});
 
@@ -185,6 +233,8 @@ export function usePager({
 				clearCopyToastTimer();
 				pagerLinesRef.current = [];
 				pagerScrollRef.current = 0;
+				pagerEntryIdRef.current = null;
+				lastPairedPostRef.current = undefined;
 				// Disable mouse tracking, then leave alternate screen
 				process.stdout.write('\x1B[?1006l\x1B[?1000l');
 				process.stdout.write('\x1B[?1049l');
