@@ -133,4 +133,50 @@ describe('useCodexSessionController', () => {
 			}),
 		);
 	});
+
+	it('returns a failed Codex turn as an execution error', async () => {
+		let eventHandler: (event: Record<string, unknown>) => void = () => {};
+		const runtime = {
+			sendPrompt: vi.fn(async () => {
+				eventHandler({
+					kind: 'unknown',
+					hookName: 'error',
+					data: {
+						payload: {
+							error: {
+								message: 'unexpected status 401 Unauthorized',
+							},
+						},
+					},
+				});
+				eventHandler({
+					kind: 'turn.complete',
+					data: {status: 'failed'},
+				});
+			}),
+			sendInterrupt,
+			onEvent: vi.fn((handler: (event: Record<string, unknown>) => void) => {
+				eventHandler = handler;
+				return vi.fn();
+			}),
+		} as unknown as Runtime;
+
+		const {result} = renderHook(() =>
+			useCodexSessionController(runtime, {model: 'gpt-5.3-codex'}),
+		);
+
+		let turnResult;
+		await act(async () => {
+			turnResult = await result.current.startTurn('hello');
+		});
+
+		expect(turnResult).toEqual(
+			expect.objectContaining({
+				exitCode: 1,
+				error: expect.objectContaining({
+					message: 'unexpected status 401 Unauthorized',
+				}),
+			}),
+		);
+	});
 });

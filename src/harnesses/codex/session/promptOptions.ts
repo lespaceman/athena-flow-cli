@@ -8,7 +8,10 @@ import type {WorkflowPlan} from '../../../core/workflows';
 import {resolveCodexMcpConfig} from './sessionAssets';
 
 export type CodexApprovalPolicy = 'on-request' | 'auto-edit' | 'full-auto';
-export type CodexSandbox = 'locked-network' | 'workspace-write' | 'off';
+export type CodexSandbox =
+	| 'read-only'
+	| 'workspace-write'
+	| 'danger-full-access';
 
 export type CodexPromptOptions = {
 	continuation?: TurnContinuation;
@@ -34,9 +37,9 @@ function resolveIsolation(preset?: HarnessProcessPreset): {
 } {
 	switch (preset) {
 		case 'strict':
-			return {approvalPolicy: 'on-request', sandbox: 'locked-network'};
+			return {approvalPolicy: 'on-request', sandbox: 'read-only'};
 		case 'permissive':
-			return {approvalPolicy: 'auto-edit', sandbox: 'workspace-write'};
+			return {approvalPolicy: 'auto-edit', sandbox: 'danger-full-access'};
 		case 'minimal':
 		case undefined:
 			return {approvalPolicy: 'on-request', sandbox: 'workspace-write'};

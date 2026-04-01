@@ -77,6 +77,8 @@ export function useCodexSessionController(
 			setIsRunning(true);
 			let streamedMessage = '';
 			let turnTokens = {...NULL_TOKENS};
+			let turnStatus: string | undefined;
+			let turnErrorMessage: string | undefined;
 			const unsubscribe = codexRuntime.onEvent(event => {
 				const data =
 					typeof event.data === 'object'
@@ -90,6 +92,25 @@ export function useCodexSessionController(
 
 				if (event.kind === 'usage.update') {
 					turnTokens = readTokenUsage(data['delta']);
+				}
+
+				if (event.kind === 'turn.complete') {
+					turnStatus =
+						typeof data['status'] === 'string' ? data['status'] : turnStatus;
+				}
+
+				if (event.kind === 'unknown' && event.hookName === 'error') {
+					const payload =
+						typeof data['payload'] === 'object' && data['payload'] !== null
+							? (data['payload'] as Record<string, unknown>)
+							: null;
+					const errorValue =
+						typeof payload?.['error'] === 'object' && payload['error'] !== null
+							? (payload['error'] as Record<string, unknown>)
+							: null;
+					if (typeof errorValue?.['message'] === 'string') {
+						turnErrorMessage = errorValue['message'];
+					}
 				}
 			});
 
@@ -106,6 +127,14 @@ export function useCodexSessionController(
 							ephemeral,
 						}),
 					);
+					if (turnStatus === 'failed') {
+						return {
+							exitCode: 1,
+							error: new Error(turnErrorMessage ?? 'Codex turn failed'),
+							tokens: turnTokens,
+							streamMessage: streamedMessage || null,
+						};
+					}
 					return {
 						exitCode: 0,
 						error: null,

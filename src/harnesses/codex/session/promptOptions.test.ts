@@ -173,7 +173,7 @@ describe('buildCodexPromptOptions', () => {
 		).toEqual(
 			expect.objectContaining({
 				approvalPolicy: 'on-request',
-				sandbox: 'locked-network',
+				sandbox: 'read-only',
 			}),
 		);
 
@@ -184,7 +184,7 @@ describe('buildCodexPromptOptions', () => {
 		).toEqual(
 			expect.objectContaining({
 				approvalPolicy: 'auto-edit',
-				sandbox: 'workspace-write',
+				sandbox: 'danger-full-access',
 			}),
 		);
 
