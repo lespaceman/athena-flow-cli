@@ -17,11 +17,36 @@ export type LoopConfig = {
 	continuePrompt?: string;
 };
 
+/**
+ * A plugin dependency with an explicit version pin.
+ * Used in workflows to lock a specific plugin version.
+ */
+export type PluginDependency = {
+	ref: string;
+	version: string;
+};
+
+/**
+ * A plugin specifier: either a bare marketplace ref string (resolves to latest)
+ * or a structured dependency with a pinned version.
+ */
+export type PluginSpec = string | PluginDependency;
+
+/** Extract the marketplace ref from a PluginSpec. */
+export function pluginSpecRef(spec: PluginSpec): string {
+	return typeof spec === 'string' ? spec : spec.ref;
+}
+
+/** Extract the pinned version from a PluginSpec, if any. */
+export function pluginSpecVersion(spec: PluginSpec): string | undefined {
+	return typeof spec === 'string' ? undefined : spec.version;
+}
+
 export type WorkflowConfig = {
 	name: string;
 	description?: string;
 	version?: string;
-	plugins: string[];
+	plugins: PluginSpec[];
 	promptTemplate: string;
 	loop?: LoopConfig;
 	isolation?: string;
@@ -29,6 +54,8 @@ export type WorkflowConfig = {
 	env?: Record<string, string>;
 	/** Path to system prompt file, passed as --append-system-prompt-file */
 	systemPromptFile?: string;
+	/** Example prompts shown in the empty-state onboarding screen */
+	examplePrompts?: string[];
 };
 
 export type WorkflowSourceMetadata =

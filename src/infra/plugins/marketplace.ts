@@ -65,6 +65,14 @@ export type WorkflowMarketplaceSource =
 const MARKETPLACE_REF_RE = /^[a-zA-Z0-9_-]+@[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 const MARKETPLACE_SLUG_RE = /^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/;
 
+function marketplacesCacheDir(): string {
+	return path.join(os.homedir(), '.config', 'athena', 'marketplaces');
+}
+
+function marketplaceRepoCacheDir(owner: string, repo: string): string {
+	return path.join(marketplacesCacheDir(), owner, repo);
+}
+
 function resolvePluginManifestPath(repoDir: string): string {
 	const preferredManifestPath = path.join(
 		repoDir,
@@ -104,27 +112,14 @@ function readManifest(manifestPath: string): MarketplaceManifest {
 	) as MarketplaceManifest;
 }
 
-function resolvePluginDirFromManifest(
+/**
+ * Extract and validate the relative source path from a marketplace entry.
+ * Returns the path without the leading `./` prefix.
+ */
+function entryRelativeSourcePath(
+	entry: MarketplaceEntry,
 	pluginName: string,
-	repoDir: string,
-	manifestPath: string,
 ): string {
-	const manifest = readManifest(manifestPath);
-
-	if (!Array.isArray(manifest.plugins)) {
-		throw new Error(
-			`Invalid marketplace manifest at ${manifestPath}: "plugins" must be an array`,
-		);
-	}
-
-	const entry = manifest.plugins.find(p => p.name === pluginName);
-	if (!entry) {
-		const available = manifest.plugins.map(p => p.name).join(', ');
-		throw new Error(
-			`Plugin "${pluginName}" not found in marketplace manifest ${manifestPath}. Available plugins: ${available}`,
-		);
-	}
-
 	let sourcePath: string;
 	if (typeof entry.source === 'string') {
 		sourcePath = entry.source;
@@ -169,7 +164,34 @@ function resolvePluginDirFromManifest(
 		);
 	}
 
-	const pluginDir = path.join(repoDir, relativeSourcePath);
+	return relativeSourcePath;
+}
+
+function resolvePluginDirFromManifest(
+	pluginName: string,
+	repoDir: string,
+	manifestPath: string,
+): string {
+	const manifest = readManifest(manifestPath);
+
+	if (!Array.isArray(manifest.plugins)) {
+		throw new Error(
+			`Invalid marketplace manifest at ${manifestPath}: "plugins" must be an array`,
+		);
+	}
+
+	const entry = manifest.plugins.find(p => p.name === pluginName);
+	if (!entry) {
+		const available = manifest.plugins.map(p => p.name).join(', ');
+		throw new Error(
+			`Plugin "${pluginName}" not found in marketplace manifest ${manifestPath}. Available plugins: ${available}`,
+		);
+	}
+
+	const pluginDir = path.join(
+		repoDir,
+		entryRelativeSourcePath(entry, pluginName),
+	);
 	if (!fs.existsSync(pluginDir)) {
 		throw new Error(`Plugin source directory not found: ${pluginDir}`);
 	}
@@ -324,8 +346,8 @@ function buildMarketplacePluginResolution(
  * Only clones if repo doesn't exist. No automatic pull on startup.
  * Returns the absolute path to the cached repo directory.
  */
-function ensureRepo(cacheDir: string, owner: string, repo: string): string {
-	const repoDir = path.join(cacheDir, owner, repo);
+function ensureRepo(owner: string, repo: string): string {
+	const repoDir = marketplaceRepoCacheDir(owner, repo);
 
 	if (!fs.existsSync(repoDir)) {
 		// Not cached — clone the repo
@@ -363,8 +385,7 @@ function ensureRepo(cacheDir: string, owner: string, repo: string): string {
  * Call this explicitly when user requests an update.
  */
 export function pullMarketplaceRepo(owner: string, repo: string): void {
-	const cacheDir = path.join(os.homedir(), '.config', 'athena', 'marketplaces');
-	const repoDir = path.join(cacheDir, owner, repo);
+	const repoDir = marketplaceRepoCacheDir(owner, repo);
 
 	if (!fs.existsSync(repoDir)) {
 		throw new Error(
@@ -395,8 +416,7 @@ export function resolveMarketplacePlugin(ref: string): string {
 	}
 
 	const {pluginName, owner, repo} = parseRef(ref);
-	const cacheDir = path.join(os.homedir(), '.config', 'athena', 'marketplaces');
-	const repoDir = ensureRepo(cacheDir, owner, repo);
+	const repoDir = ensureRepo(owner, repo);
 	return resolvePluginDirFromManifest(
 		pluginName,
 		repoDir,
@@ -416,8 +436,7 @@ export function resolveMarketplacePluginTarget(
 	}
 
 	const {owner, repo} = parseRef(ref);
-	const cacheDir = path.join(os.homedir(), '.config', 'athena', 'marketplaces');
-	const repoDir = ensureRepo(cacheDir, owner, repo);
+	const repoDir = ensureRepo(owner, repo);
 	return buildMarketplacePluginResolution(
 		ref,
 		repoDir,
@@ -440,6 +459,206 @@ export function resolveMarketplacePluginTargetFromRepo(
 		ref,
 		repoDir,
 		resolvePluginManifestPath(repoDir),
+	);
+}
+
+/** Default npm scope for marketplace plugin packages. */
+const PLUGIN_NPM_SCOPE = '@athenaflow';
+
+/**
+ * Derive the npm package name for a marketplace plugin.
+ * Convention: `@athenaflow/plugin-{name}` (e.g. `@athenaflow/plugin-agent-web-interface`).
+ */
+export function pluginNpmPackageName(pluginName: string): string {
+	return `${PLUGIN_NPM_SCOPE}/plugin-${pluginName}`;
+}
+
+/**
+ * Local cache directory for npm-fetched versioned plugin packages.
+ */
+function versionedPluginCacheDir(): string {
+	return path.join(os.homedir(), '.config', 'athena', 'plugin-packages');
+}
+
+/**
+ * Resolve a plugin at a specific version from the local package cache.
+ * Returns the cached plugin directory if the version exists, undefined otherwise.
+ */
+export function resolveVersionedPluginDir(
+	pluginName: string,
+	version: string,
+): string | undefined {
+	const cacheDir = path.join(versionedPluginCacheDir(), pluginName, version);
+	return fs.existsSync(cacheDir) ? cacheDir : undefined;
+}
+
+/**
+ * Fetch a specific plugin version from npm and cache it locally.
+ * Returns the path to the unpacked plugin directory.
+ */
+function fetchPluginPackage(pluginName: string, version: string): string {
+	const npmPkg = pluginNpmPackageName(pluginName);
+	const destDir = path.join(versionedPluginCacheDir(), pluginName, version);
+
+	if (fs.existsSync(destDir)) {
+		return destDir;
+	}
+
+	// Temp dir under cache dir to ensure renameSync stays on the same filesystem
+	const cacheBase = versionedPluginCacheDir();
+	fs.mkdirSync(cacheBase, {recursive: true});
+	const tmpDir = fs.mkdtempSync(path.join(cacheBase, '.tmp-'));
+	try {
+		const tarball = execFileSync(
+			'npm',
+			['pack', `${npmPkg}@${version}`, '--pack-destination', tmpDir],
+			{encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe']},
+		).trim();
+
+		const tarballPath = path.join(tmpDir, tarball);
+		if (!fs.existsSync(tarballPath)) {
+			throw new Error(`npm pack did not produce expected tarball: ${tarball}`);
+		}
+
+		// Extract tarball — npm pack creates a `package/` directory inside
+		const extractDir = path.join(tmpDir, 'extracted');
+		fs.mkdirSync(extractDir, {recursive: true});
+		execFileSync('tar', ['xzf', tarballPath, '-C', extractDir], {
+			stdio: 'ignore',
+		});
+
+		const packageDir = path.join(extractDir, 'package');
+		if (!fs.existsSync(packageDir)) {
+			throw new Error(
+				`Extracted tarball does not contain a package/ directory`,
+			);
+		}
+
+		// Move to versioned cache
+		fs.mkdirSync(path.dirname(destDir), {recursive: true});
+		fs.renameSync(packageDir, destDir);
+
+		return destDir;
+	} finally {
+		fs.rmSync(tmpDir, {recursive: true, force: true});
+	}
+}
+
+/**
+ * Write a synthetic marketplace manifest for a cached versioned plugin.
+ *
+ * Codex's plugin/install requires a marketplace manifest file on disk —
+ * it cannot install from a bare plugin directory. This generates a minimal
+ * manifest pointing at the cached version so Codex can install natively.
+ */
+function writeSyntheticCodexManifest(
+	pluginName: string,
+	version: string,
+	pluginDir: string,
+): string {
+	const marketplaceRoot = path.dirname(pluginDir);
+	const manifestDir = path.join(marketplaceRoot, '.agents', 'plugins');
+	const manifestPath = path.join(manifestDir, 'marketplace.json');
+	fs.mkdirSync(manifestDir, {recursive: true});
+	fs.writeFileSync(
+		manifestPath,
+		JSON.stringify({
+			name: `athena-versioned-${pluginName}`,
+			plugins: [
+				{
+					name: pluginName,
+					source: {source: 'local', path: `./${version}`},
+				},
+			],
+		}) + '\n',
+	);
+	return manifestPath;
+}
+
+/**
+ * Resolve a marketplace plugin pinned to a specific version.
+ *
+ * Resolution: local cache → npm registry → marketplace git repo fallback.
+ */
+export function resolveVersionedMarketplacePluginTarget(
+	ref: string,
+	version: string,
+	sourceRepoDir?: string,
+): CodexWorkflowPluginRef & ResolvedLocalWorkflowPlugin {
+	const {pluginName, owner, repo} = parseRef(ref);
+
+	const cachedDir = resolveVersionedPluginDir(pluginName, version);
+	if (cachedDir) {
+		const manifestPath = writeSyntheticCodexManifest(
+			pluginName,
+			version,
+			cachedDir,
+		);
+		return {
+			ref,
+			pluginName,
+			marketplacePath: manifestPath,
+			pluginDir: cachedDir,
+		};
+	}
+
+	let npmError: Error | undefined;
+	try {
+		const fetchedDir = fetchPluginPackage(pluginName, version);
+		const manifestPath = writeSyntheticCodexManifest(
+			pluginName,
+			version,
+			fetchedDir,
+		);
+		return {
+			ref,
+			pluginName,
+			marketplacePath: manifestPath,
+			pluginDir: fetchedDir,
+		};
+	} catch (error) {
+		npmError = error as Error;
+	}
+
+	// Fall back to marketplace source if current version matches.
+	// Read version from the plugin's own plugin.json (always versioned by CI),
+	// because the Codex-facing marketplace manifest has no version field.
+	const repoDir = sourceRepoDir ?? marketplaceRepoCacheDir(owner, repo);
+	if (fs.existsSync(repoDir)) {
+		const manifestPath = resolvePluginManifestPath(repoDir);
+		const manifest = readManifest(manifestPath);
+		const entry = manifest.plugins.find(p => p.name === pluginName);
+		if (entry) {
+			let currentVersion = entry.version;
+			if (!currentVersion) {
+				try {
+					const relPath = entryRelativeSourcePath(entry, pluginName);
+					const pluginJsonPath = path.join(
+						repoDir,
+						relPath,
+						'.claude-plugin',
+						'plugin.json',
+					);
+					const pluginMeta = JSON.parse(
+						fs.readFileSync(pluginJsonPath, 'utf-8'),
+					) as {version?: string};
+					currentVersion = pluginMeta.version;
+				} catch {
+					// Source path invalid or plugin.json missing/malformed
+				}
+			}
+			if (currentVersion === version) {
+				return buildMarketplacePluginResolution(ref, repoDir, manifestPath);
+			}
+		}
+	}
+
+	throw new Error(
+		`Plugin "${pluginName}" version ${version} not available. ` +
+			(npmError
+				? `npm: ${npmError.message}. `
+				: `npm package ${pluginNpmPackageName(pluginName)}@${version} not found. `) +
+			`Marketplace repo ${owner}/${repo} does not have this version.`,
 	);
 }
 
@@ -549,8 +768,7 @@ export function listMarketplaceWorkflows(
 		);
 	}
 
-	const cacheDir = path.join(os.homedir(), '.config', 'athena', 'marketplaces');
-	const repoDir = ensureRepo(cacheDir, owner, repo);
+	const repoDir = ensureRepo(owner, repo);
 	return listWorkflowEntriesFromManifest(
 		repoDir,
 		resolveWorkflowManifestPath(repoDir),
@@ -585,8 +803,7 @@ export function resolveMarketplaceWorkflow(ref: string): string {
 	}
 
 	const {pluginName: workflowName, owner, repo} = parseRef(ref);
-	const cacheDir = path.join(os.homedir(), '.config', 'athena', 'marketplaces');
-	const repoDir = ensureRepo(cacheDir, owner, repo);
+	const repoDir = ensureRepo(owner, repo);
 	return resolveWorkflowPathFromManifest(
 		workflowName,
 		repoDir,

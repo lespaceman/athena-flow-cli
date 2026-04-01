@@ -8,6 +8,7 @@
 import {
 	resolveMarketplacePluginTarget,
 	resolveMarketplacePluginTargetFromRepo,
+	resolveVersionedMarketplacePluginTarget,
 } from '../../infra/plugins/marketplace';
 import type {
 	CodexWorkflowPluginRef,
@@ -15,6 +16,7 @@ import type {
 	ResolvedWorkflowConfig,
 	WorkflowConfig,
 } from './types';
+import {pluginSpecRef, pluginSpecVersion} from './types';
 
 /**
  * Resolve all plugins listed in a workflow to absolute directory paths.
@@ -35,9 +37,21 @@ export type ResolvedWorkflowPlugins = {
 export function resolveWorkflowPlugins(
 	workflow: WorkflowConfig | ResolvedWorkflowConfig,
 ): ResolvedWorkflowPlugins {
-	const resolved = workflow.plugins.map(ref => {
+	const resolved = workflow.plugins.map(spec => {
+		const ref = pluginSpecRef(spec);
+		const version = pluginSpecVersion(spec);
+
 		try {
 			const source = '__source' in workflow ? workflow.__source : undefined;
+
+			if (version) {
+				return resolveVersionedMarketplacePluginTarget(
+					ref,
+					version,
+					source?.kind === 'local' ? source.repoDir : undefined,
+				);
+			}
+
 			if (source?.kind === 'local' && source.repoDir) {
 				return resolveMarketplacePluginTargetFromRepo(ref, source.repoDir);
 			}
