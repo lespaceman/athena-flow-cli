@@ -170,7 +170,7 @@ describe('resolveWorkflow', () => {
 				promptTemplate: '{input}',
 			});
 		expect(() => resolveWorkflow('bad-spec')).toThrow(
-			/each plugin must be a string or/,
+			/valid marketplace ref string or/,
 		);
 
 		files['/home/testuser/.config/athena/workflows/bad-spec/workflow.json'] =
@@ -180,7 +180,7 @@ describe('resolveWorkflow', () => {
 				promptTemplate: '{input}',
 			});
 		expect(() => resolveWorkflow('bad-spec')).toThrow(
-			/each plugin must be a string or/,
+			/valid marketplace ref string or/,
 		);
 	});
 
@@ -192,7 +192,33 @@ describe('resolveWorkflow', () => {
 				promptTemplate: '{input}',
 			});
 		expect(() => resolveWorkflow('bad-type')).toThrow(
-			/each plugin must be a string or/,
+			/valid marketplace ref string or/,
+		);
+	});
+
+	it('throws when plugin spec is a blank string', () => {
+		files['/home/testuser/.config/athena/workflows/bad-string/workflow.json'] =
+			JSON.stringify({
+				name: 'bad-string',
+				plugins: ['   '],
+				promptTemplate: '{input}',
+			});
+
+		expect(() => resolveWorkflow('bad-string')).toThrow(
+			/valid marketplace ref string or/,
+		);
+	});
+
+	it('throws when plugin spec string is not a valid marketplace ref', () => {
+		files['/home/testuser/.config/athena/workflows/bad-ref/workflow.json'] =
+			JSON.stringify({
+				name: 'bad-ref',
+				plugins: ['not-a-valid-ref'],
+				promptTemplate: '{input}',
+			});
+
+		expect(() => resolveWorkflow('bad-ref')).toThrow(
+			/valid marketplace ref string or/,
 		);
 	});
 

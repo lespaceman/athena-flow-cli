@@ -3,6 +3,7 @@ import {describe, it, expect, vi, beforeEach} from 'vitest';
 const files: Record<string, string> = {};
 const dirs: Set<string> = new Set();
 let execFileSyncMock: ReturnType<typeof vi.fn>;
+let renameSyncMock: ReturnType<typeof vi.fn>;
 
 vi.mock('node:fs', () => ({
 	default: {
@@ -12,6 +13,11 @@ vi.mock('node:fs', () => ({
 			return files[p]!;
 		},
 		mkdirSync: vi.fn(),
+		mkdtempSync: (prefix: string) => `${prefix}fixture`,
+		writeFileSync: (p: string, content: string) => {
+			files[p] = content;
+		},
+		renameSync: (...args: unknown[]) => renameSyncMock(...args),
 		rmSync: vi.fn(),
 	},
 }));
@@ -36,6 +42,7 @@ const {
 	resolveMarketplacePlugin,
 	resolveMarketplacePluginFromRepo,
 	resolveMarketplaceWorkflow,
+	resolveVersionedMarketplacePluginTarget,
 } = await import('../marketplace');
 
 beforeEach(() => {
@@ -44,7 +51,50 @@ beforeEach(() => {
 	}
 	dirs.clear();
 	execFileSyncMock = vi.fn();
+	renameSyncMock = vi.fn((from: string, to: string) => {
+		const prefix = `${from}/`;
+		for (const dir of [...dirs]) {
+			if (dir === from || dir.startsWith(prefix)) {
+				dirs.delete(dir);
+				dirs.add(dir === from ? to : `${to}${dir.slice(from.length)}`);
+			}
+		}
+		for (const [filePath, content] of Object.entries(files)) {
+			if (filePath === from || filePath.startsWith(prefix)) {
+				delete files[filePath];
+				files[filePath === from ? to : `${to}${filePath.slice(from.length)}`] =
+					content;
+			}
+		}
+	});
 });
+
+function addPackagedPluginArtifacts(pluginRoot: string, version: string): void {
+	const releaseDir = `${pluginRoot}/dist/${version}`;
+	dirs.add(pluginRoot);
+	dirs.add(`${pluginRoot}/dist`);
+	dirs.add(releaseDir);
+	dirs.add(`${releaseDir}/claude/plugin`);
+	dirs.add(`${releaseDir}/.agents`);
+	dirs.add(`${releaseDir}/.agents/plugins`);
+	dirs.add(`${releaseDir}/codex`);
+	files[`${releaseDir}/release.json`] = JSON.stringify({
+		version,
+		artifacts: {
+			claude: {path: './claude/plugin'},
+			codex: {
+				marketplacePath: './.agents/plugins/marketplace.json',
+				pluginPath: './codex/plugin',
+			},
+		},
+	});
+	dirs.add(`${releaseDir}/codex/plugin`);
+	files[`${releaseDir}/.agents/plugins/marketplace.json`] = JSON.stringify({
+		name: 'packaged-marketplace',
+		owner: {name: 'Test Team'},
+		plugins: [],
+	});
+}
 
 describe('isMarketplaceRef', () => {
 	it('returns true for valid marketplace references', () => {
@@ -456,6 +506,222 @@ describe('resolveMarketplacePluginFromRepo', () => {
 		);
 
 		expect(result).toBe(`${repoDir}/plugins/local-plugin`);
+	});
+});
+
+describe('resolveVersionedMarketplacePluginTarget', () => {
+	const owner = 'lespaceman';
+	const repo = 'athena-workflow-marketplace';
+	const pluginName = 'web-testing-toolkit';
+	const ref = `${pluginName}@${owner}/${repo}`;
+	const version = '1.2.3';
+	const cacheDir = `/home/testuser/.config/athena/plugin-packages/${owner}/${repo}/${pluginName}/${version}`;
+	const repoDir = `/home/testuser/.config/athena/marketplaces/${owner}/${repo}`;
+
+	it('resolves packaged artifacts directly from the versioned cache', () => {
+		addPackagedPluginArtifacts(cacheDir, version);
+
+		const result = resolveVersionedMarketplacePluginTarget(ref, version);
+
+		expect(result).toEqual({
+			ref,
+			pluginName,
+			marketplacePath: `${cacheDir}/dist/${version}/.agents/plugins/marketplace.json`,
+			pluginDir: `${cacheDir}/dist/${version}/claude/plugin`,
+		});
+		expect(execFileSyncMock).not.toHaveBeenCalled();
+	});
+
+	it('fetches the npm package and resolves packaged artifacts from release.json', () => {
+		execFileSyncMock.mockImplementation((cmd: string, args: string[]) => {
+			if (
+				cmd === 'npm' &&
+				args[0] === 'pack' &&
+				args[1] === '@athenaflow/plugin-web-testing-toolkit@1.2.3'
+			) {
+				files[
+					'/home/testuser/.config/athena/plugin-packages/.tmp-fixture/plugin.tgz'
+				] = 'tarball';
+				return 'plugin.tgz';
+			}
+			if (cmd === 'tar' && args[0] === 'xzf') {
+				const extractDir = args[3] as string;
+				const packageDir = `${extractDir}/package`;
+				addPackagedPluginArtifacts(packageDir, version);
+				return;
+			}
+		});
+
+		const result = resolveVersionedMarketplacePluginTarget(ref, version);
+
+		expect(result).toEqual({
+			ref,
+			pluginName,
+			marketplacePath: `${cacheDir}/dist/${version}/.agents/plugins/marketplace.json`,
+			pluginDir: `${cacheDir}/dist/${version}/claude/plugin`,
+		});
+		expect(execFileSyncMock).toHaveBeenCalledWith(
+			'npm',
+			[
+				'pack',
+				'@athenaflow/plugin-web-testing-toolkit@1.2.3',
+				'--pack-destination',
+				'/home/testuser/.config/athena/plugin-packages/.tmp-fixture',
+			],
+			{encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe']},
+		);
+	});
+
+	it('tolerates same-version cache races when another process wins the final rename', () => {
+		execFileSyncMock.mockImplementation((cmd: string, args: string[]) => {
+			if (
+				cmd === 'npm' &&
+				args[0] === 'pack' &&
+				args[1] === '@athenaflow/plugin-web-testing-toolkit@1.2.3'
+			) {
+				files[
+					'/home/testuser/.config/athena/plugin-packages/.tmp-fixture/plugin.tgz'
+				] = 'tarball';
+				return 'plugin.tgz';
+			}
+			if (cmd === 'tar' && args[0] === 'xzf') {
+				const extractDir = args[3] as string;
+				const packageDir = `${extractDir}/package`;
+				addPackagedPluginArtifacts(packageDir, version);
+				return;
+			}
+		});
+
+		renameSyncMock.mockImplementation((_from: string, to: string) => {
+			addPackagedPluginArtifacts(to, version);
+			const error = Object.assign(new Error('already exists'), {
+				code: 'EEXIST',
+			});
+			throw error;
+		});
+
+		const result = resolveVersionedMarketplacePluginTarget(ref, version);
+
+		expect(result).toEqual({
+			ref,
+			pluginName,
+			marketplacePath: `${cacheDir}/dist/${version}/.agents/plugins/marketplace.json`,
+			pluginDir: `${cacheDir}/dist/${version}/claude/plugin`,
+		});
+	});
+
+	it('rejects packaged artifacts when release.json version does not match the requested version', () => {
+		addPackagedPluginArtifacts(cacheDir, version);
+		files[`${cacheDir}/dist/${version}/release.json`] = JSON.stringify({
+			version: '9.9.9',
+			artifacts: {
+				claude: {path: './claude/plugin'},
+				codex: {
+					marketplacePath: './.agents/plugins/marketplace.json',
+					pluginPath: './codex/plugin',
+				},
+			},
+		});
+
+		expect(() => resolveVersionedMarketplacePluginTarget(ref, version)).toThrow(
+			/missing packaged runtime artifacts/,
+		);
+	});
+
+	it('rejects packaged artifacts that escape the release directory', () => {
+		const releaseDir = `${cacheDir}/dist/${version}`;
+		dirs.add(cacheDir);
+		dirs.add(`${cacheDir}/dist`);
+		dirs.add(releaseDir);
+		files[`${releaseDir}/release.json`] = JSON.stringify({
+			version,
+			artifacts: {
+				claude: {path: '../outside'},
+				codex: {
+					marketplacePath: './.agents/plugins/marketplace.json',
+					pluginPath: './codex/plugin',
+				},
+			},
+		});
+		dirs.add(`${releaseDir}/.agents`);
+		dirs.add(`${releaseDir}/.agents/plugins`);
+		dirs.add(`${releaseDir}/codex`);
+		dirs.add(`${releaseDir}/codex/plugin`);
+		files[`${releaseDir}/.agents/plugins/marketplace.json`] = JSON.stringify({
+			name: 'packaged-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [],
+		});
+
+		expect(() => resolveVersionedMarketplacePluginTarget(ref, version)).toThrow(
+			/missing packaged runtime artifacts/,
+		);
+	});
+
+	it('falls back to the source marketplace repo only when the repo version matches', () => {
+		dirs.add(repoDir);
+		dirs.add(`${repoDir}/.agents`);
+		dirs.add(`${repoDir}/.agents/plugins`);
+		files[`${repoDir}/.agents/plugins/marketplace.json`] = JSON.stringify({
+			name: 'athena-workflow-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [
+				{
+					name: pluginName,
+					source: `./plugins/${pluginName}`,
+				},
+			],
+		});
+		dirs.add(`${repoDir}/plugins/${pluginName}`);
+		files[`${repoDir}/plugins/${pluginName}/.claude-plugin/plugin.json`] =
+			JSON.stringify({version});
+		addPackagedPluginArtifacts(`${repoDir}/plugins/${pluginName}`, version);
+		execFileSyncMock.mockImplementation((cmd: string) => {
+			if (cmd === 'npm') {
+				throw new Error('npm unavailable');
+			}
+		});
+
+		const result = resolveVersionedMarketplacePluginTarget(
+			ref,
+			version,
+			repoDir,
+		);
+
+		expect(result).toEqual({
+			ref,
+			pluginName,
+			marketplacePath: `${repoDir}/plugins/${pluginName}/dist/${version}/.agents/plugins/marketplace.json`,
+			pluginDir: `${repoDir}/plugins/${pluginName}/dist/${version}/claude/plugin`,
+		});
+	});
+
+	it('throws when npm fails and the source repo version does not match', () => {
+		dirs.add(repoDir);
+		dirs.add(`${repoDir}/.agents`);
+		dirs.add(`${repoDir}/.agents/plugins`);
+		files[`${repoDir}/.agents/plugins/marketplace.json`] = JSON.stringify({
+			name: 'athena-workflow-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [
+				{
+					name: pluginName,
+					source: `./plugins/${pluginName}`,
+				},
+			],
+		});
+		dirs.add(`${repoDir}/plugins/${pluginName}`);
+		files[`${repoDir}/plugins/${pluginName}/.claude-plugin/plugin.json`] =
+			JSON.stringify({version: '9.9.9'});
+		execFileSyncMock.mockImplementation((cmd: string) => {
+			if (cmd === 'npm') {
+				throw new Error('npm unavailable');
+			}
+		});
+
+		expect(() =>
+			resolveVersionedMarketplacePluginTarget(ref, version, repoDir),
+		).toThrow(/version 1\.2\.3 not available/);
 	});
 });
 

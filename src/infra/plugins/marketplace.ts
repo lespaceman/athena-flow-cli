@@ -364,6 +364,14 @@ type ReleaseArtifactManifest = {
 	};
 };
 
+function isPathWithinRoot(rootDir: string, targetPath: string): boolean {
+	const relative = path.relative(rootDir, targetPath);
+	return (
+		relative === '' ||
+		(!relative.startsWith('..') && !path.isAbsolute(relative))
+	);
+}
+
 function resolvePluginVersionFromDir(pluginDir: string): string | undefined {
 	const manifestPaths = [
 		path.join(pluginDir, '.codex-plugin', 'plugin.json'),
@@ -397,6 +405,9 @@ function resolvePackagedArtifactLayout(
 		const release = JSON.parse(
 			fs.readFileSync(releasePath, 'utf-8'),
 		) as ReleaseArtifactManifest;
+		if (release.version !== version) {
+			return undefined;
+		}
 		const claudePath = release.artifacts?.claude?.path;
 		const codexMarketplacePath = release.artifacts?.codex?.marketplacePath;
 		const codexPluginPath = release.artifacts?.codex?.pluginPath;
@@ -414,6 +425,13 @@ function resolvePackagedArtifactLayout(
 			codexMarketplacePath,
 		);
 		const codexPluginDir = path.resolve(releaseDir, codexPluginPath);
+		if (
+			!isPathWithinRoot(releaseDir, claudeArtifactDir) ||
+			!isPathWithinRoot(releaseDir, resolvedCodexMarketplacePath) ||
+			!isPathWithinRoot(releaseDir, codexPluginDir)
+		) {
+			return undefined;
+		}
 		if (
 			!fs.existsSync(claudeArtifactDir) ||
 			!fs.existsSync(resolvedCodexMarketplacePath) ||
@@ -645,7 +663,24 @@ function fetchPluginPackage(
 
 		// Move to versioned cache
 		fs.mkdirSync(path.dirname(destDir), {recursive: true});
-		fs.renameSync(packageDir, destDir);
+		try {
+			fs.renameSync(packageDir, destDir);
+		} catch (error) {
+			const code =
+				typeof error === 'object' &&
+				error !== null &&
+				'code' in error &&
+				typeof (error as {code?: unknown}).code === 'string'
+					? (error as {code: string}).code
+					: undefined;
+			if (
+				(code === 'EEXIST' || code === 'ENOTEMPTY') &&
+				fs.existsSync(destDir)
+			) {
+				return destDir;
+			}
+			throw error;
+		}
 
 		return destDir;
 	} finally {

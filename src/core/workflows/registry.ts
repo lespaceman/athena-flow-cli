@@ -140,12 +140,20 @@ export function resolveWorkflow(name: string): ResolvedWorkflowConfig {
 	}
 
 	for (const entry of raw['plugins'] as unknown[]) {
-		if (typeof entry === 'string') continue;
+		if (typeof entry === 'string') {
+			if (isMarketplaceRef(entry.trim())) {
+				continue;
+			}
+			throw new Error(
+				`Invalid workflow.json: each plugin must be a valid marketplace ref string or {ref, version} object`,
+			);
+		}
 		if (typeof entry === 'object' && entry !== null) {
 			const r = (entry as Record<string, unknown>)['ref'];
 			const v = (entry as Record<string, unknown>)['version'];
 			if (
 				typeof r === 'string' &&
+				isMarketplaceRef(r.trim()) &&
 				r.trim().length > 0 &&
 				typeof v === 'string' &&
 				v.trim().length > 0
@@ -154,7 +162,7 @@ export function resolveWorkflow(name: string): ResolvedWorkflowConfig {
 			}
 		}
 		throw new Error(
-			`Invalid workflow.json: each plugin must be a string or {ref, version} object`,
+			`Invalid workflow.json: each plugin must be a valid marketplace ref string or {ref, version} object`,
 		);
 	}
 
