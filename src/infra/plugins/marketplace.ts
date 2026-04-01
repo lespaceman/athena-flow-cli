@@ -564,13 +564,6 @@ function fetchPluginPackage(
 }
 
 /**
- * Write a synthetic marketplace manifest for a cached versioned plugin.
- *
- * Codex's plugin/install requires a marketplace manifest file on disk —
- * it cannot install from a bare plugin directory. This generates a minimal
- * manifest pointing at the cached version so Codex can install natively.
- */
-/**
  * Write a per-version synthetic marketplace manifest for a cached plugin.
  *
  * Codex's plugin/install requires a marketplace manifest file on disk —

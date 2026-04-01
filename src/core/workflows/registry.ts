@@ -168,7 +168,7 @@ export function resolveWorkflow(name: string): ResolvedWorkflowConfig {
 			!raw['examplePrompts'].every((e: unknown) => typeof e === 'string'))
 	) {
 		throw new Error(
-			`Invalid workflow.json: "examples" must be an array of strings`,
+			`Invalid workflow.json: "examplePrompts" must be an array of strings`,
 		);
 	}
 

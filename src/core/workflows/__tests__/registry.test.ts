@@ -162,6 +162,40 @@ describe('resolveWorkflow', () => {
 		expect(() => resolveWorkflow('bad')).toThrow(/plugins.*must be an array/);
 	});
 
+	it('throws when plugin spec has empty ref or version', () => {
+		files['/home/testuser/.config/athena/workflows/bad-spec/workflow.json'] =
+			JSON.stringify({
+				name: 'bad-spec',
+				plugins: [{ref: '', version: '1.0.0'}],
+				promptTemplate: '{input}',
+			});
+		expect(() => resolveWorkflow('bad-spec')).toThrow(
+			/each plugin must be a string or/,
+		);
+
+		files['/home/testuser/.config/athena/workflows/bad-spec/workflow.json'] =
+			JSON.stringify({
+				name: 'bad-spec',
+				plugins: [{ref: 'foo@owner/repo', version: '  '}],
+				promptTemplate: '{input}',
+			});
+		expect(() => resolveWorkflow('bad-spec')).toThrow(
+			/each plugin must be a string or/,
+		);
+	});
+
+	it('throws when plugin spec is a non-string non-object', () => {
+		files['/home/testuser/.config/athena/workflows/bad-type/workflow.json'] =
+			JSON.stringify({
+				name: 'bad-type',
+				plugins: [42],
+				promptTemplate: '{input}',
+			});
+		expect(() => resolveWorkflow('bad-type')).toThrow(
+			/each plugin must be a string or/,
+		);
+	});
+
 	it('resolves trackerTemplate .md file reference to file contents', () => {
 		const workflow = {
 			name: 'looping',
