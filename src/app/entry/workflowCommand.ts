@@ -1,5 +1,6 @@
 import {
 	installWorkflow,
+	listBuiltinWorkflows,
 	listWorkflows,
 	removeWorkflow,
 	resolveWorkflow,
@@ -8,8 +9,7 @@ import {
 import {
 	listMarketplaceWorkflows,
 	listMarketplaceWorkflowsFromRepo,
-	pullMarketplaceRepo,
-	resolveWorkflowInstallSource,
+	resolveWorkflowInstallSourceFromSources,
 	resolveWorkflowMarketplaceSource,
 } from '../../infra/plugins/marketplace';
 import {readGlobalConfig, writeGlobalConfig} from '../../infra/plugins/config';
@@ -21,14 +21,9 @@ const USAGE = `Usage: athena-flow workflow <subcommand>
 Subcommands
   install <source>   Install a workflow from a name, file path, or marketplace ref
   list               List installed workflows
-  remote list [source]
-                     List workflows available in the configured or specified marketplace
+  search             Browse available workflows across all configured marketplaces
   remove <name>      Remove an installed workflow
-  update [name]      Re-sync an installed workflow from its recorded source
-  use-marketplace <source>
-                     Set workflow marketplace source (owner/repo or local path)
-  update-marketplace [source]
-                     Refresh the current marketplace source (default: configured source or ${DEFAULT_MARKETPLACE_SLUG})
+  upgrade [name]     Re-sync installed workflow(s) from their recorded source
   use <name>         Set the globally active workflow`;
 
 export type WorkflowCommandInput = {
@@ -39,13 +34,13 @@ export type WorkflowCommandInput = {
 export type WorkflowCommandDeps = {
 	installWorkflow?: typeof installWorkflow;
 	listWorkflows?: typeof listWorkflows;
+	listBuiltinWorkflows?: typeof listBuiltinWorkflows;
 	removeWorkflow?: typeof removeWorkflow;
 	updateWorkflow?: typeof updateWorkflow;
 	resolveWorkflow?: typeof resolveWorkflow;
-	pullMarketplaceRepo?: typeof pullMarketplaceRepo;
 	listMarketplaceWorkflows?: typeof listMarketplaceWorkflows;
 	listMarketplaceWorkflowsFromRepo?: typeof listMarketplaceWorkflowsFromRepo;
-	resolveWorkflowInstallSource?: typeof resolveWorkflowInstallSource;
+	resolveWorkflowInstallSourceFromSources?: typeof resolveWorkflowInstallSourceFromSources;
 	resolveWorkflowMarketplaceSource?: typeof resolveWorkflowMarketplaceSource;
 	readGlobalConfig?: typeof readGlobalConfig;
 	writeGlobalConfig?: typeof writeGlobalConfig;
@@ -59,16 +54,17 @@ export function runWorkflowCommand(
 ): number {
 	const install = deps.installWorkflow ?? installWorkflow;
 	const list = deps.listWorkflows ?? listWorkflows;
+	const listBuiltins = deps.listBuiltinWorkflows ?? listBuiltinWorkflows;
 	const remove = deps.removeWorkflow ?? removeWorkflow;
 	const resolveInstalledWorkflow = deps.resolveWorkflow ?? resolveWorkflow;
-	const update = deps.updateWorkflow ?? updateWorkflow;
-	const pullMarketplace = deps.pullMarketplaceRepo ?? pullMarketplaceRepo;
+	const upgrade = deps.updateWorkflow ?? updateWorkflow;
 	const listMarketplace =
 		deps.listMarketplaceWorkflows ?? listMarketplaceWorkflows;
 	const listMarketplaceFromRepo =
 		deps.listMarketplaceWorkflowsFromRepo ?? listMarketplaceWorkflowsFromRepo;
-	const resolveInstallSource =
-		deps.resolveWorkflowInstallSource ?? resolveWorkflowInstallSource;
+	const resolveInstallFromSources =
+		deps.resolveWorkflowInstallSourceFromSources ??
+		resolveWorkflowInstallSourceFromSources;
 	const resolveMarketplaceSource =
 		deps.resolveWorkflowMarketplaceSource ?? resolveWorkflowMarketplaceSource;
 	const readConfig = deps.readGlobalConfig ?? readGlobalConfig;
@@ -100,6 +96,11 @@ export function runWorkflowCommand(
 		}
 	};
 
+	const getMarketplaceSources = (): string[] => {
+		const sources = readConfig().workflowMarketplaceSources;
+		return sources && sources.length > 0 ? sources : [DEFAULT_MARKETPLACE_SLUG];
+	};
+
 	switch (input.subcommand) {
 		case 'install': {
 			const source = input.subcommandArgs[0];
@@ -108,9 +109,9 @@ export function runWorkflowCommand(
 				return 1;
 			}
 			try {
-				const installSource = resolveInstallSource(
+				const installSource = resolveInstallFromSources(
 					source,
-					readConfig().workflowMarketplaceSource ?? DEFAULT_MARKETPLACE_SLUG,
+					getMarketplaceSources(),
 				);
 				const name = install(installSource);
 				logOut(`Installed workflow: ${formatWorkflowLabel(name)}`);
@@ -133,100 +134,65 @@ export function runWorkflowCommand(
 			return 0;
 		}
 
-		case 'remote': {
-			const [remoteSubcommand, sourceArg] = input.subcommandArgs;
-			if (remoteSubcommand !== 'list') {
-				logError('Usage: athena-flow workflow remote list [source]');
+		case 'search': {
+			const sources = getMarketplaceSources();
+			try {
+				let found = false;
+				for (const source of sources) {
+					const resolvedSource = resolveMarketplaceSource(source);
+					const workflows =
+						resolvedSource.kind === 'remote'
+							? listMarketplace(resolvedSource.owner, resolvedSource.repo)
+							: listMarketplaceFromRepo(resolvedSource.repoDir);
+
+					for (const workflow of workflows) {
+						logOut(formatMarketplaceWorkflow(workflow));
+						found = true;
+					}
+				}
+				if (!found) {
+					logOut('No workflows found in any configured marketplace.');
+				}
+				return 0;
+			} catch (error) {
+				logError(fmtError(error));
 				return 1;
 			}
+		}
 
-			const source =
-				sourceArg ??
-				readConfig().workflowMarketplaceSource ??
-				DEFAULT_MARKETPLACE_SLUG;
-
-			try {
-				const resolvedSource = resolveMarketplaceSource(source);
-				const workflows =
-					resolvedSource.kind === 'remote'
-						? listMarketplace(resolvedSource.owner, resolvedSource.repo)
-						: listMarketplaceFromRepo(resolvedSource.repoDir);
-
-				if (workflows.length === 0) {
-					logOut('No remote workflows found.');
+		case 'upgrade': {
+			const name = input.subcommandArgs[0];
+			if (name) {
+				// Upgrade a single workflow
+				try {
+					const updatedName = upgrade(name);
+					logOut(`Upgraded workflow: ${formatWorkflowLabel(updatedName)}`);
 					return 0;
+				} catch (error) {
+					logError(fmtError(error));
+					return 1;
 				}
+			}
 
-				for (const workflow of workflows) {
-					logOut(formatMarketplaceWorkflow(workflow));
+			// Upgrade all non-builtin workflows
+			const builtins = new Set(listBuiltins());
+			const all = list().filter(n => !builtins.has(n));
+			if (all.length === 0) {
+				logOut('No installed workflows to upgrade.');
+				return 0;
+			}
+
+			let failures = 0;
+			for (const wfName of all) {
+				try {
+					const updatedName = upgrade(wfName);
+					logOut(`Upgraded workflow: ${formatWorkflowLabel(updatedName)}`);
+				} catch (error) {
+					logError(`Failed to upgrade "${wfName}": ${fmtError(error)}`);
+					failures++;
 				}
-				return 0;
-			} catch (error) {
-				logError(fmtError(error));
-				return 1;
 			}
-		}
-
-		case 'update': {
-			const configuredActiveWorkflow = readConfig().activeWorkflow;
-			const name = input.subcommandArgs[0] ?? configuredActiveWorkflow;
-			if (!name) {
-				logError('Usage: athena-flow workflow update [name]');
-				return 1;
-			}
-			try {
-				const updatedName = update(name);
-				logOut(`Updated workflow: ${formatWorkflowLabel(updatedName)}`);
-				return 0;
-			} catch (error) {
-				logError(fmtError(error));
-				return 1;
-			}
-		}
-
-		case 'update-marketplace': {
-			const source =
-				input.subcommandArgs[0] ??
-				readConfig().workflowMarketplaceSource ??
-				DEFAULT_MARKETPLACE_SLUG;
-			try {
-				const resolvedSource = resolveMarketplaceSource(source);
-				if (resolvedSource.kind === 'remote') {
-					pullMarketplace(resolvedSource.owner, resolvedSource.repo);
-					logOut(`Updated marketplace: ${resolvedSource.slug}`);
-				} else {
-					listMarketplaceFromRepo(resolvedSource.repoDir);
-					logOut(`Local marketplace ready: ${resolvedSource.repoDir}`);
-				}
-				return 0;
-			} catch (error) {
-				logError(fmtError(error));
-				return 1;
-			}
-		}
-
-		case 'use-marketplace': {
-			const source = input.subcommandArgs[0];
-			if (!source) {
-				logError('Usage: athena-flow workflow use-marketplace <source>');
-				return 1;
-			}
-			try {
-				const resolvedSource = resolveMarketplaceSource(source);
-				if (resolvedSource.kind === 'remote') {
-					listMarketplace(resolvedSource.owner, resolvedSource.repo);
-					writeConfig({workflowMarketplaceSource: resolvedSource.slug});
-					logOut(`Workflow marketplace: ${resolvedSource.slug}`);
-				} else {
-					listMarketplaceFromRepo(resolvedSource.repoDir);
-					writeConfig({workflowMarketplaceSource: resolvedSource.repoDir});
-					logOut(`Workflow marketplace: ${resolvedSource.repoDir}`);
-				}
-				return 0;
-			} catch (error) {
-				logError(fmtError(error));
-				return 1;
-			}
+			return failures > 0 ? 1 : 0;
 		}
 
 		case 'remove': {

@@ -16,7 +16,9 @@ const generateDeviceIdMock = vi.fn(() => 'generated-device-id');
 const trackAppLaunchedMock = vi.fn();
 const trackErrorMock = vi.fn();
 const trackTelemetryOptedOutMock = vi.fn();
-const resolveWorkflowInstallSourceMock = vi.fn((source: string) => source);
+const resolveWorkflowInstallSourceFromSourcesMock = vi.fn(
+	(source: string) => source,
+);
 
 const EXEC_EXIT_CODE = {
 	SUCCESS: 0,
@@ -80,8 +82,8 @@ vi.mock('../../ui/theme/index', () => ({
 }));
 
 vi.mock('../../infra/plugins/marketplace', () => ({
-	resolveWorkflowInstallSource: (...args: unknown[]) =>
-		resolveWorkflowInstallSourceMock(...args),
+	resolveWorkflowInstallSourceFromSources: (...args: unknown[]) =>
+		resolveWorkflowInstallSourceFromSourcesMock(...args),
 }));
 
 vi.mock('../../infra/telemetry/index', () => ({
@@ -182,8 +184,8 @@ describe('cli exec mode', () => {
 		trackAppLaunchedMock.mockReset();
 		trackErrorMock.mockReset();
 		trackTelemetryOptedOutMock.mockReset();
-		resolveWorkflowInstallSourceMock.mockReset();
-		resolveWorkflowInstallSourceMock.mockImplementation(
+		resolveWorkflowInstallSourceFromSourcesMock.mockReset();
+		resolveWorkflowInstallSourceFromSourcesMock.mockImplementation(
 			(source: string) => source,
 		);
 
@@ -417,9 +419,9 @@ describe('cli exec mode', () => {
 		try {
 			await new Promise(resolve => setImmediate(resolve));
 			expect(renderMock).toHaveBeenCalledTimes(1);
-			expect(resolveWorkflowInstallSourceMock).toHaveBeenCalledWith(
+			expect(resolveWorkflowInstallSourceFromSourcesMock).toHaveBeenCalledWith(
 				'e2e-test-builder',
-				'lespaceman/athena-workflow-marketplace',
+				['lespaceman/athena-workflow-marketplace'],
 			);
 			expect(cli.exitSpy).not.toHaveBeenCalled();
 		} finally {

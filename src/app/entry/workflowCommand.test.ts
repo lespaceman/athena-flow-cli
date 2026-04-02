@@ -10,7 +10,7 @@ describe('runWorkflowCommand', () => {
 				name: 'my-workflow',
 				version: '1.0.0',
 			});
-			const resolveWorkflowInstallSource = vi
+			const resolveWorkflowInstallSourceFromSources = vi
 				.fn()
 				.mockReturnValue('/path/to/workflow.json');
 			const readGlobalConfig = vi.fn().mockReturnValue({
@@ -23,16 +23,16 @@ describe('runWorkflowCommand', () => {
 				{
 					installWorkflow,
 					resolveWorkflow,
-					resolveWorkflowInstallSource,
+					resolveWorkflowInstallSourceFromSources,
 					readGlobalConfig,
 					logOut,
 				},
 			);
 
 			expect(code).toBe(0);
-			expect(resolveWorkflowInstallSource).toHaveBeenCalledWith(
+			expect(resolveWorkflowInstallSourceFromSources).toHaveBeenCalledWith(
 				'/path/to/workflow.json',
-				'lespaceman/athena-workflow-marketplace',
+				['lespaceman/athena-workflow-marketplace'],
 			);
 			expect(installWorkflow).toHaveBeenCalledWith('/path/to/workflow.json');
 			expect(resolveWorkflow).toHaveBeenCalledWith('my-workflow');
@@ -41,14 +41,14 @@ describe('runWorkflowCommand', () => {
 			);
 		});
 
-		it('resolves bare workflow names from the configured marketplace source', () => {
+		it('resolves bare workflow names from configured marketplace sources', () => {
 			const logOut = vi.fn();
 			const installWorkflow = vi.fn().mockReturnValue('e2e-test-builder');
 			const resolveWorkflow = vi.fn().mockReturnValue({
 				name: 'e2e-test-builder',
 				version: '2.4.1',
 			});
-			const resolveWorkflowInstallSource = vi
+			const resolveWorkflowInstallSourceFromSources = vi
 				.fn()
 				.mockReturnValue(
 					'/local/workflow-marketplace/workflows/e2e-test-builder/workflow.json',
@@ -56,7 +56,7 @@ describe('runWorkflowCommand', () => {
 			const readGlobalConfig = vi.fn().mockReturnValue({
 				plugins: [],
 				additionalDirectories: [],
-				workflowMarketplaceSource: '/local/workflow-marketplace',
+				workflowMarketplaceSources: ['/local/workflow-marketplace'],
 			});
 
 			const code = runWorkflowCommand(
@@ -64,16 +64,16 @@ describe('runWorkflowCommand', () => {
 				{
 					installWorkflow,
 					resolveWorkflow,
-					resolveWorkflowInstallSource,
+					resolveWorkflowInstallSourceFromSources,
 					readGlobalConfig,
 					logOut,
 				},
 			);
 
 			expect(code).toBe(0);
-			expect(resolveWorkflowInstallSource).toHaveBeenCalledWith(
+			expect(resolveWorkflowInstallSourceFromSources).toHaveBeenCalledWith(
 				'e2e-test-builder',
-				'/local/workflow-marketplace',
+				['/local/workflow-marketplace'],
 			);
 			expect(installWorkflow).toHaveBeenCalledWith(
 				'/local/workflow-marketplace/workflows/e2e-test-builder/workflow.json',
@@ -88,7 +88,9 @@ describe('runWorkflowCommand', () => {
 			const installWorkflow = vi.fn().mockImplementation(() => {
 				throw new Error('file not found');
 			});
-			const resolveWorkflowInstallSource = vi.fn().mockReturnValue('/bad/path');
+			const resolveWorkflowInstallSourceFromSources = vi
+				.fn()
+				.mockReturnValue('/bad/path');
 			const readGlobalConfig = vi.fn().mockReturnValue({
 				plugins: [],
 				additionalDirectories: [],
@@ -98,7 +100,7 @@ describe('runWorkflowCommand', () => {
 				{subcommand: 'install', subcommandArgs: ['/bad/path']},
 				{
 					installWorkflow,
-					resolveWorkflowInstallSource,
+					resolveWorkflowInstallSourceFromSources,
 					readGlobalConfig,
 					logError,
 				},
@@ -123,75 +125,8 @@ describe('runWorkflowCommand', () => {
 		});
 	});
 
-	describe('update', () => {
-		it('updates a workflow by name', () => {
-			const logOut = vi.fn();
-			const updateWorkflow = vi.fn().mockReturnValue('alpha');
-			const resolveWorkflow = vi.fn().mockReturnValue({
-				name: 'alpha',
-				version: '0.9.0',
-			});
-			const readGlobalConfig = vi.fn().mockReturnValue({
-				plugins: [],
-				additionalDirectories: [],
-			});
-
-			const code = runWorkflowCommand(
-				{subcommand: 'update', subcommandArgs: ['alpha']},
-				{updateWorkflow, resolveWorkflow, readGlobalConfig, logOut},
-			);
-
-			expect(code).toBe(0);
-			expect(updateWorkflow).toHaveBeenCalledWith('alpha');
-			expect(logOut).toHaveBeenCalledWith('Updated workflow: alpha (0.9.0)');
-		});
-
-		it('defaults update to the active workflow', () => {
-			const logOut = vi.fn();
-			const updateWorkflow = vi.fn().mockReturnValue('active-wf');
-			const resolveWorkflow = vi.fn().mockReturnValue({
-				name: 'active-wf',
-				version: '3.0.0',
-			});
-			const readGlobalConfig = vi.fn().mockReturnValue({
-				plugins: [],
-				additionalDirectories: [],
-				activeWorkflow: 'active-wf',
-			});
-
-			const code = runWorkflowCommand(
-				{subcommand: 'update', subcommandArgs: []},
-				{updateWorkflow, resolveWorkflow, readGlobalConfig, logOut},
-			);
-
-			expect(code).toBe(0);
-			expect(updateWorkflow).toHaveBeenCalledWith('active-wf');
-			expect(logOut).toHaveBeenCalledWith(
-				'Updated workflow: active-wf (3.0.0)',
-			);
-		});
-
-		it('prints usage when update target is missing and no active workflow is set', () => {
-			const logError = vi.fn();
-			const readGlobalConfig = vi.fn().mockReturnValue({
-				plugins: [],
-				additionalDirectories: [],
-			});
-
-			const code = runWorkflowCommand(
-				{subcommand: 'update', subcommandArgs: []},
-				{readGlobalConfig, logError},
-			);
-
-			expect(code).toBe(1);
-			expect(logError).toHaveBeenCalledWith(
-				'Usage: athena-flow workflow update [name]',
-			);
-		});
-	});
-
-	describe('remote list', () => {
-		it('lists workflows from the default remote marketplace', () => {
+	describe('search', () => {
+		it('lists workflows from the default marketplace when no sources configured', () => {
 			const logOut = vi.fn();
 			const listMarketplaceWorkflows = vi.fn().mockReturnValue([
 				{
@@ -212,7 +147,7 @@ describe('runWorkflowCommand', () => {
 			});
 
 			const code = runWorkflowCommand(
-				{subcommand: 'remote', subcommandArgs: ['list']},
+				{subcommand: 'search', subcommandArgs: []},
 				{
 					listMarketplaceWorkflows,
 					resolveWorkflowMarketplaceSource,
@@ -225,36 +160,43 @@ describe('runWorkflowCommand', () => {
 			expect(resolveWorkflowMarketplaceSource).toHaveBeenCalledWith(
 				'lespaceman/athena-workflow-marketplace',
 			);
-			expect(listMarketplaceWorkflows).toHaveBeenCalledWith(
-				'lespaceman',
-				'athena-workflow-marketplace',
-			);
 			expect(logOut).toHaveBeenCalledWith(
 				'e2e-test-builder (1.2.3) - Build Playwright coverage',
 			);
 		});
 
-		it('uses the configured marketplace source when present', () => {
+		it('aggregates workflows from multiple configured sources', () => {
 			const logOut = vi.fn();
 			const listMarketplaceWorkflows = vi
 				.fn()
-				.mockReturnValue([{name: 'code-review'}]);
-			const resolveWorkflowMarketplaceSource = vi.fn().mockReturnValue({
-				kind: 'remote',
-				slug: 'owner/custom-marketplace',
-				owner: 'owner',
-				repo: 'custom-marketplace',
-			});
+				.mockReturnValue([{name: 'remote-flow'}]);
+			const listMarketplaceWorkflowsFromRepo = vi
+				.fn()
+				.mockReturnValue([{name: 'local-flow'}]);
+			const resolveWorkflowMarketplaceSource = vi
+				.fn()
+				.mockImplementation((source: string) => {
+					if (source === 'owner/repo') {
+						return {
+							kind: 'remote',
+							slug: 'owner/repo',
+							owner: 'owner',
+							repo: 'repo',
+						};
+					}
+					return {kind: 'local', repoDir: '/local/path'};
+				});
 			const readGlobalConfig = vi.fn().mockReturnValue({
 				plugins: [],
 				additionalDirectories: [],
-				workflowMarketplaceSource: 'owner/custom-marketplace',
+				workflowMarketplaceSources: ['owner/repo', '/local/path'],
 			});
 
 			const code = runWorkflowCommand(
-				{subcommand: 'remote', subcommandArgs: ['list']},
+				{subcommand: 'search', subcommandArgs: []},
 				{
 					listMarketplaceWorkflows,
+					listMarketplaceWorkflowsFromRepo,
 					resolveWorkflowMarketplaceSource,
 					readGlobalConfig,
 					logOut,
@@ -262,94 +204,13 @@ describe('runWorkflowCommand', () => {
 			);
 
 			expect(code).toBe(0);
-			expect(resolveWorkflowMarketplaceSource).toHaveBeenCalledWith(
-				'owner/custom-marketplace',
-			);
-			expect(listMarketplaceWorkflows).toHaveBeenCalledWith(
-				'owner',
-				'custom-marketplace',
-			);
-			expect(logOut).toHaveBeenCalledWith('code-review');
+			expect(logOut).toHaveBeenCalledWith('remote-flow');
+			expect(logOut).toHaveBeenCalledWith('local-flow');
 		});
 
-		it('lists workflows from an explicit local marketplace source', () => {
-			const logOut = vi.fn();
-			const listMarketplaceWorkflowsFromRepo = vi
-				.fn()
-				.mockReturnValue([{name: 'local-flow', description: 'From disk'}]);
-			const resolveWorkflowMarketplaceSource = vi.fn().mockReturnValue({
-				kind: 'local',
-				path: '/tmp/workflow-marketplace',
-				repoDir: '/tmp/workflow-marketplace',
-			});
-
-			const code = runWorkflowCommand(
-				{
-					subcommand: 'remote',
-					subcommandArgs: ['list', '/tmp/workflow-marketplace'],
-				},
-				{
-					listMarketplaceWorkflowsFromRepo,
-					resolveWorkflowMarketplaceSource,
-					logOut,
-				},
-			);
-
-			expect(code).toBe(0);
-			expect(resolveWorkflowMarketplaceSource).toHaveBeenCalledWith(
-				'/tmp/workflow-marketplace',
-			);
-			expect(listMarketplaceWorkflowsFromRepo).toHaveBeenCalledWith(
-				'/tmp/workflow-marketplace',
-			);
-			expect(logOut).toHaveBeenCalledWith('local-flow - From disk');
-		});
-
-		it('prints a friendly message when the marketplace is empty', () => {
+		it('prints message when no workflows found', () => {
 			const logOut = vi.fn();
 			const listMarketplaceWorkflows = vi.fn().mockReturnValue([]);
-			const resolveWorkflowMarketplaceSource = vi.fn().mockReturnValue({
-				kind: 'remote',
-				slug: 'owner/custom-marketplace',
-				owner: 'owner',
-				repo: 'custom-marketplace',
-			});
-
-			const code = runWorkflowCommand(
-				{
-					subcommand: 'remote',
-					subcommandArgs: ['list', 'owner/custom-marketplace'],
-				},
-				{
-					listMarketplaceWorkflows,
-					resolveWorkflowMarketplaceSource,
-					logOut,
-				},
-			);
-
-			expect(code).toBe(0);
-			expect(logOut).toHaveBeenCalledWith('No remote workflows found.');
-		});
-
-		it('prints usage for unsupported remote subcommands', () => {
-			const logError = vi.fn();
-
-			const code = runWorkflowCommand(
-				{subcommand: 'remote', subcommandArgs: ['install']},
-				{logError},
-			);
-
-			expect(code).toBe(1);
-			expect(logError).toHaveBeenCalledWith(
-				'Usage: athena-flow workflow remote list [source]',
-			);
-		});
-	});
-
-	describe('update-marketplace', () => {
-		it('updates the default marketplace when no slug is provided', () => {
-			const logOut = vi.fn();
-			const pullMarketplaceRepo = vi.fn();
 			const resolveWorkflowMarketplaceSource = vi.fn().mockReturnValue({
 				kind: 'remote',
 				slug: 'lespaceman/athena-workflow-marketplace',
@@ -362,9 +223,9 @@ describe('runWorkflowCommand', () => {
 			});
 
 			const code = runWorkflowCommand(
-				{subcommand: 'update-marketplace', subcommandArgs: []},
+				{subcommand: 'search', subcommandArgs: []},
 				{
-					pullMarketplaceRepo,
+					listMarketplaceWorkflows,
 					resolveWorkflowMarketplaceSource,
 					readGlobalConfig,
 					logOut,
@@ -372,192 +233,104 @@ describe('runWorkflowCommand', () => {
 			);
 
 			expect(code).toBe(0);
-			expect(pullMarketplaceRepo).toHaveBeenCalledWith(
-				'lespaceman',
-				'athena-workflow-marketplace',
-			);
 			expect(logOut).toHaveBeenCalledWith(
-				'Updated marketplace: lespaceman/athena-workflow-marketplace',
+				'No workflows found in any configured marketplace.',
 			);
 		});
+	});
 
-		it('updates an explicit marketplace slug', () => {
+	describe('upgrade', () => {
+		it('upgrades a workflow by name', () => {
 			const logOut = vi.fn();
-			const pullMarketplaceRepo = vi.fn();
-			const resolveWorkflowMarketplaceSource = vi.fn().mockReturnValue({
-				kind: 'remote',
-				slug: 'owner/custom-marketplace',
-				owner: 'owner',
-				repo: 'custom-marketplace',
+			const updateWorkflow = vi.fn().mockReturnValue('alpha');
+			const resolveWorkflow = vi.fn().mockReturnValue({
+				name: 'alpha',
+				version: '0.9.0',
 			});
 
 			const code = runWorkflowCommand(
-				{
-					subcommand: 'update-marketplace',
-					subcommandArgs: ['owner/custom-marketplace'],
-				},
-				{pullMarketplaceRepo, resolveWorkflowMarketplaceSource, logOut},
+				{subcommand: 'upgrade', subcommandArgs: ['alpha']},
+				{updateWorkflow, resolveWorkflow, logOut},
 			);
 
 			expect(code).toBe(0);
-			expect(pullMarketplaceRepo).toHaveBeenCalledWith(
-				'owner',
-				'custom-marketplace',
-			);
-			expect(logOut).toHaveBeenCalledWith(
-				'Updated marketplace: owner/custom-marketplace',
-			);
+			expect(updateWorkflow).toHaveBeenCalledWith('alpha');
+			expect(logOut).toHaveBeenCalledWith('Upgraded workflow: alpha (0.9.0)');
 		});
 
-		it('validates a local marketplace when configured', () => {
+		it('upgrades all non-builtin workflows when no name given', () => {
 			const logOut = vi.fn();
-			const listMarketplaceWorkflowsFromRepo = vi.fn();
-			const resolveWorkflowMarketplaceSource = vi.fn().mockReturnValue({
-				kind: 'local',
-				path: '/tmp/workflow-marketplace',
-				repoDir: '/tmp/workflow-marketplace',
-			});
-			const readGlobalConfig = vi.fn().mockReturnValue({
-				plugins: [],
-				additionalDirectories: [],
-				workflowMarketplaceSource: '/tmp/workflow-marketplace',
-			});
-
-			const code = runWorkflowCommand(
-				{subcommand: 'update-marketplace', subcommandArgs: []},
-				{
-					listMarketplaceWorkflowsFromRepo,
-					resolveWorkflowMarketplaceSource,
-					readGlobalConfig,
-					logOut,
-				},
-			);
-
-			expect(code).toBe(0);
-			expect(listMarketplaceWorkflowsFromRepo).toHaveBeenCalledWith(
-				'/tmp/workflow-marketplace',
-			);
-			expect(logOut).toHaveBeenCalledWith(
-				'Local marketplace ready: /tmp/workflow-marketplace',
-			);
-		});
-
-		it('prints an error for an invalid marketplace source', () => {
-			const logError = vi.fn();
-			const pullMarketplaceRepo = vi.fn();
-			const resolveWorkflowMarketplaceSource = vi
+			const listWorkflows = vi
 				.fn()
-				.mockImplementation(() => {
-					throw new Error('Invalid source');
-				});
-			const readGlobalConfig = vi.fn().mockReturnValue({
-				plugins: [],
-				additionalDirectories: [],
-			});
+				.mockReturnValue(['default', 'alpha', 'beta']);
+			const listBuiltinWorkflows = vi.fn().mockReturnValue(['default']);
+			const updateWorkflow = vi.fn().mockImplementation((name: string) => name);
+			const resolveWorkflow = vi
+				.fn()
+				.mockImplementation((name: string) => ({name}));
 
 			const code = runWorkflowCommand(
+				{subcommand: 'upgrade', subcommandArgs: []},
 				{
-					subcommand: 'update-marketplace',
-					subcommandArgs: ['invalid-slug'],
+					listWorkflows,
+					listBuiltinWorkflows,
+					updateWorkflow,
+					resolveWorkflow,
+					logOut,
 				},
+			);
+
+			expect(code).toBe(0);
+			expect(updateWorkflow).toHaveBeenCalledWith('alpha');
+			expect(updateWorkflow).toHaveBeenCalledWith('beta');
+			expect(updateWorkflow).not.toHaveBeenCalledWith('default');
+		});
+
+		it('prints message when no installed workflows to upgrade', () => {
+			const logOut = vi.fn();
+			const listWorkflows = vi.fn().mockReturnValue(['default']);
+			const listBuiltinWorkflows = vi.fn().mockReturnValue(['default']);
+
+			const code = runWorkflowCommand(
+				{subcommand: 'upgrade', subcommandArgs: []},
+				{listWorkflows, listBuiltinWorkflows, logOut},
+			);
+
+			expect(code).toBe(0);
+			expect(logOut).toHaveBeenCalledWith('No installed workflows to upgrade.');
+		});
+
+		it('returns 1 when any upgrade fails', () => {
+			const logOut = vi.fn();
+			const logError = vi.fn();
+			const listWorkflows = vi.fn().mockReturnValue(['alpha', 'beta']);
+			const listBuiltinWorkflows = vi.fn().mockReturnValue([]);
+			const updateWorkflow = vi.fn().mockImplementation((name: string) => {
+				if (name === 'beta') {
+					throw new Error('no source');
+				}
+				return name;
+			});
+			const resolveWorkflow = vi
+				.fn()
+				.mockImplementation((name: string) => ({name}));
+
+			const code = runWorkflowCommand(
+				{subcommand: 'upgrade', subcommandArgs: []},
 				{
-					pullMarketplaceRepo,
-					resolveWorkflowMarketplaceSource,
-					readGlobalConfig,
+					listWorkflows,
+					listBuiltinWorkflows,
+					updateWorkflow,
+					resolveWorkflow,
+					logOut,
 					logError,
 				},
 			);
 
 			expect(code).toBe(1);
-			expect(pullMarketplaceRepo).not.toHaveBeenCalled();
-			expect(logError).toHaveBeenCalledWith('Error: Invalid source');
-		});
-	});
-
-	describe('use-marketplace', () => {
-		it('stores a remote marketplace slug in config', () => {
-			const logOut = vi.fn();
-			const writeGlobalConfig = vi.fn();
-			const listMarketplaceWorkflows = vi.fn();
-			const resolveWorkflowMarketplaceSource = vi.fn().mockReturnValue({
-				kind: 'remote',
-				slug: 'owner/custom-marketplace',
-				owner: 'owner',
-				repo: 'custom-marketplace',
-			});
-
-			const code = runWorkflowCommand(
-				{
-					subcommand: 'use-marketplace',
-					subcommandArgs: ['owner/custom-marketplace'],
-				},
-				{
-					writeGlobalConfig,
-					listMarketplaceWorkflows,
-					resolveWorkflowMarketplaceSource,
-					logOut,
-				},
-			);
-
-			expect(code).toBe(0);
-			expect(listMarketplaceWorkflows).toHaveBeenCalledWith(
-				'owner',
-				'custom-marketplace',
-			);
-			expect(writeGlobalConfig).toHaveBeenCalledWith({
-				workflowMarketplaceSource: 'owner/custom-marketplace',
-			});
-			expect(logOut).toHaveBeenCalledWith(
-				'Workflow marketplace: owner/custom-marketplace',
-			);
-		});
-
-		it('stores a local marketplace repo in config', () => {
-			const logOut = vi.fn();
-			const writeGlobalConfig = vi.fn();
-			const listMarketplaceWorkflowsFromRepo = vi.fn();
-			const resolveWorkflowMarketplaceSource = vi.fn().mockReturnValue({
-				kind: 'local',
-				path: '/tmp/workflow-marketplace',
-				repoDir: '/tmp/workflow-marketplace',
-			});
-
-			const code = runWorkflowCommand(
-				{
-					subcommand: 'use-marketplace',
-					subcommandArgs: ['/tmp/workflow-marketplace'],
-				},
-				{
-					writeGlobalConfig,
-					listMarketplaceWorkflowsFromRepo,
-					resolveWorkflowMarketplaceSource,
-					logOut,
-				},
-			);
-
-			expect(code).toBe(0);
-			expect(listMarketplaceWorkflowsFromRepo).toHaveBeenCalledWith(
-				'/tmp/workflow-marketplace',
-			);
-			expect(writeGlobalConfig).toHaveBeenCalledWith({
-				workflowMarketplaceSource: '/tmp/workflow-marketplace',
-			});
-			expect(logOut).toHaveBeenCalledWith(
-				'Workflow marketplace: /tmp/workflow-marketplace',
-			);
-		});
-
-		it('prints usage when source is missing', () => {
-			const logError = vi.fn();
-
-			const code = runWorkflowCommand(
-				{subcommand: 'use-marketplace', subcommandArgs: []},
-				{logError},
-			);
-
-			expect(code).toBe(1);
+			expect(logOut).toHaveBeenCalledWith('Upgraded workflow: alpha');
 			expect(logError).toHaveBeenCalledWith(
-				'Usage: athena-flow workflow use-marketplace <source>',
+				'Failed to upgrade "beta": Error: no source',
 			);
 		});
 	});

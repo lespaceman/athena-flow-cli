@@ -96,10 +96,19 @@ Workflows package prompt templates, loop strategies, plugin dependencies, isolat
 
 ```bash
 athena workflow list                        # See what's installed
+athena workflow search                      # Browse available workflows
 athena workflow install e2e-test-builder    # Install from the marketplace
 athena workflow use e2e-test-builder        # Set as the active workflow
-athena workflow update                      # Re-sync from source
-athena workflow use-marketplace owner/repo  # Point to a different marketplace
+athena workflow upgrade                     # Re-sync all from source
+```
+
+Manage marketplace sources:
+
+```bash
+athena marketplace add owner/repo           # Add a marketplace source
+athena marketplace add ./local/path         # Add a local marketplace
+athena marketplace list                     # List configured sources
+athena marketplace remove owner/repo        # Remove a source
 ```
 
 Install from a local file or a specific marketplace ref:
@@ -231,14 +240,15 @@ Config merges in order: **global &rarr; project &rarr; CLI flags**.
 <details>
 <summary>Commands</summary>
 
-| Command           | Description                                                                                 |
-| ----------------- | ------------------------------------------------------------------------------------------- |
-| _(default)_       | Start interactive session in cwd                                                            |
-| `setup`           | Re-run setup wizard                                                                         |
-| `sessions`        | Interactive session picker                                                                  |
-| `resume [id]`     | Resume most recent or specific session                                                      |
-| `exec "<prompt>"` | Headless run for CI / scripting                                                             |
-| `workflow <sub>`  | `install` · `list` · `update` · `remove` · `use` · `use-marketplace` · `update-marketplace` |
+| Command             | Description                                                  |
+| ------------------- | ------------------------------------------------------------ |
+| _(default)_         | Start interactive session in cwd                             |
+| `setup`             | Re-run setup wizard                                          |
+| `sessions`          | Interactive session picker                                   |
+| `resume [id]`       | Resume most recent or specific session                       |
+| `exec "<prompt>"`   | Headless run for CI / scripting                              |
+| `workflow <sub>`    | `install` · `list` · `search` · `remove` · `upgrade` · `use` |
+| `marketplace <sub>` | `add` · `remove` · `list`                                    |
 
 </details>
 

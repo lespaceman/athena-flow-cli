@@ -9,8 +9,7 @@ import {
 	findMarketplaceRepoDir,
 } from '../../infra/plugins/marketplace';
 
-const DEFAULT_MARKETPLACE_OWNER = 'lespaceman';
-const DEFAULT_MARKETPLACE_REPO = 'athena-workflow-marketplace';
+const DEFAULT_MARKETPLACE_SLUG = 'lespaceman/athena-workflow-marketplace';
 
 export type WorkflowOption = {
 	label: string;
@@ -31,33 +30,44 @@ function readLocalWorkflowOption(sourcePath: string): WorkflowOption {
 	};
 }
 
+function loadOptionsFromSources(sources: string[]): WorkflowOption[] {
+	const options: WorkflowOption[] = [];
+	const seen = new Set<string>();
+
+	for (const source of sources) {
+		const resolved = resolveWorkflowMarketplaceSource(source);
+
+		const workflows =
+			resolved.kind === 'remote'
+				? listMarketplaceWorkflows(resolved.owner, resolved.repo).map(w => ({
+						label: w.name,
+						value: w.ref,
+						description: w.description ?? 'Marketplace workflow',
+					}))
+				: listMarketplaceWorkflowsFromRepo(resolved.repoDir).map(w => ({
+						label: w.name,
+						value: w.workflowPath,
+						description: w.description ?? 'Local marketplace workflow',
+					}));
+
+		for (const wf of workflows) {
+			if (!seen.has(wf.label)) {
+				seen.add(wf.label);
+				options.push(wf);
+			}
+		}
+	}
+
+	return options;
+}
+
 export function loadWorkflowOptions(): WorkflowOption[] {
 	const sourceOverride = process.env.ATHENA_STARTER_WORKFLOW_SOURCE;
 
 	if (!sourceOverride) {
-		const configuredSource =
-			readGlobalConfig().workflowMarketplaceSource ??
-			`${DEFAULT_MARKETPLACE_OWNER}/${DEFAULT_MARKETPLACE_REPO}`;
-		const marketplaceSource =
-			resolveWorkflowMarketplaceSource(configuredSource);
-
-		if (marketplaceSource.kind === 'remote') {
-			return listMarketplaceWorkflows(
-				marketplaceSource.owner,
-				marketplaceSource.repo,
-			).map(workflow => ({
-				label: workflow.name,
-				value: workflow.ref,
-				description: workflow.description ?? 'Marketplace workflow',
-			}));
-		}
-
-		return listMarketplaceWorkflowsFromRepo(marketplaceSource.repoDir).map(
-			workflow => ({
-				label: workflow.name,
-				value: workflow.workflowPath,
-				description: workflow.description ?? 'Local marketplace workflow',
-			}),
+		const sources = readGlobalConfig().workflowMarketplaceSources;
+		return loadOptionsFromSources(
+			sources && sources.length > 0 ? sources : [DEFAULT_MARKETPLACE_SLUG],
 		);
 	}
 

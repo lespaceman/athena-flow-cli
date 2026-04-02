@@ -131,7 +131,7 @@ describe('WorkflowStep', () => {
 		readGlobalConfigMock.mockReturnValue({
 			plugins: [],
 			additionalDirectories: [],
-			workflowMarketplaceSource: '/tmp/workflow-marketplace',
+			workflowMarketplaceSources: ['/tmp/workflow-marketplace'],
 		});
 		resolveWorkflowMarketplaceSourceMock.mockReturnValue({
 			kind: 'local',

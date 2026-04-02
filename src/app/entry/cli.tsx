@@ -35,7 +35,8 @@ import {
 import {runExecCommand} from './execCommand';
 import {resolveInteractiveSession} from './interactiveSession';
 import {runWorkflowCommand} from './workflowCommand';
-import {resolveWorkflowInstallSource} from '../../infra/plugins/marketplace';
+import {runMarketplaceCommand} from './marketplaceCommand';
+import {resolveWorkflowInstallSourceFromSources} from '../../infra/plugins/marketplace';
 import {
 	installStdoutWriteMonitor,
 	isPerfEnabled,
@@ -71,6 +72,7 @@ const KNOWN_COMMANDS = new Set([
 	'resume',
 	'exec',
 	'workflow',
+	'marketplace',
 	'telemetry',
 ]);
 const VALID_ISOLATION_PRESETS = ['strict', 'minimal', 'permissive'] as const;
@@ -147,7 +149,8 @@ const cli = meow(
 			sessions              Launch interactive session picker
 			resume [sessionId]    Resume most recent (or specified) session
 			exec "<prompt>"       Run non-interactively (CI/script mode)
-			workflow <sub>        Manage workflows (install, list, update, use-marketplace, update-marketplace, remove, use)
+			workflow <sub>        Manage workflows (install, list, search, remove, upgrade, use)
+			marketplace <sub>     Manage marketplace sources (add, remove, list)
 			telemetry [action]    Manage anonymous telemetry (enable/disable/status)
 
 		Options
@@ -298,10 +301,12 @@ async function main(): Promise<void> {
 			const source = subcommandArgs[0];
 			let installSource: string;
 			try {
-				installSource = resolveWorkflowInstallSource(
+				const sources = readGlobalConfig().workflowMarketplaceSources ?? [
+					'lespaceman/athena-workflow-marketplace',
+				];
+				installSource = resolveWorkflowInstallSourceFromSources(
 					source,
-					readGlobalConfig().workflowMarketplaceSource ??
-						'lespaceman/athena-workflow-marketplace',
+					sources,
 				);
 			} catch (error) {
 				console.error(
@@ -326,6 +331,12 @@ async function main(): Promise<void> {
 		}
 
 		await exitWith(runWorkflowCommand({subcommand, subcommandArgs}));
+		return;
+	}
+
+	if (command === 'marketplace') {
+		const [subcommand = '', ...subcommandArgs] = commandArgs;
+		await exitWith(runMarketplaceCommand({subcommand, subcommandArgs}));
 		return;
 	}
 

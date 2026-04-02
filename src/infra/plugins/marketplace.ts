@@ -871,6 +871,24 @@ export function resolveWorkflowInstallSource(
 	return workflow.workflowPath;
 }
 
+/**
+ * Try to resolve a workflow install source across multiple marketplace sources.
+ * Tries each source in order; returns the first match.
+ */
+export function resolveWorkflowInstallSourceFromSources(
+	name: string,
+	sources: string[],
+): string {
+	for (const source of sources) {
+		try {
+			return resolveWorkflowInstallSource(name, source);
+		} catch {
+			// Try next source
+		}
+	}
+	throw new Error(`Workflow "${name}" not found in any configured marketplace`);
+}
+
 export function listMarketplaceWorkflows(
 	owner: string,
 	repo: string,
