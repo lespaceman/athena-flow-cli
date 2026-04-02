@@ -10,23 +10,12 @@ import {writeGlobalConfig} from '../../infra/plugins/config';
 vi.mock('../../harnesses/claude/system/detectVersion', () => ({
 	detectClaudeVersion: vi.fn(() => '2.5.0'),
 }));
-vi.mock('../../core/workflows/index', () => ({
-	installWorkflow: vi.fn(() => 'e2e-test-builder'),
-	resolveWorkflow: vi.fn(() => ({
-		name: 'e2e-test-builder',
-		plugins: ['e2e-test-builder@lespaceman/athena-workflow-marketplace'],
-	})),
-	installWorkflowPlugins: vi.fn(() => ['/resolved/plugin/dir']),
-}));
 vi.mock('../../infra/plugins/config', () => ({
 	writeGlobalConfig: vi.fn(),
 	readGlobalConfig: vi.fn(() => ({
 		plugins: [],
 		additionalDirectories: [],
 	})),
-}));
-vi.mock('../../infra/plugins/mcpOptions', () => ({
-	collectMcpServersWithOptions: vi.fn(() => []),
 }));
 
 beforeEach(() => {
@@ -39,7 +28,7 @@ afterEach(() => {
 });
 
 /**
- * Navigate through all four wizard steps using act() to flush React state
+ * Navigate through both wizard steps using act() to flush React state
  * and fake timers to deterministically fire the 500ms auto-advance timer.
  */
 function walkAllSteps(stdin: {write: (data: string) => void}) {
@@ -50,15 +39,6 @@ function walkAllSteps(stdin: {write: (data: string) => void}) {
 
 	// Step 2: skip harness
 	act(() => stdin.write('s'));
-	act(() => vi.advanceTimersByTime(500));
-
-	// Step 3: select e2e-test-builder
-	act(() => stdin.write('\r'));
-	act(() => vi.advanceTimersByTime(0));
-	act(() => vi.advanceTimersByTime(500));
-
-	// Step 4: MCP options — auto-skips when collectMcpServersWithOptions returns []
-	// The useEffect auto-calls onComplete({}) which triggers markSuccess
 	act(() => vi.advanceTimersByTime(500));
 }
 
@@ -89,12 +69,7 @@ describe('SetupWizard', {timeout: 15_000}, () => {
 			setupComplete: true,
 			theme: 'dark',
 			harness: undefined,
-			activeWorkflow: 'e2e-test-builder',
-			workflowSelections: {
-				'e2e-test-builder': {
-					mcpServerOptions: {},
-				},
-			},
+			activeWorkflow: 'default',
 		});
 		expect(onComplete).toHaveBeenCalledTimes(1);
 	});
@@ -155,98 +130,5 @@ describe('SetupWizard', {timeout: 15_000}, () => {
 		const frame = lastFrame()!;
 		expect(frame).toContain('✓ Theme · dark');
 		expect(frame).toContain('Select harness');
-	});
-
-	it('shows MCP options step when workflow has servers with options', async () => {
-		const {collectMcpServersWithOptions} =
-			await import('../../infra/plugins/mcpOptions');
-		vi.mocked(collectMcpServersWithOptions).mockReturnValue([
-			{
-				serverName: 'agent-web-interface',
-				options: [
-					{label: 'Visible browser', args: []},
-					{label: 'Headless browser', args: ['--headless']},
-				],
-			},
-		]);
-
-		const onComplete = vi.fn();
-		const {stdin, lastFrame} = render(
-			<ThemeProvider value={darkTheme}>
-				<SetupWizard onComplete={onComplete} />
-			</ThemeProvider>,
-		);
-
-		// Step 1: select Dark theme
-		act(() => stdin.write('\r'));
-		act(() => vi.advanceTimersByTime(500));
-
-		// Step 2: skip harness
-		act(() => stdin.write('s'));
-		act(() => vi.advanceTimersByTime(500));
-
-		// Step 3: select e2e-test-builder (first option)
-		act(() => stdin.write('\r'));
-		// Wait for setTimeout(fn, 0) in WorkflowStep to fire
-		act(() => vi.advanceTimersByTime(0));
-		// Auto-advance after success
-		act(() => vi.advanceTimersByTime(500));
-
-		// Step 4: MCP options should be showing
-		const frame = lastFrame()!;
-		expect(frame).toContain('Configure MCP servers');
-		expect(frame).toContain('agent-web-interface');
-	});
-
-	it('persists active workflow and workflow-scoped MCP selections', async () => {
-		const {collectMcpServersWithOptions} =
-			await import('../../infra/plugins/mcpOptions');
-		vi.mocked(collectMcpServersWithOptions).mockReturnValue([
-			{
-				serverName: 'agent-web-interface',
-				options: [
-					{label: 'Visible browser', args: []},
-					{label: 'Headless browser', args: ['--headless']},
-				],
-			},
-		]);
-
-		const {stdin} = render(
-			<ThemeProvider value={darkTheme}>
-				<SetupWizard onComplete={() => {}} />
-			</ThemeProvider>,
-		);
-
-		// Step 1: theme
-		act(() => stdin.write('\r'));
-		act(() => vi.advanceTimersByTime(500));
-
-		// Step 2: harness skip
-		act(() => stdin.write('s'));
-		act(() => vi.advanceTimersByTime(500));
-
-		// Step 3: choose workflow
-		act(() => stdin.write('\r'));
-		act(() => vi.advanceTimersByTime(0));
-		act(() => vi.advanceTimersByTime(500));
-
-		// Step 4: choose headless option
-		act(() => stdin.write('\u001B[B'));
-		act(() => stdin.write('\r'));
-		act(() => vi.advanceTimersByTime(500));
-
-		expect(writeGlobalConfig).toHaveBeenCalledWith({
-			setupComplete: true,
-			theme: 'dark',
-			harness: undefined,
-			activeWorkflow: 'e2e-test-builder',
-			workflowSelections: {
-				'e2e-test-builder': {
-					mcpServerOptions: {
-						'agent-web-interface': ['--headless'],
-					},
-				},
-			},
-		});
 	});
 });

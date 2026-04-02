@@ -3,28 +3,16 @@ import {Box, Text, useInput} from 'ink';
 import {useSetupState} from './useSetupState';
 import ThemeStep from './steps/ThemeStep';
 import HarnessStep from './steps/HarnessStep';
-import WorkflowStep from './steps/WorkflowStep';
-import McpOptionsStep from './steps/McpOptionsStep';
 import StepStatus from './components/StepStatus';
 import WizardFrame from './components/WizardFrame';
 import WizardHints from './components/WizardHints';
 import {getGlyphs} from '../ui/glyphs/index';
-import {
-	writeGlobalConfig,
-	type AthenaHarness,
-	type McpServerChoices,
-} from '../infra/plugins/config';
-import {
-	collectMcpServersWithOptions,
-	type McpServerWithOptions,
-} from '../infra/plugins/mcpOptions';
+import {writeGlobalConfig, type AthenaHarness} from '../infra/plugins/config';
 import {useTheme} from '../ui/theme/index';
 
 export type SetupResult = {
 	theme: string;
 	harness?: AthenaHarness;
-	workflow?: string;
-	mcpServerOptions?: McpServerChoices;
 };
 
 type Props = {
@@ -35,14 +23,6 @@ type Props = {
 const STEP_SUMMARIES = [
 	{label: 'Theme', summarize: (r: SetupResult) => r.theme},
 	{label: 'Harness', summarize: (r: SetupResult) => r.harness ?? 'skipped'},
-	{label: 'Workflow', summarize: (r: SetupResult) => r.workflow ?? 'skipped'},
-	{
-		label: 'MCP Options',
-		summarize: (r: SetupResult) => {
-			const n = Object.keys(r.mcpServerOptions ?? {}).length;
-			return n > 0 ? `${n} server(s)` : 'auto';
-		},
-	},
 ];
 
 export default function SetupWizard({onComplete, onThemePreview}: Props) {
@@ -63,9 +43,6 @@ export default function SetupWizard({onComplete, onThemePreview}: Props) {
 	const [writeRetryCount, setWriteRetryCount] = useState(0);
 	const themePreviewRef = useRef(result.theme);
 	const completedRef = useRef(false);
-	const [mcpServersWithOptions, setMcpServersWithOptions] = useState<
-		McpServerWithOptions[]
-	>([]);
 
 	const handleThemeComplete = useCallback(
 		(theme: string) => {
@@ -98,23 +75,6 @@ export default function SetupWizard({onComplete, onThemePreview}: Props) {
 		markSuccess();
 	}, [markSuccess]);
 
-	const handleWorkflowComplete = useCallback(
-		(workflow: string, pluginDirs: string[]) => {
-			setResult(prev => ({...prev, workflow}));
-			setMcpServersWithOptions(collectMcpServersWithOptions(pluginDirs));
-			markSuccess();
-		},
-		[markSuccess],
-	);
-
-	const handleMcpOptionsComplete = useCallback(
-		(choices: McpServerChoices) => {
-			setResult(prev => ({...prev, mcpServerOptions: choices}));
-			markSuccess();
-		},
-		[markSuccess],
-	);
-
 	const handleSkipShortcut = useCallback(() => {
 		if (stepState !== 'selecting' || isComplete) {
 			return;
@@ -130,9 +90,6 @@ export default function SetupWizard({onComplete, onThemePreview}: Props) {
 			handleHarnessSkip();
 			return;
 		}
-		if (stepIndex === 3) {
-			handleMcpOptionsComplete({});
-		}
 	}, [
 		stepState,
 		isComplete,
@@ -140,7 +97,6 @@ export default function SetupWizard({onComplete, onThemePreview}: Props) {
 		markSuccess,
 		onThemePreview,
 		handleHarnessSkip,
-		handleMcpOptionsComplete,
 	]);
 
 	useInput((input, key) => {
@@ -184,19 +140,11 @@ export default function SetupWizard({onComplete, onThemePreview}: Props) {
 		if (isComplete && !completedRef.current) {
 			try {
 				completedRef.current = true;
-				const workflowSelections = result.workflow
-					? {
-							[result.workflow]: {
-								mcpServerOptions: result.mcpServerOptions,
-							},
-						}
-					: undefined;
 				writeGlobalConfig({
 					setupComplete: true,
 					theme: result.theme,
 					harness: result.harness,
-					activeWorkflow: result.workflow,
-					workflowSelections,
+					activeWorkflow: 'default',
 				});
 				onComplete(result);
 			} catch (error) {
@@ -246,23 +194,6 @@ export default function SetupWizard({onComplete, onThemePreview}: Props) {
 						key={retryCount}
 						onComplete={handleHarnessComplete}
 						onError={() => markError()}
-					/>
-				</Box>
-			)}
-			{stepIndex === 2 && !isComplete && (
-				<Box marginTop={1}>
-					<WorkflowStep
-						key={retryCount}
-						onComplete={handleWorkflowComplete}
-						onError={() => markError()}
-					/>
-				</Box>
-			)}
-			{stepIndex === 3 && !isComplete && (
-				<Box marginTop={1}>
-					<McpOptionsStep
-						servers={mcpServersWithOptions}
-						onComplete={handleMcpOptionsComplete}
 					/>
 				</Box>
 			)}
