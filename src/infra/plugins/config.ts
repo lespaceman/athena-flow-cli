@@ -170,3 +170,49 @@ export function writeGlobalConfig(updates: Partial<AthenaConfig>): void {
 	fs.mkdirSync(configDir, {recursive: true});
 	fs.writeFileSync(configPath, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
 }
+
+/**
+ * Write project config to `{projectDir}/.athena/config.json`.
+ * Merges with existing config if present. Creates directories as needed.
+ */
+export function writeProjectConfig(
+	projectDir: string,
+	updates: Partial<AthenaConfig>,
+): void {
+	const configDir = path.join(projectDir, '.athena');
+	const configPath = path.join(configDir, 'config.json');
+
+	let existing: Record<string, unknown> = {};
+	if (fs.existsSync(configPath)) {
+		existing = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<
+			string,
+			unknown
+		>;
+	}
+
+	const merged: Record<string, unknown> = {...existing, ...updates};
+	if (updates.workflowSelections) {
+		const existingSelections =
+			(existing['workflowSelections'] as WorkflowSelections | undefined) ?? {};
+		merged['workflowSelections'] = {
+			...existingSelections,
+			...updates.workflowSelections,
+		};
+	}
+	fs.mkdirSync(configDir, {recursive: true});
+	fs.writeFileSync(configPath, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
+}
+
+/**
+ * Check whether a project-level config has an active workflow selected.
+ */
+export function hasProjectWorkflow(projectDir: string): boolean {
+	const configPath = path.join(projectDir, '.athena', 'config.json');
+	if (!fs.existsSync(configPath)) {
+		return false;
+	}
+	const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+		activeWorkflow?: string;
+	};
+	return typeof raw.activeWorkflow === 'string' && raw.activeWorkflow !== '';
+}
