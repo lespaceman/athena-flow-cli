@@ -229,4 +229,52 @@ describe('HookProvider runtime factory wiring', () => {
 		resolveSecondStart?.();
 		await waitFor(() => expect(useFeedMock).toHaveBeenCalledTimes(2));
 	});
+
+	it('does not close sessionStore when only the runtime changes', async () => {
+		const firstRuntime = makeRuntime();
+		const secondRuntime = makeRuntime();
+
+		const {rerender, unmount} = render(
+			<HookProvider
+				projectDir="/repo"
+				instanceId={1}
+				harness="claude-code"
+				runtime={firstRuntime}
+				athenaSessionId="athena-lifecycle"
+			>
+				<></>
+			</HookProvider>,
+		);
+
+		await waitFor(() => expect(useFeedMock).toHaveBeenCalledTimes(1));
+
+		const store = createSessionStoreMock.mock.results[0]?.value as {
+			close: ReturnType<typeof vi.fn>;
+		};
+		expect(store.close).not.toHaveBeenCalled();
+
+		// Swap runtime (simulates workflow change) — sessionStore deps unchanged
+		rerender(
+			<HookProvider
+				projectDir="/repo"
+				instanceId={1}
+				harness="openai-codex"
+				runtime={secondRuntime}
+				athenaSessionId="athena-lifecycle"
+			>
+				<></>
+			</HookProvider>,
+		);
+
+		await waitFor(() => expect(useFeedMock).toHaveBeenCalledTimes(2));
+
+		// sessionStore must NOT have been closed — its deps didn't change
+		expect(store.close).not.toHaveBeenCalled();
+		// old runtime should have been stopped by cleanup
+		expect(firstRuntime.stop).toHaveBeenCalled();
+
+		// On full unmount, sessionStore IS closed
+		unmount();
+		expect(store.close).toHaveBeenCalledTimes(1);
+	});
 });

@@ -98,12 +98,21 @@ export function HookProvider({
 		};
 	}, [runtime]);
 
+	// Separate lifecycle effects: closing sessionStore must only happen when
+	// sessionStore itself is recreated (or on unmount), NOT when runtime changes.
+	// Previously these were combined, so a workflow change (which recreates
+	// runtime but not sessionStore) would close the still-active database.
 	useEffect(() => {
 		return () => {
 			sessionStore.close();
+		};
+	}, [sessionStore]);
+
+	useEffect(() => {
+		return () => {
 			runtime.stop();
 		};
-	}, [runtime, sessionStore]);
+	}, [runtime]);
 
 	if (readyRuntime !== runtime) {
 		return <Text dimColor>Starting Athena hook server...</Text>;
