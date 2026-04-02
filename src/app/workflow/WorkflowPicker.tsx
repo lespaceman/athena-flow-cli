@@ -1,5 +1,5 @@
 import {useState, useCallback, useEffect} from 'react';
-import {Box, Text} from 'ink';
+import {Box, Text, useInput} from 'ink';
 import StepSelector from '../../setup/components/StepSelector';
 import StepStatus from '../../setup/components/StepStatus';
 import McpOptionsStep from '../../setup/steps/McpOptionsStep';
@@ -42,13 +42,20 @@ type PickerPhase =
 
 type Props = {
 	projectDir: string;
+	rows: number;
+	onClose?: () => void;
 	onComplete: (
 		workflowName: string,
 		mcpServerOptions?: McpServerChoices,
 	) => void;
 };
 
-export default function WorkflowPicker({projectDir, onComplete}: Props) {
+export default function WorkflowPicker({
+	projectDir,
+	rows,
+	onClose,
+	onComplete,
+}: Props) {
 	const theme = useTheme();
 	const [phase, setPhase] = useState<PickerPhase>({type: 'loading'});
 
@@ -58,10 +65,15 @@ export default function WorkflowPicker({projectDir, onComplete}: Props) {
 			const options = [DEFAULT_WORKFLOW_OPTION, ...marketplaceOptions];
 			setPhase({type: 'selecting', options});
 		} catch {
-			// If marketplace fails, still show default
 			setPhase({type: 'selecting', options: [DEFAULT_WORKFLOW_OPTION]});
 		}
 	}, []);
+
+	useInput((_input, key) => {
+		if (key.escape && onClose && phase.type === 'selecting') {
+			onClose();
+		}
+	});
 
 	const handleSelect = useCallback(
 		(value: string) => {
@@ -118,20 +130,21 @@ export default function WorkflowPicker({projectDir, onComplete}: Props) {
 		[phase, projectDir, onComplete],
 	);
 
-	return (
-		<Box
-			flexDirection="column"
-			alignItems="center"
-			justifyContent="center"
-			paddingX={2}
-		>
-			<Text bold color={theme.accent}>
-				Select a workflow
-			</Text>
-			<Text color={theme.textMuted}>Choose a workflow for this project.</Text>
+	const modalContent = (
+		<Box flexDirection="column" paddingX={2} paddingY={1}>
+			<Box justifyContent="center">
+				<Text bold color={theme.accent}>
+					Select a workflow
+				</Text>
+			</Box>
+			<Box justifyContent="center">
+				<Text color={theme.textMuted}>Choose a workflow for this project.</Text>
+			</Box>
 
 			{phase.type === 'loading' && (
-				<StepStatus status="verifying" message="Loading workflows..." />
+				<Box marginTop={1} justifyContent="center">
+					<StepStatus status="verifying" message="Loading workflows..." />
+				</Box>
 			)}
 
 			{phase.type === 'selecting' && (
@@ -141,7 +154,9 @@ export default function WorkflowPicker({projectDir, onComplete}: Props) {
 			)}
 
 			{phase.type === 'installing' && (
-				<StepStatus status="verifying" message="Installing workflow..." />
+				<Box marginTop={1} justifyContent="center">
+					<StepStatus status="verifying" message="Installing workflow..." />
+				</Box>
 			)}
 
 			{phase.type === 'mcp-options' && (
@@ -154,8 +169,41 @@ export default function WorkflowPicker({projectDir, onComplete}: Props) {
 			)}
 
 			{phase.type === 'error' && (
-				<Text color={theme.status.error}>{phase.message}</Text>
+				<Box marginTop={1} justifyContent="center">
+					<Text color={theme.status.error}>{phase.message}</Text>
+				</Box>
 			)}
+
+			<Box marginTop={1} justifyContent="center" gap={2}>
+				<Text dimColor>
+					<Text bold>Up/Down</Text> Navigate
+				</Text>
+				<Text dimColor>
+					<Text bold>Enter</Text> Select
+				</Text>
+				{onClose && (
+					<Text dimColor>
+						<Text bold>Esc</Text> Close
+					</Text>
+				)}
+			</Box>
+		</Box>
+	);
+
+	return (
+		<Box
+			flexDirection="column"
+			alignItems="center"
+			justifyContent="center"
+			height={rows}
+		>
+			<Box
+				flexDirection="column"
+				borderStyle="round"
+				borderColor={theme.border}
+			>
+				{modalContent}
+			</Box>
 		</Box>
 	);
 }

@@ -1340,6 +1340,12 @@ function AppContent({
 				{workflowPickerVisible ? (
 					<WorkflowPicker
 						projectDir={projectDir}
+						rows={feedHeaderRows + feedContentRows}
+						onClose={
+							hasProjectWorkflow(projectDir)
+								? () => setWorkflowPickerVisible(false)
+								: undefined
+						}
 						onComplete={name => {
 							setWorkflowPickerVisible(false);
 							onWorkflowSelected(name);
