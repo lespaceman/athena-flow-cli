@@ -166,7 +166,11 @@ export default function WorkflowPicker({
 					)}
 
 					{phase.type === 'selecting' && (
-						<StepSelector options={phase.options} onSelect={handleSelect} />
+						<StepSelector
+							options={phase.options}
+							onSelect={handleSelect}
+							gap={1}
+						/>
 					)}
 
 					{phase.type === 'installing' && (

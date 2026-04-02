@@ -15,6 +15,7 @@ type Props = {
 	isActive?: boolean;
 	initialValue?: string;
 	onHighlight?: (value: string) => void;
+	gap?: number;
 };
 
 function getInitialCursor(
@@ -39,6 +40,7 @@ export default function StepSelector({
 	isActive = true,
 	initialValue,
 	onHighlight,
+	gap = 0,
 }: Props) {
 	const theme = useTheme();
 	const [cursor, setCursor] = useState(() =>
@@ -101,7 +103,7 @@ export default function StepSelector({
 	}, [cursor, options, onHighlight]);
 
 	return (
-		<Box flexDirection="column">
+		<Box flexDirection="column" gap={gap}>
 			{options.map((opt, i) => {
 				const isCursor = i === cursor;
 				return (
