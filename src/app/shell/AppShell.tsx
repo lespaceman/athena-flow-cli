@@ -2086,6 +2086,7 @@ export default function App({
 	return (
 		<ThemeProvider value={activeTheme}>
 			<HookProvider
+				key={clearCount}
 				projectDir={projectDir}
 				instanceId={instanceId}
 				harness={runtimeState.harness}
@@ -2094,7 +2095,6 @@ export default function App({
 				athenaSessionId={athenaSessionId}
 			>
 				<AppContent
-					key={clearCount}
 					projectDir={projectDir}
 					instanceId={instanceId}
 					harness={runtimeState.harness}
