@@ -65,7 +65,7 @@ type FeedState = Pick<
 const DEFAULT_STATIC_FLOOR = 0;
 
 export const initialSessionUiState: SessionUiState = {
-	focusMode: 'feed',
+	focusMode: 'input',
 	inputMode: 'normal',
 	hintsForced: null,
 	showRunOverlay: false,

@@ -107,20 +107,20 @@ describe('sessionUiState', () => {
 			todoFocusable: true,
 			todoAnchorIndex: 1,
 		});
-		const afterFeed = reduceSessionUiState(
+		const afterInput = reduceSessionUiState(
 			initialSessionUiState,
 			{type: 'cycle_focus'},
 			ctx,
 		);
-		const afterInput = reduceSessionUiState(
-			afterFeed,
+		const afterTodo = reduceSessionUiState(
+			afterInput,
 			{type: 'cycle_focus'},
 			ctx,
 		);
 
-		expect(afterFeed.focusMode).toBe('input');
 		expect(afterInput.focusMode).toBe('todo');
 		expect(afterInput.todoCursorMode).toBe('auto');
+		expect(afterTodo.focusMode).toBe('feed');
 	});
 
 	describe('identity preservation on no-op', () => {
