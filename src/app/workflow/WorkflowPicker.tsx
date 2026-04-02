@@ -1,8 +1,9 @@
 import {useState, useCallback, useEffect} from 'react';
-import {Box, Text, useInput} from 'ink';
+import {Box, Text, useInput, useStdout} from 'ink';
 import StepSelector from '../../setup/components/StepSelector';
 import StepStatus from '../../setup/components/StepStatus';
 import McpOptionsStep from '../../setup/steps/McpOptionsStep';
+import WizardFrame from '../../setup/components/WizardFrame';
 import {
 	installWorkflow,
 	resolveWorkflow,
@@ -21,6 +22,7 @@ import {
 	type McpServerWithOptions,
 } from '../../infra/plugins/mcpOptions';
 import {useTheme} from '../../ui/theme/index';
+import {getGlyphs} from '../../ui/glyphs/index';
 
 const DEFAULT_WORKFLOW_OPTION: WorkflowOption = {
 	label: 'default',
@@ -57,6 +59,9 @@ export default function WorkflowPicker({
 	onComplete,
 }: Props) {
 	const theme = useTheme();
+	const g = getGlyphs();
+	const {stdout} = useStdout();
+	const frameWidth = Math.min(stdout.columns - 4, 60);
 	const [phase, setPhase] = useState<PickerPhase>({type: 'loading'});
 
 	useEffect(() => {
@@ -130,65 +135,14 @@ export default function WorkflowPicker({
 		[phase, projectDir, onComplete],
 	);
 
-	const modalContent = (
-		<Box flexDirection="column" paddingX={2} paddingY={1}>
-			<Box justifyContent="center">
-				<Text bold color={theme.accent}>
-					Select a workflow
-				</Text>
-			</Box>
-			<Box justifyContent="center">
-				<Text color={theme.textMuted}>Choose a workflow for this project.</Text>
-			</Box>
-
-			{phase.type === 'loading' && (
-				<Box marginTop={1} justifyContent="center">
-					<StepStatus status="verifying" message="Loading workflows..." />
-				</Box>
-			)}
-
-			{phase.type === 'selecting' && (
-				<Box marginTop={1}>
-					<StepSelector options={phase.options} onSelect={handleSelect} />
-				</Box>
-			)}
-
-			{phase.type === 'installing' && (
-				<Box marginTop={1} justifyContent="center">
-					<StepStatus status="verifying" message="Installing workflow..." />
-				</Box>
-			)}
-
-			{phase.type === 'mcp-options' && (
-				<Box marginTop={1}>
-					<McpOptionsStep
-						servers={phase.servers}
-						onComplete={handleMcpComplete}
-					/>
-				</Box>
-			)}
-
-			{phase.type === 'error' && (
-				<Box marginTop={1} justifyContent="center">
-					<Text color={theme.status.error}>{phase.message}</Text>
-				</Box>
-			)}
-
-			<Box marginTop={1} justifyContent="center" gap={2}>
-				<Text dimColor>
-					<Text bold>Up/Down</Text> Navigate
-				</Text>
-				<Text dimColor>
-					<Text bold>Enter</Text> Select
-				</Text>
-				{onClose && (
-					<Text dimColor>
-						<Text bold>Esc</Text> Close
-					</Text>
-				)}
-			</Box>
-		</Box>
-	);
+	const hints: string[] = [];
+	if (phase.type === 'selecting') {
+		hints.push(`${g['hint.arrowsUpDown']} move`);
+		hints.push(`${g['hint.enter']} select`);
+		if (onClose) hints.push(`${g['hint.escape']} close`);
+	} else if (phase.type === 'error') {
+		hints.push('r retry');
+	}
 
 	return (
 		<Box
@@ -197,12 +151,39 @@ export default function WorkflowPicker({
 			justifyContent="center"
 			height={rows}
 		>
-			<Box
-				flexDirection="column"
-				borderStyle="round"
-				borderColor={theme.border}
-			>
-				{modalContent}
+			<Box width={frameWidth + 4}>
+				<WizardFrame
+					title="WORKFLOW"
+					header={
+						<Text color={theme.textMuted}>
+							Choose a workflow for this project.
+						</Text>
+					}
+					footer={<Text color={theme.textMuted}>{hints.join('  ')}</Text>}
+				>
+					{phase.type === 'loading' && (
+						<StepStatus status="verifying" message="Loading workflows..." />
+					)}
+
+					{phase.type === 'selecting' && (
+						<StepSelector options={phase.options} onSelect={handleSelect} />
+					)}
+
+					{phase.type === 'installing' && (
+						<StepStatus status="verifying" message="Installing workflow..." />
+					)}
+
+					{phase.type === 'mcp-options' && (
+						<McpOptionsStep
+							servers={phase.servers}
+							onComplete={handleMcpComplete}
+						/>
+					)}
+
+					{phase.type === 'error' && (
+						<Text color={theme.status.error}>{phase.message}</Text>
+					)}
+				</WizardFrame>
 			</Box>
 		</Box>
 	);
