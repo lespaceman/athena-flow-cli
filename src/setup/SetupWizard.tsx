@@ -144,7 +144,6 @@ export default function SetupWizard({onComplete, onThemePreview}: Props) {
 					setupComplete: true,
 					theme: result.theme,
 					harness: result.harness,
-					activeWorkflow: 'default',
 				});
 				onComplete(result);
 			} catch (error) {

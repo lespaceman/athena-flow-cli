@@ -69,7 +69,6 @@ describe('SetupWizard', {timeout: 15_000}, () => {
 			setupComplete: true,
 			theme: 'dark',
 			harness: undefined,
-			activeWorkflow: 'default',
 		});
 		expect(onComplete).toHaveBeenCalledTimes(1);
 	});
