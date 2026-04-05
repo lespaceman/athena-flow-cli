@@ -9,13 +9,7 @@ import {
 	type RuntimeDecision,
 	type RuntimeEvent,
 } from '../../core/runtime/types';
-import {
-	cleanupWorkflowRun,
-	createWorkflowRunState,
-	prepareWorkflowTurn,
-	shouldContinueWorkflowRun,
-} from '../../core/workflows/sessionPlan';
-import {DEFAULT_TRACKER_PATH} from '../../core/workflows/loopManager';
+import {createWorkflowRunner} from '../../core/workflows/workflowRunner';
 import type {TurnContinuation} from '../../core/runtime/process';
 import {
 	createSessionStore,
@@ -46,40 +40,6 @@ const NULL_TOKENS: TokenUsage = {
 	contextSize: null,
 	contextWindowSize: null,
 };
-
-function mergeTokenUsage(base: TokenUsage, next: TokenUsage): TokenUsage {
-	const input = (base.input ?? 0) + (next.input ?? 0);
-	const output = (base.output ?? 0) + (next.output ?? 0);
-	const cacheRead = (base.cacheRead ?? 0) + (next.cacheRead ?? 0);
-	const cacheWrite = (base.cacheWrite ?? 0) + (next.cacheWrite ?? 0);
-	const hasAny =
-		base.input !== null ||
-		base.output !== null ||
-		base.cacheRead !== null ||
-		base.cacheWrite !== null ||
-		next.input !== null ||
-		next.output !== null ||
-		next.cacheRead !== null ||
-		next.cacheWrite !== null;
-
-	if (!hasAny) {
-		return {
-			...NULL_TOKENS,
-			contextSize: next.contextSize ?? base.contextSize,
-			contextWindowSize: next.contextWindowSize ?? base.contextWindowSize,
-		};
-	}
-
-	return {
-		input,
-		output,
-		cacheRead,
-		cacheWrite,
-		total: input + output + cacheRead + cacheWrite,
-		contextSize: next.contextSize ?? base.contextSize,
-		contextWindowSize: next.contextWindowSize ?? base.contextWindowSize,
-	};
-}
 
 function policyFailure(
 	resolution: PolicyResolution,
@@ -165,13 +125,11 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 
 	let failure: ExecRunFailure | undefined;
 	let runtimeStarted = false;
-	let finalExitCode: number | null = null;
 	let cumulativeTokens: TokenUsage = {...NULL_TOKENS};
 	let streamFinalMessage: string | null = null;
 	let mappedFinalMessage: string | null = null;
 	let adapterSessionId: string | null = null;
-	let currentIteration = 0;
-	let workflowState: ReturnType<typeof createWorkflowRunState> | null = null;
+	let activeRunId: string | null = null;
 
 	let store: SessionStore;
 	try {
@@ -289,6 +247,17 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 
 	const unsubscribeEvent = runtime.onEvent((runtimeEvent: RuntimeEvent) => {
 		adapterSessionId = runtimeEvent.sessionId;
+
+		// Link new adapter sessions to the active workflow run
+		if (runtimeEvent.sessionId && activeRunId) {
+			safePersist(
+				store,
+				() => store.linkAdapterSession(runtimeEvent.sessionId!, activeRunId!),
+				message => output.warn(message),
+				'linkAdapterSession failed',
+			);
+		}
+
 		output.emitJsonEvent('runtime.event', {
 			id: runtimeEvent.id,
 			kind: runtimeEvent.kind,
@@ -363,128 +332,95 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 		});
 
 		const workflow = options.workflow;
-		workflowState = createWorkflowRunState({
-			projectDir: options.projectDir,
-			sessionId: athenaSessionId,
-			workflow,
-		});
-		for (const warning of workflowState.warnings) {
-			output.warn(warning);
-			output.emitJsonEvent('exec.warning', {message: warning});
-		}
 
 		output.emitJsonEvent('run.started', {
 			workflow: workflow?.name ?? null,
 			loopEnabled: workflow?.loop?.enabled ?? false,
 		});
 
-		let nextPrompt = options.prompt;
-		let nextContinuation: TurnContinuation = options.adapterResumeSessionId
+		const nextContinuation: TurnContinuation = options.adapterResumeSessionId
 			? {mode: 'resume', handle: options.adapterResumeSessionId}
 			: {mode: 'fresh'};
 
-		while (!hasFailure()) {
-			currentIteration += 1;
-			const preparedTurn = prepareWorkflowTurn(workflowState, {
-				prompt: nextPrompt,
-				configOverride: undefined,
-			});
-
-			output.emitJsonEvent('process.started', {
-				iteration: currentIteration,
-				resumeSessionId:
-					nextContinuation.mode === 'resume' ? nextContinuation.handle : null,
-			});
-
-			const turnResult = await sessionController.startTurn({
-				prompt: preparedTurn.prompt,
-				continuation: nextContinuation,
-				configOverride: preparedTurn.configOverride,
-				onStderrLine: message => output.log(message),
-			});
-			finalExitCode = turnResult.exitCode;
-			cumulativeTokens = mergeTokenUsage(cumulativeTokens, turnResult.tokens);
-			if (turnResult.streamMessage) {
-				streamFinalMessage = turnResult.streamMessage;
-			}
-
-			output.emitJsonEvent('process.exited', {
-				iteration: currentIteration,
-				exitCode: turnResult.exitCode,
-				tokens: turnResult.tokens,
-			});
-
-			const sessionIdForTokens = currentAdapterSessionId();
-			if (sessionIdForTokens !== null) {
-				safePersist(
-					store,
-					() => store.recordTokens(sessionIdForTokens, turnResult.tokens),
-					message => output.warn(message),
-					'recordTokens failed',
-				);
-			}
-
-			if (hasFailure()) {
-				break;
-			}
-
-			if (turnResult.error) {
-				registerFailure({
-					kind: 'process',
-					message: `Failed to run harness process: ${turnResult.error.message}`,
+		const handle = createWorkflowRunner({
+			sessionId: athenaSessionId,
+			projectDir: options.projectDir,
+			workflow,
+			prompt: options.prompt,
+			initialContinuation: nextContinuation,
+			startTurn: async turnInput => {
+				const turnResult = await sessionController.startTurn({
+					prompt: turnInput.prompt,
+					continuation: turnInput.continuation,
+					configOverride: turnInput.configOverride,
+					onStderrLine: message => output.log(message),
 				});
-				break;
-			}
 
-			if (turnResult.exitCode !== 0) {
-				const stderrDetail = turnResult.lastStderr
-					? ` Stderr: ${turnResult.lastStderr}`
-					: '';
-				registerFailure({
-					kind: 'process',
-					message: `Harness process exited with code ${turnResult.exitCode}.${stderrDetail}`,
-				});
-				break;
-			}
+				if (turnResult.streamMessage) {
+					streamFinalMessage = turnResult.streamMessage;
+				}
 
-			if (!workflow?.loop?.enabled) {
-				cleanupWorkflowRun(workflowState);
-				break;
-			}
-
-			const stopInfo = shouldContinueWorkflowRun(workflowState);
-			if (stopInfo) {
-				if (stopInfo.reason === 'missing_tracker') {
-					registerFailure(
-						workflowFailure(
-							'missing_tracker',
-							`Workflow tracker missing: ${
-								workflowState.trackerPathForPrompt ?? DEFAULT_TRACKER_PATH
-							}`,
-						),
-					);
-				} else if (stopInfo.reason === 'blocked') {
-					registerFailure(
-						workflowFailure(
-							'blocked',
-							stopInfo.blockedReason
-								? `Workflow blocked: ${stopInfo.blockedReason}`
-								: 'Workflow blocked.',
-						),
-					);
-				} else if (stopInfo.reason === 'max_iterations') {
-					registerFailure(
-						workflowFailure(
-							'exhausted',
-							`Workflow reached the maximum of ${stopInfo.maxIterations} iterations.`,
-						),
+				const sessionIdForTokens = currentAdapterSessionId();
+				if (sessionIdForTokens !== null) {
+					safePersist(
+						store,
+						() => store.recordTokens(sessionIdForTokens, turnResult.tokens),
+						message => output.warn(message),
+						'recordTokens failed',
 					);
 				}
-				break;
-			}
 
-			nextPrompt = options.prompt;
-			nextContinuation = {mode: 'fresh'};
+				return turnResult;
+			},
+			persistRunState: runSnapshot => {
+				safePersist(
+					store,
+					() => store.persistRun(runSnapshot),
+					message => output.warn(message),
+					'persistRun failed',
+				);
+			},
+			abortCurrentTurn: () => void sessionController.kill(),
+			onIterationComplete: runSnapshot => {
+				output.emitJsonEvent('iteration.complete', {
+					iteration: runSnapshot.iteration,
+					status: runSnapshot.status,
+				});
+			},
+		});
+
+		activeRunId = handle.runId;
+
+		const runResult = await handle.result;
+
+		// Accumulate tokens from the runner result
+		cumulativeTokens = runResult.tokens;
+
+		// Map runner terminal status to exec failure if applicable.
+		// External failures (from runtime event handler) take precedence — check !failure first.
+		if (!failure) {
+			if (runResult.status === 'blocked') {
+				registerFailure(
+					workflowFailure(
+						'blocked',
+						runResult.stopReason
+							? `Workflow blocked: ${runResult.stopReason}`
+							: 'Workflow blocked.',
+					),
+				);
+			} else if (runResult.status === 'exhausted') {
+				registerFailure(
+					workflowFailure(
+						'exhausted',
+						`Workflow reached the maximum of ${workflow?.loop?.maxIterations ?? 0} iterations.`,
+					),
+				);
+			} else if (runResult.status === 'failed') {
+				registerFailure({
+					kind: 'process',
+					message: runResult.stopReason ?? 'Workflow run failed.',
+				});
+			}
 		}
 	} catch (error) {
 		registerFailure({
@@ -502,9 +438,6 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 			runtime.stop();
 		}
 		store.close();
-		if (workflowState) {
-			cleanupWorkflowRun(workflowState);
-		}
 	}
 
 	const resolvedFinalMessage = resolveFinalMessage({
@@ -579,7 +512,7 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 		finalMessage: result.finalMessage,
 		tokens: result.tokens,
 		durationMs: result.durationMs,
-		harnessExitCode: finalExitCode,
+		harnessExitCode: null,
 	});
 
 	return result;

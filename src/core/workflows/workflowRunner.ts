@@ -224,22 +224,30 @@ export function createWorkflowRunner(
 					configOverride: prepared.configOverride,
 				});
 
-				cumulativeTokens = mergeTokens(cumulativeTokens, turnResult.tokens);
-
 				// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- cancelled is mutated externally during await
-				if (cancelled) {
+				if (cancelled || !turnResult) {
 					status = 'cancelled';
 					persist();
 					break;
 				}
+
+				cumulativeTokens = mergeTokens(cumulativeTokens, turnResult.tokens);
 
 				if (
 					turnResult.error ||
 					(turnResult.exitCode !== null && turnResult.exitCode !== 0)
 				) {
 					status = 'failed';
-					stopReason =
-						turnResult.error?.message ?? `Exit code ${turnResult.exitCode}`;
+					const parts: string[] = [];
+					if (turnResult.error?.message) {
+						parts.push(turnResult.error.message);
+					} else if (turnResult.exitCode !== null) {
+						parts.push(`Process exited with code ${turnResult.exitCode}`);
+					}
+					if (turnResult.lastStderr) {
+						parts.push(turnResult.lastStderr);
+					}
+					stopReason = parts.join(': ') || 'Turn failed';
 					persist();
 					break;
 				}

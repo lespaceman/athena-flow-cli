@@ -465,7 +465,7 @@ describe('runExec', () => {
 		}
 	});
 
-	it('fails when a looped workflow cannot find its tracker file', async () => {
+	it('fails when a looped workflow exhausts iterations without completion', async () => {
 		const runtime = new MockRuntime();
 		const stdout = createWriteCapture();
 		const stderr = createWriteCapture();
@@ -513,9 +513,14 @@ describe('runExec', () => {
 		});
 
 		expect(result.success).toBe(false);
-		expect(result.exitCode).toBe(EXEC_EXIT_CODE.WORKFLOW_BLOCKED);
+		expect(result.exitCode).toBe(EXEC_EXIT_CODE.WORKFLOW_EXHAUSTED);
 		expect(result.failure?.kind).toBe('workflow');
-		expect(result.failure?.message).toContain('Workflow tracker missing');
+		expect(result.failure).toEqual(
+			expect.objectContaining({
+				kind: 'workflow',
+				state: 'exhausted',
+			}),
+		);
 		expect(result.finalMessage).toBeNull();
 	});
 
