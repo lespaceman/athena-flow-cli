@@ -84,11 +84,11 @@ describe('schema migrations', () => {
 		// Run migration
 		initSchema(db);
 
-		// Verify version bumped
+		// Verify version bumped (chains through v4→v5)
 		const row = db.prepare('SELECT version FROM schema_version').get() as {
 			version: number;
 		};
-		expect(row.version).toBe(4);
+		expect(row.version).toBe(5);
 
 		// Verify token columns exist and can be updated
 		db.prepare(
@@ -138,7 +138,7 @@ describe('schema migrations', () => {
 		const row = db.prepare('SELECT version FROM schema_version').get() as {
 			version: number;
 		};
-		expect(row.version).toBe(4);
+		expect(row.version).toBe(5);
 
 		db.prepare(
 			'INSERT INTO adapter_sessions (session_id, started_at, tokens_context_window_size) VALUES (?, ?, ?)',
@@ -149,6 +149,69 @@ describe('schema migrations', () => {
 			)
 			.get('as2') as {tokens_context_window_size: number};
 		expect(updated.tokens_context_window_size).toBe(400000);
+
+		db.close();
+	});
+
+	it('migrates v4 → v5 by adding workflow_runs table and run_id column', () => {
+		const db = new Database(':memory:');
+		db.exec('PRAGMA foreign_keys = ON');
+		db.exec('CREATE TABLE schema_version (version INTEGER NOT NULL)');
+		db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(4);
+		db.exec(
+			'CREATE TABLE session (id TEXT PRIMARY KEY, project_dir TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, label TEXT, event_count INTEGER DEFAULT 0)',
+		);
+		db.exec(
+			'CREATE TABLE runtime_events (id TEXT PRIMARY KEY, seq INTEGER NOT NULL UNIQUE, timestamp INTEGER NOT NULL, hook_name TEXT NOT NULL, adapter_session_id TEXT, payload JSON NOT NULL)',
+		);
+		db.exec(
+			'CREATE TABLE feed_events (event_id TEXT PRIMARY KEY, runtime_event_id TEXT, seq INTEGER NOT NULL, kind TEXT NOT NULL, run_id TEXT NOT NULL, actor_id TEXT NOT NULL, timestamp INTEGER NOT NULL, data JSON NOT NULL, FOREIGN KEY (runtime_event_id) REFERENCES runtime_events(id))',
+		);
+		db.exec(
+			'CREATE TABLE adapter_sessions (session_id TEXT PRIMARY KEY, started_at INTEGER NOT NULL, ended_at INTEGER, model TEXT, source TEXT, tokens_input INTEGER, tokens_output INTEGER, tokens_cache_read INTEGER, tokens_cache_write INTEGER, tokens_context_size INTEGER, tokens_context_window_size INTEGER)',
+		);
+
+		db.prepare(
+			'INSERT INTO session (id, project_dir, created_at, updated_at) VALUES (?, ?, ?, ?)',
+		).run('s1', '/tmp', Date.now(), Date.now());
+		db.prepare(
+			'INSERT INTO adapter_sessions (session_id, started_at) VALUES (?, ?)',
+		).run('as1', Date.now());
+
+		initSchema(db);
+
+		const row = db.prepare('SELECT version FROM schema_version').get() as {
+			version: number;
+		};
+		expect(row.version).toBe(5);
+
+		db.prepare(
+			`INSERT INTO workflow_runs (id, session_id, started_at, iteration, max_iterations, status)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+		).run('wr1', 's1', Date.now(), 0, 5, 'running');
+
+		const wr = db
+			.prepare('SELECT * FROM workflow_runs WHERE id = ?')
+			.get('wr1') as Record<string, unknown>;
+		expect(wr.session_id).toBe('s1');
+		expect(wr.iteration).toBe(0);
+		expect(wr.status).toBe('running');
+
+		db.prepare(
+			'UPDATE adapter_sessions SET run_id = ? WHERE session_id = ?',
+		).run('wr1', 'as1');
+		const as = db
+			.prepare('SELECT run_id FROM adapter_sessions WHERE session_id = ?')
+			.get('as1') as {run_id: string};
+		expect(as.run_id).toBe('wr1');
+
+		db.prepare(
+			'INSERT INTO adapter_sessions (session_id, started_at) VALUES (?, ?)',
+		).run('as2', Date.now());
+		const as2 = db
+			.prepare('SELECT run_id FROM adapter_sessions WHERE session_id = ?')
+			.get('as2') as {run_id: string | null};
+		expect(as2.run_id).toBeNull();
 
 		db.close();
 	});

@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export function initSchema(db: Database.Database): void {
 	db.exec('PRAGMA journal_mode = WAL');
@@ -52,7 +52,22 @@ export function initSchema(db: Database.Database): void {
 			tokens_cache_read INTEGER,
 			tokens_cache_write INTEGER,
 			tokens_context_size INTEGER,
-			tokens_context_window_size INTEGER
+			tokens_context_window_size INTEGER,
+			run_id TEXT REFERENCES workflow_runs(id)
+		);
+
+		CREATE TABLE IF NOT EXISTS workflow_runs (
+			id TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL,
+			workflow_name TEXT,
+			started_at INTEGER NOT NULL,
+			ended_at INTEGER,
+			iteration INTEGER NOT NULL DEFAULT 0,
+			max_iterations INTEGER NOT NULL DEFAULT 1,
+			status TEXT NOT NULL DEFAULT 'running',
+			stop_reason TEXT,
+			tracker_path TEXT,
+			FOREIGN KEY (session_id) REFERENCES session(id)
 		);
 	`);
 
@@ -61,6 +76,7 @@ export function initSchema(db: Database.Database): void {
 		CREATE INDEX IF NOT EXISTS idx_feed_run ON feed_events(run_id);
 		CREATE UNIQUE INDEX IF NOT EXISTS idx_feed_seq ON feed_events(seq);
 		CREATE INDEX IF NOT EXISTS idx_runtime_seq ON runtime_events(seq);
+		CREATE INDEX IF NOT EXISTS idx_workflow_runs_session ON workflow_runs(session_id);
 	`);
 
 	// Check schema version
@@ -103,6 +119,33 @@ export function initSchema(db: Database.Database): void {
 			db.exec(`
 				ALTER TABLE adapter_sessions ADD COLUMN tokens_context_window_size INTEGER;
 				UPDATE schema_version SET version = 4;
+			`);
+		}
+
+		// Re-read version after prior migrations
+		const currentVersion = (
+			db.prepare('SELECT version FROM schema_version').get() as {
+				version: number;
+			}
+		).version;
+		if (currentVersion === 4) {
+			db.exec(`
+				CREATE TABLE IF NOT EXISTS workflow_runs (
+					id TEXT PRIMARY KEY,
+					session_id TEXT NOT NULL,
+					workflow_name TEXT,
+					started_at INTEGER NOT NULL,
+					ended_at INTEGER,
+					iteration INTEGER NOT NULL DEFAULT 0,
+					max_iterations INTEGER NOT NULL DEFAULT 1,
+					status TEXT NOT NULL DEFAULT 'running',
+					stop_reason TEXT,
+					tracker_path TEXT,
+					FOREIGN KEY (session_id) REFERENCES session(id)
+				);
+				CREATE INDEX IF NOT EXISTS idx_workflow_runs_session ON workflow_runs(session_id);
+				ALTER TABLE adapter_sessions ADD COLUMN run_id TEXT REFERENCES workflow_runs(id);
+				UPDATE schema_version SET version = 5;
 			`);
 		}
 	}
