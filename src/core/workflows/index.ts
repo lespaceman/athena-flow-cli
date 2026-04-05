@@ -38,3 +38,10 @@ export {
 	type LoopManager,
 } from './loopManager';
 export {resolveBuiltinWorkflow, listBuiltinWorkflows} from './builtins/index';
+export {createWorkflowRunner} from './workflowRunner';
+export type {
+	WorkflowRunnerInput,
+	WorkflowRunnerHandle,
+	WorkflowRunResult,
+	TurnInput,
+} from './workflowRunner';
