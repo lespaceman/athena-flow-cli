@@ -57,7 +57,7 @@ running → failed        (process error, timeout, missing tracker)
 running → cancelled     (user interrupt / Ctrl+C / kill)
 ```
 
-**`--continue` semantics**: Creates a new `WorkflowRun` under the same `AthenaSession`. The old run stays in its terminal status (immutable once terminal). The new run reads the existing tracker for continuity. Fresh iteration counter.
+**`--continue` semantics**: Creates a new `WorkflowRun` under the same `AthenaSession`. The old run stays in its terminal status (immutable once terminal). The new run reads the existing tracker for continuity. Fresh iteration counter. Tracker path is always derived from workflow config + session ID, not inherited from the prior run — since `{sessionId}` is the same across runs in the same Athena session, the path resolves identically.
 
 **Non-workflow single turns** also get a `WorkflowRun` with `iteration: 0`, `maxIterations: 1` — unifies the model rather than special-casing.
 
@@ -93,6 +93,8 @@ type TurnInput = {
 
 type WorkflowRunSnapshot = {
 	runId: string;
+	sessionId: string;
+	workflowName?: string;
 	iteration: number;
 	status: RunStatus;
 	stopReason?: string;
@@ -335,15 +337,20 @@ type SessionStore = {
 };
 ```
 
-`persistRun` uses SQLite upsert. The store fills in `session_id` from its own `opts.sessionId` (set at construction) — the snapshot doesn't carry it:
+`persistRun` uses SQLite upsert. The snapshot carries `sessionId` and `workflowName` for the INSERT side:
 
 ```sql
-INSERT INTO workflow_runs (id, session_id, ...) VALUES (?, ?, ...)
-ON CONFLICT(id) DO UPDATE SET iteration=excluded.iteration,
-  status=excluded.status, stop_reason=excluded.stop_reason, ended_at=excluded.ended_at
+INSERT INTO workflow_runs (id, session_id, workflow_name, started_at, iteration,
+  max_iterations, status, stop_reason, tracker_path)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  iteration=excluded.iteration, status=excluded.status,
+  stop_reason=excluded.stop_reason, ended_at=excluded.ended_at
 ```
 
 Callers wire `persistRunState` directly to `store.persistRun(snapshot)` — no conditional create-vs-update logic at the call site.
+
+**Token aggregation**: `workflow_runs` has no token columns. Cumulative tokens for a run are queried via `SUM` over `adapter_sessions WHERE run_id = ?`, same pattern as the existing per-session token aggregation. The `tokens` field on `WorkflowRunSnapshot` is used by the runner for in-memory tracking and `onIterationComplete` callbacks, not persisted on the run row.
 
 **`linkAdapterSession` timing**: Happens in the existing `recordEvent` flow (in runner.ts / RuntimeProvider), which sees both the `runId` (from `handle.runId`, a synchronous property) and the `adapterSessionId` (from the runtime event). The `WorkflowRunnerHandle.runId` is available immediately on construction, before `result` resolves.
 
@@ -387,17 +394,18 @@ Callers wire `persistRunState` directly to `store.persistRun(snapshot)` — no c
 
 **Unchanged files** (boundary confirmation):
 
-| File                                         | Why unchanged                                                 |
-| -------------------------------------------- | ------------------------------------------------------------- |
-| `src/harnesses/claude/session/controller.ts` | Adapter layer untouched                                       |
-| `src/harnesses/adapter.ts`                   | Adapter contract untouched                                    |
-| `src/harnesses/contracts/session.ts`         | `SessionController` contract same                             |
-| `src/app/entry/interactiveSession.ts`        | Session ID resolution unchanged                               |
-| `src/app/entry/execCommand.ts`               | `--continue` resolution unchanged                             |
-| `src/app/shell/AppShell.tsx`                 | Calls `useWorkflowSessionController` which changes internally |
-| `src/app/shell/useSessionScope.ts`           | Reads from registry, unaffected                               |
-| `src/core/feed/mapper.ts`                    | Feed mapping pipeline untouched                               |
-| `src/infra/sessions/registry.ts`             | Read-only session listing untouched                           |
+| File                                         | Why unchanged                                                                               |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `src/harnesses/claude/session/controller.ts` | Adapter layer untouched                                                                     |
+| `src/harnesses/adapter.ts`                   | Adapter contract untouched                                                                  |
+| `src/harnesses/contracts/session.ts`         | `SessionController` contract same                                                           |
+| `src/app/entry/interactiveSession.ts`        | Session ID resolution unchanged                                                             |
+| `src/app/entry/execCommand.ts`               | `--continue` resolution unchanged                                                           |
+| `src/app/shell/AppShell.tsx`                 | Calls `useWorkflowSessionController` which changes internally                               |
+| `src/app/shell/useSessionScope.ts`           | Reads from registry, unaffected                                                             |
+| `src/app/process/useHarnessProcess.ts`       | Direct caller of `useWorkflowSessionController` — contract unchanged, only internals change |
+| `src/core/feed/mapper.ts`                    | Feed mapping pipeline untouched                                                             |
+| `src/infra/sessions/registry.ts`             | Read-only session listing untouched                                                         |
 
 ## Summary: Problems → Solutions
 
