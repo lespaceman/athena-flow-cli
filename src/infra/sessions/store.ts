@@ -6,7 +6,13 @@ import type {MapperBootstrap} from '../../core/feed/bootstrap';
 import type {RuntimeEvent} from '../../core/runtime/types';
 import type {TokenUsage} from '../../shared/types/headerMetrics';
 import {initSchema} from './schema';
-import type {AthenaSession, AdapterSessionRecord, StoredSession} from './types';
+import type {
+	AthenaSession,
+	AdapterSessionRecord,
+	StoredSession,
+	WorkflowRunSnapshot,
+	PersistedWorkflowRun,
+} from './types';
 
 export type SessionStoreOptions = {
 	sessionId: string;
@@ -45,6 +51,9 @@ export type SessionStore = {
 	degradedReason: string | undefined;
 	/** Mark the session as degraded after a persistence failure. */
 	markDegraded(reason: string): void;
+	persistRun(snapshot: WorkflowRunSnapshot): void;
+	getLatestRun(): PersistedWorkflowRun | null;
+	linkAdapterSession(adapterSessionId: string, runId: string): void;
 };
 
 export function createSessionStore(opts: SessionStoreOptions): SessionStore {
@@ -117,6 +126,24 @@ export function createSessionStore(opts: SessionStoreOptions): SessionStore {
 
 	const updateEventCount = db.prepare(
 		'UPDATE session SET event_count = event_count + ? WHERE id = ?',
+	);
+
+	const upsertRun = db.prepare(
+		`INSERT INTO workflow_runs (id, session_id, workflow_name, started_at, iteration, max_iterations, status, stop_reason, tracker_path)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET
+		   iteration = excluded.iteration,
+		   status = excluded.status,
+		   stop_reason = excluded.stop_reason,
+		   ended_at = CASE WHEN excluded.status != 'running' THEN ? ELSE ended_at END`,
+	);
+
+	const selectLatestRun = db.prepare(
+		`SELECT * FROM workflow_runs WHERE session_id = ? ORDER BY started_at DESC, rowid DESC LIMIT 1`,
+	);
+
+	const updateAdapterRunId = db.prepare(
+		`UPDATE adapter_sessions SET run_id = ? WHERE session_id = ?`,
 	);
 
 	function recordRuntimeEvent(event: RuntimeEvent): void {
@@ -355,6 +382,46 @@ export function createSessionStore(opts: SessionStoreOptions): SessionStore {
 		db.close();
 	}
 
+	function persistRun(snapshot: WorkflowRunSnapshot): void {
+		const now = Date.now();
+		const endedAt = snapshot.status !== 'running' ? now : null;
+		upsertRun.run(
+			snapshot.runId,
+			snapshot.sessionId,
+			snapshot.workflowName ?? null,
+			now,
+			snapshot.iteration,
+			snapshot.maxIterations ?? 1,
+			snapshot.status,
+			snapshot.stopReason ?? null,
+			snapshot.trackerPath ?? null,
+			endedAt,
+		);
+	}
+
+	function getLatestRun(): PersistedWorkflowRun | null {
+		const row = selectLatestRun.get(opts.sessionId) as
+			| Record<string, unknown>
+			| undefined;
+		if (!row) return null;
+		return {
+			id: row.id as string,
+			sessionId: row.session_id as string,
+			workflowName: (row.workflow_name as string) ?? undefined,
+			startedAt: row.started_at as number,
+			endedAt: (row.ended_at as number) ?? undefined,
+			iteration: row.iteration as number,
+			maxIterations: row.max_iterations as number,
+			status: row.status as PersistedWorkflowRun['status'],
+			stopReason: (row.stop_reason as string) ?? undefined,
+			trackerPath: (row.tracker_path as string) ?? undefined,
+		};
+	}
+
+	function linkAdapterSession(adapterSessionId: string, runId: string): void {
+		updateAdapterRunId.run(runId, adapterSessionId);
+	}
+
 	return {
 		recordEvent,
 		recordFeedEvents,
@@ -376,5 +443,8 @@ export function createSessionStore(opts: SessionStoreOptions): SessionStore {
 			degradedReason = reason;
 			console.error(`[athena] session degraded: ${reason}`);
 		},
+		persistRun,
+		getLatestRun,
+		linkAdapterSession,
 	};
 }

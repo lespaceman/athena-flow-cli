@@ -252,4 +252,94 @@ describe('SessionStore', () => {
 
 		expect(store.getRestoredTokens()).toBeNull();
 	});
+
+	it('persists a workflow run via upsert', () => {
+		store = createSessionStore({
+			sessionId: 's1',
+			projectDir: '/tmp',
+			dbPath: ':memory:',
+		});
+
+		store.persistRun({
+			runId: 'run-1',
+			sessionId: 's1',
+			workflowName: 'test-wf',
+			iteration: 0,
+			status: 'running',
+			trackerPath: '.athena/s1/tracker.md',
+		});
+
+		const run1 = store.getLatestRun();
+		expect(run1).not.toBeNull();
+		expect(run1!.id).toBe('run-1');
+		expect(run1!.workflowName).toBe('test-wf');
+		expect(run1!.iteration).toBe(0);
+		expect(run1!.status).toBe('running');
+		expect(run1!.trackerPath).toBe('.athena/s1/tracker.md');
+		expect(run1!.endedAt).toBeUndefined();
+
+		store.persistRun({
+			runId: 'run-1',
+			sessionId: 's1',
+			workflowName: 'test-wf',
+			iteration: 3,
+			status: 'completed',
+			stopReason: 'Tracker has completion marker',
+			trackerPath: '.athena/s1/tracker.md',
+		});
+
+		const run2 = store.getLatestRun();
+		expect(run2!.iteration).toBe(3);
+		expect(run2!.status).toBe('completed');
+		expect(run2!.stopReason).toBe('Tracker has completion marker');
+		expect(run2!.endedAt).toBeDefined();
+	});
+
+	it('getLatestRun returns the most recent run', () => {
+		store = createSessionStore({
+			sessionId: 's1',
+			projectDir: '/tmp',
+			dbPath: ':memory:',
+		});
+
+		store.persistRun({
+			runId: 'run-1',
+			sessionId: 's1',
+			iteration: 0,
+			status: 'completed',
+		});
+
+		store.persistRun({
+			runId: 'run-2',
+			sessionId: 's1',
+			iteration: 0,
+			status: 'running',
+		});
+
+		const latest = store.getLatestRun();
+		expect(latest!.id).toBe('run-2');
+	});
+
+	it('links an adapter session to a workflow run', () => {
+		store = createSessionStore({
+			sessionId: 's1',
+			projectDir: '/tmp',
+			dbPath: ':memory:',
+		});
+
+		store.persistRun({
+			runId: 'run-1',
+			sessionId: 's1',
+			iteration: 0,
+			status: 'running',
+		});
+
+		const rtEvent = makeRuntimeEvent({id: 'rt-1', sessionId: 'adapter-1'});
+		store.recordEvent(rtEvent, []);
+
+		store.linkAdapterSession('adapter-1', 'run-1');
+
+		const run = store.getLatestRun();
+		expect(run!.id).toBe('run-1');
+	});
 });
