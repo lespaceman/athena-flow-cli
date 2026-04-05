@@ -42,10 +42,10 @@ Every session follows four phases: **Read**, **Orient**, **Execute**, **End**.
 
 ### Phase 1 — Read the Tracker
 
-Check if the tracker file exists at \`.athena/<session_id>/tracker.md\`.
+Read the tracker file at \`.athena/<session_id>/tracker.md\`.
 
-- **Exists**: Read it thoroughly. It contains everything prior sessions learned and decided. Skip to Phase 3 (Execute) using the tracker's context.
-- **Does not exist**: This is session 1. Proceed to Phase 2 (Orient).
+- **Contains \`<!-- TRACKER_SKELETON -->\`**: This is session 1. The runner created a skeleton tracker with the goal and session metadata. Proceed to Phase 2 (Orient) — replace the skeleton with a real tracker.
+- **Otherwise**: This is a continuation session. The tracker contains everything prior sessions learned and decided. Skip to Phase 3 (Execute) using the tracker's context.
 
 Why read first: without the tracker, you'll duplicate work already done or contradict decisions made in prior sessions. The tracker is the single source of truth across sessions.
 
