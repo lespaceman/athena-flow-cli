@@ -80,6 +80,33 @@ describe('workflow session planning', () => {
 		);
 	});
 
+	it('uses harness-specific task tool instructions in composed state machine content', () => {
+		const projectDir = makeTempDir();
+		const workflowPath = path.join(projectDir, 'workflow.md');
+		fs.writeFileSync(workflowPath, '# Workflow Steps', 'utf-8');
+
+		const state = createWorkflowRunState({
+			projectDir,
+			sessionId: 'sess-1',
+			harness: 'openai-codex',
+			workflow: {
+				name: 'wf',
+				plugins: [],
+				promptTemplate: '{input}',
+				workflowFile: 'workflow.md',
+				loop: {enabled: true, maxIterations: 5},
+			},
+		});
+
+		const instructions = (state.workflowOverride as Record<string, unknown>)[
+			'developerInstructions'
+		] as string;
+		expect(instructions).toContain('Use the `update_plan` tool');
+		expect(instructions).toContain(
+			'Do not carry forward prior session task IDs',
+		);
+	});
+
 	it('omits state machine protocol for non-looped workflows', () => {
 		const projectDir = makeTempDir();
 		const workflowPath = path.join(projectDir, 'workflow.md');

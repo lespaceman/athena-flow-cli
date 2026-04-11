@@ -43,6 +43,8 @@ const {
 	resolveMarketplacePluginFromRepo,
 	resolveMarketplaceWorkflow,
 	resolveVersionedMarketplacePluginTarget,
+	resolveWorkflowInstallSource,
+	resolveWorkflowInstallSourceFromSources,
 } = await import('../marketplace');
 
 beforeEach(() => {
@@ -528,6 +530,7 @@ describe('resolveVersionedMarketplacePluginTarget', () => {
 			pluginName,
 			marketplacePath: `${cacheDir}/dist/${version}/.agents/plugins/marketplace.json`,
 			pluginDir: `${cacheDir}/dist/${version}/claude/plugin`,
+			codexPluginDir: `${cacheDir}/dist/${version}/codex/plugin`,
 		});
 		expect(execFileSyncMock).not.toHaveBeenCalled();
 	});
@@ -559,6 +562,7 @@ describe('resolveVersionedMarketplacePluginTarget', () => {
 			pluginName,
 			marketplacePath: `${cacheDir}/dist/${version}/.agents/plugins/marketplace.json`,
 			pluginDir: `${cacheDir}/dist/${version}/claude/plugin`,
+			codexPluginDir: `${cacheDir}/dist/${version}/codex/plugin`,
 		});
 		expect(execFileSyncMock).toHaveBeenCalledWith(
 			'npm',
@@ -607,6 +611,7 @@ describe('resolveVersionedMarketplacePluginTarget', () => {
 			pluginName,
 			marketplacePath: `${cacheDir}/dist/${version}/.agents/plugins/marketplace.json`,
 			pluginDir: `${cacheDir}/dist/${version}/claude/plugin`,
+			codexPluginDir: `${cacheDir}/dist/${version}/codex/plugin`,
 		});
 	});
 
@@ -693,6 +698,7 @@ describe('resolveVersionedMarketplacePluginTarget', () => {
 			pluginName,
 			marketplacePath: `${repoDir}/plugins/${pluginName}/dist/${version}/.agents/plugins/marketplace.json`,
 			pluginDir: `${repoDir}/plugins/${pluginName}/dist/${version}/claude/plugin`,
+			codexPluginDir: `${repoDir}/plugins/${pluginName}/dist/${version}/codex/plugin`,
 		});
 	});
 
@@ -721,7 +727,11 @@ describe('resolveVersionedMarketplacePluginTarget', () => {
 
 		expect(() =>
 			resolveVersionedMarketplacePluginTarget(ref, version, repoDir),
-		).toThrow(/version 1\.2\.3 not available/);
+		).toThrow(
+			new RegExp(
+				`Plugin "${pluginName}" version ${version} could not be resolved\\..*npm package resolution failed.*npm unavailable\\..*source fallback was considered, but marketplace repo ${owner}\\/${repo} exposes version 9\\.9\\.9 instead of requested ${version}`,
+			),
+		);
 	});
 });
 
@@ -771,6 +781,102 @@ describe('resolveWorkflowMarketplaceSource', () => {
 			path: repoDir,
 			repoDir,
 		});
+	});
+});
+
+describe('resolveWorkflowInstallSource', () => {
+	it('returns an explicit marketplace ref unchanged', () => {
+		expect(
+			resolveWorkflowInstallSource(
+				'e2e-test-builder@lespaceman/athena-workflow-marketplace',
+				'lespaceman/athena-workflow-marketplace',
+			),
+		).toBe('e2e-test-builder@lespaceman/athena-workflow-marketplace');
+	});
+
+	it('returns an explicit local path unchanged', () => {
+		files['/tmp/local-workflow/workflow.json'] = '{}';
+
+		expect(
+			resolveWorkflowInstallSource(
+				'/tmp/local-workflow/workflow.json',
+				'lespaceman/athena-workflow-marketplace',
+			),
+		).toBe('/tmp/local-workflow/workflow.json');
+	});
+
+	it('resolves bare workflow names from a remote marketplace source', () => {
+		const cacheBase =
+			'/home/testuser/.config/athena/marketplaces/lespaceman/athena-workflow-marketplace';
+		dirs.add(cacheBase);
+		files[`${cacheBase}/.athena-workflow/marketplace.json`] = JSON.stringify({
+			name: 'athena-workflow-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [],
+			workflows: [
+				{
+					name: 'e2e-test-builder',
+					source: './workflows/e2e-test-builder/workflow.json',
+				},
+			],
+		});
+		dirs.add(`${cacheBase}/workflows/e2e-test-builder`);
+		files[`${cacheBase}/workflows/e2e-test-builder/workflow.json`] = '{}';
+		execFileSyncMock.mockImplementation(() => {});
+
+		expect(
+			resolveWorkflowInstallSource(
+				'e2e-test-builder',
+				'lespaceman/athena-workflow-marketplace',
+			),
+		).toBe('e2e-test-builder@lespaceman/athena-workflow-marketplace');
+	});
+
+	it('resolves bare workflow names from a local marketplace source', () => {
+		const repoDir = '/tmp/workflow-marketplace';
+		files[`${repoDir}/.athena-workflow/marketplace.json`] = JSON.stringify({
+			name: 'athena-workflow-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [],
+			workflows: [
+				{
+					name: 'local-workflow',
+					source: './workflows/local-workflow/workflow.json',
+				},
+			],
+		});
+		dirs.add(`${repoDir}/workflows/local-workflow`);
+		files[`${repoDir}/workflows/local-workflow/workflow.json`] = '{}';
+
+		expect(resolveWorkflowInstallSource('local-workflow', repoDir)).toBe(
+			`${repoDir}/workflows/local-workflow/workflow.json`,
+		);
+	});
+});
+
+describe('resolveWorkflowInstallSourceFromSources', () => {
+	it('tries sources in order until one resolves a bare workflow name', () => {
+		const repoDir = '/tmp/workflow-marketplace';
+		files[`${repoDir}/.athena-workflow/marketplace.json`] = JSON.stringify({
+			name: 'athena-workflow-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [],
+			workflows: [
+				{
+					name: 'local-workflow',
+					source: './workflows/local-workflow/workflow.json',
+				},
+			],
+		});
+		dirs.add(`${repoDir}/workflows/local-workflow`);
+		files[`${repoDir}/workflows/local-workflow/workflow.json`] = '{}';
+
+		expect(
+			resolveWorkflowInstallSourceFromSources('local-workflow', [
+				'/tmp/missing-marketplace',
+				repoDir,
+			]),
+		).toBe(`${repoDir}/workflows/local-workflow/workflow.json`);
 	});
 });
 

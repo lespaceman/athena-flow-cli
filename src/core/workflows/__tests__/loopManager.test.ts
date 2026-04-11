@@ -56,6 +56,20 @@ describe('createLoopManager', () => {
 			expect(state.completed).toBe(true);
 		});
 
+		it('ignores completion marker text unless it is the last non-empty line', () => {
+			files['/project/e2e-tracker.md'] = [
+				'# E2E Test Tracker',
+				'Do not write <!-- E2E_COMPLETE --> until verification passes.',
+				'## Steps',
+				'- still running',
+			].join('\n');
+
+			const mgr = createLoopManager('/project/e2e-tracker.md', DEFAULT_CONFIG);
+			const state = mgr.getState();
+
+			expect(state.completed).toBe(false);
+		});
+
 		it('uses default WORKFLOW_COMPLETE marker when none specified', () => {
 			files['/project/tracker.md'] = '<!-- WORKFLOW_COMPLETE -->';
 			const mgr = createLoopManager('/project/tracker.md', {
@@ -92,6 +106,44 @@ describe('createLoopManager', () => {
 
 			expect(state.blocked).toBe(true);
 			expect(state.blockedReason).toBe('No Playwright config found');
+		});
+
+		it('accepts blocked marker without a reason on the last line', () => {
+			files['/project/e2e-tracker.md'] = [
+				'# E2E Test Tracker',
+				'## Notes',
+				'Waiting on external access.',
+				'<!-- E2E_BLOCKED -->',
+			].join('\n');
+
+			const config = {
+				...DEFAULT_CONFIG,
+				blockedMarker: '<!-- E2E_BLOCKED',
+			};
+			const mgr = createLoopManager('/project/e2e-tracker.md', config);
+			const state = mgr.getState();
+
+			expect(state.blocked).toBe(true);
+			expect(state.blockedReason).toBeUndefined();
+		});
+
+		it('ignores blocked marker text unless it is the last non-empty line', () => {
+			files['/project/e2e-tracker.md'] = [
+				'# E2E Test Tracker',
+				'Example marker: <!-- E2E_BLOCKED: placeholder -->',
+				'## Steps',
+				'- still running',
+			].join('\n');
+
+			const config = {
+				...DEFAULT_CONFIG,
+				blockedMarker: '<!-- E2E_BLOCKED',
+			};
+			const mgr = createLoopManager('/project/e2e-tracker.md', config);
+			const state = mgr.getState();
+
+			expect(state.blocked).toBe(false);
+			expect(state.blockedReason).toBeUndefined();
 		});
 
 		it('detects reached iteration limit', () => {

@@ -84,6 +84,7 @@ describe('useWorkflowSessionController', () => {
 				{
 					projectDir,
 					sessionId: 'session-1',
+					harness: 'openai-codex',
 					workflow: {
 						name: 'wf',
 						plugins: [],
@@ -116,7 +117,7 @@ describe('useWorkflowSessionController', () => {
 			{
 				appendSystemPromptFile: composedPath,
 				developerInstructions: expect.stringContaining(
-					'Always read the tracker.',
+					'Use the `update_plan` tool',
 				),
 			},
 		);
@@ -127,7 +128,7 @@ describe('useWorkflowSessionController', () => {
 			{
 				appendSystemPromptFile: composedPath,
 				developerInstructions: expect.stringContaining(
-					'Always read the tracker.',
+					'Do not carry forward prior session task IDs',
 				),
 			},
 		);

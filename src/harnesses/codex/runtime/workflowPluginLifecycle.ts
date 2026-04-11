@@ -1,4 +1,3 @@
-import path from 'node:path';
 import type {AppServerManager} from './appServerManager';
 import * as M from '../protocol/methods';
 import type {CodexWorkflowPluginRef} from '../../../core/workflows';
@@ -33,9 +32,6 @@ export function buildCodexPluginInstallMessage(
 		return 'No workflow plugins required Codex-native installation.';
 	}
 
-	const names = plugins.map(
-		plugin =>
-			`${plugin.pluginName} (${path.basename(path.dirname(path.dirname(plugin.marketplacePath)))})`,
-	);
+	const names = plugins.map(plugin => `${plugin.pluginName} (${plugin.ref})`);
 	return `Ensured ${plugins.length} workflow plugin${plugins.length === 1 ? '' : 's'} via Codex: ${names.join(', ')}.`;
 }

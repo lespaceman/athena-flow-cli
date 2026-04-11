@@ -10,6 +10,7 @@ import {
 	resolveMarketplacePluginTargetFromRepo,
 	resolveVersionedMarketplacePluginTarget,
 } from '../../infra/plugins/marketplace';
+import type {MarketplacePluginTarget} from '../../infra/plugins/marketplace';
 import type {
 	CodexWorkflowPluginRef,
 	ResolvedLocalWorkflowPlugin,
@@ -42,6 +43,23 @@ function marketplaceNameFromRef(ref: string): string {
 	return ref.slice(ref.indexOf('@') + 1);
 }
 
+function toResolvedWorkflowPlugin(
+	target: MarketplacePluginTarget,
+	ref: string,
+	version?: string,
+): ResolvedWorkflowPlugin {
+	return {
+		ref: target.ref,
+		pluginName: target.pluginName,
+		marketplaceName: marketplaceNameFromRef(ref),
+		...(version !== undefined && {version}),
+		pluginDir: target.pluginDir,
+		claudeArtifactDir: target.pluginDir,
+		codexPluginDir: target.codexPluginDir,
+		codexMarketplacePath: target.marketplacePath,
+	};
+}
+
 export function resolveWorkflowPlugins(
 	workflow: WorkflowConfig | ResolvedWorkflowConfig,
 ): ResolvedWorkflowPlugins {
@@ -58,16 +76,7 @@ export function resolveWorkflowPlugins(
 					version,
 					source?.kind === 'local' ? source.repoDir : undefined,
 				);
-				return {
-					ref: target.ref,
-					pluginName: target.pluginName,
-					marketplaceName: marketplaceNameFromRef(ref),
-					version,
-					pluginDir: target.pluginDir,
-					claudeArtifactDir: target.pluginDir,
-					codexPluginDir: target.pluginDir,
-					codexMarketplacePath: target.marketplacePath,
-				} satisfies ResolvedWorkflowPlugin;
+				return toResolvedWorkflowPlugin(target, ref, version);
 			}
 
 			if (source?.kind === 'local' && source.repoDir) {
@@ -75,26 +84,11 @@ export function resolveWorkflowPlugins(
 					ref,
 					source.repoDir,
 				);
-				return {
-					ref: target.ref,
-					pluginName: target.pluginName,
-					marketplaceName: marketplaceNameFromRef(ref),
-					pluginDir: target.pluginDir,
-					claudeArtifactDir: target.pluginDir,
-					codexPluginDir: target.pluginDir,
-					codexMarketplacePath: target.marketplacePath,
-				} satisfies ResolvedWorkflowPlugin;
+				return toResolvedWorkflowPlugin(target, ref);
 			}
+
 			const target = resolveMarketplacePluginTarget(ref);
-			return {
-				ref: target.ref,
-				pluginName: target.pluginName,
-				marketplaceName: marketplaceNameFromRef(ref),
-				pluginDir: target.pluginDir,
-				claudeArtifactDir: target.pluginDir,
-				codexPluginDir: target.pluginDir,
-				codexMarketplacePath: target.marketplacePath,
-			} satisfies ResolvedWorkflowPlugin;
+			return toResolvedWorkflowPlugin(target, ref);
 		} catch (error) {
 			throw new Error(
 				`Workflow "${workflow.name}": failed to install plugin "${ref}": ${(error as Error).message}`,

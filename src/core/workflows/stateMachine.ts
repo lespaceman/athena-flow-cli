@@ -1,3 +1,5 @@
+import type {AthenaHarness} from '../../infra/plugins/config';
+
 /**
  * Shared stateless session protocol — inlined so it survives tsup bundling.
  *
@@ -5,7 +7,29 @@
  * mirrored copy at shared/state-machine.md; keep them in sync.
  */
 
-export const STATE_MACHINE_CONTENT = `# Stateless Session Protocol
+function buildTaskToolInstructions(harness: AthenaHarness): string {
+	switch (harness) {
+		case 'openai-codex':
+			return `Use the \`update_plan\` tool to create and maintain the task list shown to the user.
+
+- At the start of every fresh session, recreate the task list from the tracker
+- Do not carry forward prior session task IDs or assume prior session plan items still exist in the tool
+- When progress changes, update \`update_plan\` in the same working phase as the tracker so the UI stays aligned`;
+		case 'claude-code':
+		case 'opencode':
+		default:
+			return `Use \`TaskCreate\` and \`TaskUpdate\` to create and maintain the task list shown to the user.
+
+- At the start of every fresh session, recreate tasks from the tracker instead of trying to resume prior session task IDs
+- Do not refer to task IDs created in earlier sessions; they are session-scoped UI artifacts, not durable workflow state
+- When progress changes, update the task list and the tracker in the same working phase so the UI stays aligned`;
+	}
+}
+
+export function buildStateMachineContent(
+	harness: AthenaHarness = 'claude-code',
+): string {
+	return `# Stateless Session Protocol
 
 You operate in stateless sessions managed by a workflow runner. Each session is a fresh process with no memory of prior sessions. The **tracker file** is your only continuity — it's how you talk to your future self.
 
@@ -15,24 +39,30 @@ The runner spawns \`claude -p\` sessions in a loop:
 
 - **Session 1**: You receive the user's original request.
 - **Sessions 2+**: You receive a continuation prompt directing you to read the tracker.
-- **Between sessions**: The runner inspects the tracker for terminal markers. If found, or if the max iteration cap is reached, the loop ends and the tracker is cleaned up.
+- **Between sessions**: The runner inspects the tracker for terminal markers. If found, or if the max iteration cap is reached, the loop ends. The tracker is preserved for resume, audit, and debugging.
 
 ### Terminal Markers
 
-All workflows use the same tracker markers:
+By default, workflows use these tracker markers:
 
 - \`<!-- WORKFLOW_COMPLETE -->\`
+- \`<!-- WORKFLOW_BLOCKED -->\`
 - \`<!-- WORKFLOW_BLOCKED: reason -->\`
 
+Workflows may override the default marker strings via configuration. Use the markers configured for the current workflow.
+
 Rules:
-- The marker must be the last line of the tracker
+- Only the last non-empty line of the tracker is treated as authoritative
+- Marker-like text earlier in the tracker, including notes, examples, or quoted instructions, is ignored
 - Write \`WORKFLOW_COMPLETE\` only when the workflow's completion criteria have been fully verified
 - Write \`WORKFLOW_BLOCKED\` only when progress cannot continue in the current workflow without external intervention or a workflow-defined stop condition has been reached
-- \`WORKFLOW_BLOCKED\` must include a concrete reason after the colon
+- Include a concrete reason after the colon whenever possible, but \`<!-- WORKFLOW_BLOCKED -->\` without a reason is still valid
 
 ### Tracker Path
 
-The tracker file lives at \`.athena/<session_id>/tracker.md\` in the project root, where \`<session_id>\` is the current Athena session ID. The runner provides the session ID — do not generate one yourself.
+By default, the tracker file lives at \`.athena/<session_id>/tracker.md\` in the project root, where \`<session_id>\` is the current Athena session ID. This session-scoped path allows multiple workflows to run concurrently and makes resume reliable. The runner provides the session ID — do not generate one yourself.
+
+Workflows may override the default tracker path via configuration. Read and write the tracker at the configured path for the current workflow.
 
 **Assume interruption.** Your context window can reset at any moment — the runner may kill a session that's taking too long, or you may hit token limits mid-task. Any progress not written to the tracker is gone. This isn't a theoretical risk; it's the normal operating mode.
 
@@ -42,7 +72,7 @@ Every session follows four phases: **Read**, **Orient**, **Execute**, **End**.
 
 ### Phase 1 — Read the Tracker
 
-Read the tracker file at \`.athena/<session_id>/tracker.md\`.
+Read the tracker file at the configured tracker path for the current workflow. By default this is \`.athena/<session_id>/tracker.md\`.
 
 - **Contains \`<!-- TRACKER_SKELETON -->\`**: This is session 1. The runner created a skeleton tracker with the goal and session metadata. Proceed to Phase 2 (Orient) — replace the skeleton with a real tracker.
 - **Otherwise**: This is a continuation session. The tracker contains everything prior sessions learned and decided. Skip to Phase 3 (Execute) using the tracker's context.
@@ -106,9 +136,11 @@ After each meaningful chunk of progress, update the tracker. If your context res
 
 #### Task visibility
 
-The tracker contains the authoritative task plan — it persists across sessions. Your environment's task management tools (TaskCreate/TaskUpdate, update_plan, or equivalent) are a live UI projection of that plan, visible to the user in their CLI widget. These tools are session-scoped and do not survive process exit.
+The tracker contains the authoritative task plan — it persists across sessions. Your harness's task UI is only a live projection of that plan, visible to the user in their CLI widget. It is session-scoped and does not survive process exit.
 
 **The relationship:** tracker is the source of truth, task tools are the display.
+
+${buildTaskToolInstructions(harness)}
 
 - **Session 1 (Orient):** After creating the task plan in the tracker, project each task into the task management tools so the user can see progress in real time.
 - **Session 2+ (Resume):** After reading the tracker, recreate the task projection from the tracker's plan. Set statuses to match what the tracker says is done, remaining, and next. The user sees consistent progress across sessions.
@@ -121,7 +153,7 @@ This gives the user a consistent view of progress in their CLI regardless of whi
 1. Ensure the tracker reflects all progress, discoveries, and blockers.
 2. Write clear instructions for what the next session should do first.
 3. If all work is complete and verified: write \`<!-- WORKFLOW_COMPLETE -->\` at the end of the tracker.
-4. If an unrecoverable blocker prevents progress: write \`<!-- WORKFLOW_BLOCKED: reason -->\` at the end of the tracker.
+4. If an unrecoverable blocker prevents progress: write \`<!-- WORKFLOW_BLOCKED -->\` or \`<!-- WORKFLOW_BLOCKED: reason -->\` at the end of the tracker.
 
 Do not write terminal markers prematurely. The runner trusts markers unconditionally — a premature marker kills the loop before work is done, and there's no automatic recovery.
 
@@ -147,3 +179,6 @@ Quick-reference checklist — each of these is explained in detail above:
 - Load the relevant skill before each activity
 - Do not write the completion marker until all work is verified
 - Respect the workflow's delegation constraints and retry limits`;
+}
+
+export const STATE_MACHINE_CONTENT = buildStateMachineContent();

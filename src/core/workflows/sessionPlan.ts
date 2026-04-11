@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type {AthenaHarness} from '../../infra/plugins/config';
 import type {HarnessProcessOverride} from '../runtime/process';
 import {applyPromptTemplate} from './applyWorkflow';
 import {substituteVariables} from './templateVars';
@@ -9,7 +10,7 @@ import {
 	DEFAULT_TRACKER_PATH,
 	type LoopManager,
 } from './loopManager';
-import {STATE_MACHINE_CONTENT} from './stateMachine';
+import {buildStateMachineContent} from './stateMachine';
 import type {LoopStopReason, WorkflowConfig} from './types';
 
 export type WorkflowRunState = {
@@ -37,6 +38,7 @@ function readWorkflowOverride(
 	workflow?: WorkflowConfig,
 	sessionId?: string,
 	trackerPath?: string,
+	harness: AthenaHarness = 'claude-code',
 ): Pick<WorkflowRunState, 'workflowOverride' | 'warnings'> {
 	if (!workflow?.workflowFile) {
 		return {workflowOverride: undefined, warnings: []};
@@ -59,16 +61,15 @@ function readWorkflowOverride(
 	}
 
 	let composed = workflow.loop?.enabled
-		? STATE_MACHINE_CONTENT + '\n\n' + workflowContent
+		? buildStateMachineContent(harness) + '\n\n' + workflowContent
 		: workflowContent;
 
-	// Substitute session-scoped variables into the composed content.
 	composed = substituteVariables(composed, {
 		sessionId,
 		trackerPath: trackerPath ?? undefined,
 	});
 
-	// Write composed prompt to a stable file so Claude can read it via
+	// Write composed prompt to a stable file so the harness can read it via
 	// --append-system-prompt-file without a temp-file cleanup concern.
 	const workflowDir = path.dirname(resolvedPath);
 	const composedPath = path.join(workflowDir, '.composed-system-prompt.md');
@@ -131,8 +132,9 @@ export function createWorkflowRunState(input: {
 	projectDir: string;
 	sessionId?: string;
 	workflow?: WorkflowConfig;
+	harness?: AthenaHarness;
 }): WorkflowRunState {
-	const {projectDir, sessionId, workflow} = input;
+	const {projectDir, sessionId, workflow, harness} = input;
 	const trackerResolved = resolveTrackerPath({projectDir, sessionId, workflow});
 	const loopManager =
 		workflow?.loop?.enabled === true && trackerResolved
@@ -143,6 +145,7 @@ export function createWorkflowRunState(input: {
 		workflow,
 		sessionId,
 		trackerResolved?.promptPath,
+		harness,
 	);
 
 	return {

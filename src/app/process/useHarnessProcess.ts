@@ -50,6 +50,7 @@ export function useHarnessProcess(
 	const workflowController = useWorkflowSessionController(controller, {
 		projectDir: input.projectDir,
 		sessionId: input.athenaSessionId,
+		harness: input.harness,
 		workflow: input.workflow,
 		persistRunState: sessionStore
 			? snapshot => sessionStore.persistRun(snapshot)

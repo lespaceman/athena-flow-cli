@@ -11,10 +11,12 @@ import {
 } from './workflowRunner';
 import type {WorkflowConfig} from './types';
 import type {WorkflowRunSnapshot} from '../../infra/sessions/types';
+import type {AthenaHarness} from '../../infra/plugins/config';
 
 export type UseWorkflowSessionControllerInput = {
 	projectDir: string;
 	sessionId?: string;
+	harness?: AthenaHarness;
 	workflow?: WorkflowConfig;
 	persistRunState?: (snapshot: WorkflowRunSnapshot) => void;
 };
@@ -72,6 +74,7 @@ export function useWorkflowSessionController(
 			const handle = createWorkflowRunner({
 				sessionId: input.sessionId ?? '',
 				projectDir: input.projectDir,
+				harness: input.harness,
 				workflow: input.workflow,
 				prompt,
 				initialContinuation: continuation,
@@ -112,6 +115,7 @@ export function useWorkflowSessionController(
 			cancelCurrentRun,
 			input.projectDir,
 			input.sessionId,
+			input.harness,
 			input.workflow,
 			input.persistRunState,
 		],

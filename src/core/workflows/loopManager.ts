@@ -61,19 +61,32 @@ export function createLoopManager(
 		}
 	}
 
-	function extractBlockedReason(content: string): string | undefined {
-		const idx = content.indexOf(blockedMarker);
-		if (idx === -1) return undefined;
-		const afterMarker = content.slice(idx + blockedMarker.length);
+	function getTerminalLine(content: string): string | undefined {
+		const lines = content
+			.trimEnd()
+			.split('\n')
+			.map(line => line.trim())
+			.filter(line => line.length > 0);
+		return lines.at(-1);
+	}
+
+	function extractBlockedReason(line: string): string | undefined {
+		if (!line.startsWith(blockedMarker)) return undefined;
+		const afterMarker = line.slice(blockedMarker.length);
 		const match = afterMarker.match(/^:\s*(.+?)(?:\s*-->|$)/);
 		return match?.[1]?.trim();
 	}
 
 	function getState(): LoopState {
 		const content = readTracker();
-		const completed = content.includes(completionMarker);
-		const blocked = content.includes(blockedMarker);
-		const blockedReason = blocked ? extractBlockedReason(content) : undefined;
+		const terminalLine = getTerminalLine(content);
+		const completed = terminalLine === completionMarker;
+		const blocked =
+			terminalLine !== undefined &&
+			(terminalLine === `${blockedMarker} -->` ||
+				terminalLine.startsWith(`${blockedMarker}:`));
+		const blockedReason =
+			blocked && terminalLine ? extractBlockedReason(terminalLine) : undefined;
 		const reachedLimit = iteration >= config.maxIterations;
 
 		return {

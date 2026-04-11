@@ -60,8 +60,8 @@ When all steps are complete:
 
 If you are blocked and cannot make further progress:
 1. Document what is blocking you in the Notes section
-2. Add \`<!-- TASK_BLOCKED -->\` at the end of the tracker file
-3. Explain what needs to happen to unblock the task
+2. Add \`<!-- TASK_BLOCKED -->\` or \`<!-- TASK_BLOCKED: reason -->\` at the end of the tracker file
+3. Explain what needs to happen to unblock the task whenever possible
 `;
 
 function ensureSystemPromptFile(): string {
@@ -74,7 +74,10 @@ function ensureSystemPromptFile(): string {
 	);
 	const filePath = path.join(dir, 'system_prompt.md');
 
-	if (!fs.existsSync(filePath)) {
+	if (
+		!fs.existsSync(filePath) ||
+		fs.readFileSync(filePath, 'utf-8') !== SYSTEM_PROMPT
+	) {
 		fs.mkdirSync(dir, {recursive: true});
 		fs.writeFileSync(filePath, SYSTEM_PROMPT, 'utf-8');
 	}
@@ -100,9 +103,8 @@ export function resolveBuiltinWorkflow(
 		promptTemplate: '{input}',
 		loop: {
 			enabled: true,
-			completionMarker: 'TASK_COMPLETE',
-			blockedMarker: 'TASK_BLOCKED',
-			trackerPath: 'task-tracker.md',
+			completionMarker: '<!-- TASK_COMPLETE -->',
+			blockedMarker: '<!-- TASK_BLOCKED',
 			maxIterations: 20,
 		},
 		plugins: [],

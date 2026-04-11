@@ -30,12 +30,14 @@ describe('installWorkflowPlugins', () => {
 				pluginName: 'plugin-a',
 				marketplacePath: '/repo/.agents/plugins/marketplace.json',
 				pluginDir: '/resolved/plugin-a',
+				codexPluginDir: '/resolved/plugin-a',
 			})
 			.mockReturnValueOnce({
 				ref: 'plugin-b@owner/repo',
 				pluginName: 'plugin-b',
 				marketplacePath: '/repo/.agents/plugins/marketplace.json',
 				pluginDir: '/resolved/plugin-b',
+				codexPluginDir: '/resolved/plugin-b',
 			});
 
 		const result = installWorkflowPlugins({
@@ -79,6 +81,7 @@ describe('installWorkflowPlugins', () => {
 			marketplacePath:
 				'/local/workflow-marketplace/.agents/plugins/marketplace.json',
 			pluginDir: '/local/plugin-a',
+			codexPluginDir: '/local/plugin-a',
 		});
 
 		const result = installWorkflowPlugins({
@@ -108,6 +111,7 @@ describe('resolveWorkflowPlugins', () => {
 			pluginName: 'plugin-a',
 			marketplacePath: '/repo/.agents/plugins/marketplace.json',
 			pluginDir: '/resolved/plugin-a',
+			codexPluginDir: '/resolved/plugin-a',
 		});
 
 		const result = resolveWorkflowPlugins({

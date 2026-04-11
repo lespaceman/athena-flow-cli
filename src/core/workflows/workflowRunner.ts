@@ -7,6 +7,7 @@ import type {
 	TurnExecutionResult,
 } from '../runtime/process';
 import type {TokenUsage} from '../../shared/types/headerMetrics';
+import type {AthenaHarness} from '../../infra/plugins/config';
 import type {RunStatus, WorkflowConfig} from './types';
 import type {WorkflowRunSnapshot} from '../../infra/sessions/types';
 import {
@@ -28,6 +29,7 @@ export type TurnInput = {
 export type WorkflowRunnerInput = {
 	sessionId: string;
 	projectDir: string;
+	harness?: AthenaHarness;
 	workflow?: WorkflowConfig;
 	prompt: string;
 	initialContinuation?: TurnContinuation;
@@ -186,13 +188,13 @@ export function createWorkflowRunner(
 			write(trackerAbsPath, content);
 		}
 
-		// Persist initial running state
 		persist();
 
 		const workflowState = createWorkflowRunState({
 			projectDir: input.projectDir,
 			sessionId: input.sessionId,
 			workflow: input.workflow,
+			harness: input.harness,
 		});
 
 		let nextContinuation: TurnContinuation = input.initialContinuation ?? {

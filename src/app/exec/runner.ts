@@ -352,6 +352,7 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 		const handle = createWorkflowRunner({
 			sessionId: athenaSessionId,
 			projectDir: options.projectDir,
+			harness: options.harness,
 			workflow,
 			prompt: options.prompt,
 			initialContinuation: nextContinuation,
