@@ -9,19 +9,25 @@ const installWorkflowPluginsMock = vi.fn();
 const resolveWorkflowPluginsMock = vi.fn();
 const readClaudeSettingsModelMock = vi.fn();
 
-vi.mock('../../infra/plugins/index', () => ({
-	readGlobalConfig: () => readGlobalConfigMock(),
-	readConfig: (projectDir: string) => readConfigMock(projectDir),
-	registerPlugins: (
-		dirs: string[],
-		mcpServerOptions?: Record<string, Record<string, string>>,
-		includeMcpConfig?: boolean,
-	) => registerPluginsMock(dirs, mcpServerOptions, includeMcpConfig),
-	buildPluginMcpConfig: (
-		dirs: string[],
-		mcpServerOptions?: Record<string, Record<string, string>>,
-	) => buildPluginMcpConfigMock(dirs, mcpServerOptions),
-}));
+vi.mock('../../infra/plugins/index', async () => {
+	const actual = await vi.importActual<
+		typeof import('../../infra/plugins/index')
+	>('../../infra/plugins/index');
+	return {
+		...actual,
+		readGlobalConfig: () => readGlobalConfigMock(),
+		readConfig: (projectDir: string) => readConfigMock(projectDir),
+		registerPlugins: (
+			dirs: string[],
+			mcpServerOptions?: Record<string, Record<string, string>>,
+			includeMcpConfig?: boolean,
+		) => registerPluginsMock(dirs, mcpServerOptions, includeMcpConfig),
+		buildPluginMcpConfig: (
+			dirs: string[],
+			mcpServerOptions?: Record<string, Record<string, string>>,
+		) => buildPluginMcpConfigMock(dirs, mcpServerOptions),
+	};
+});
 
 vi.mock('../../core/workflows/index', () => ({
 	resolveWorkflow: (name: string) => resolveWorkflowMock(name),

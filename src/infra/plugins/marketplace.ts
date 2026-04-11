@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import {
 	buildMarketplacePluginResolution,
 	ensureRepo,
+	formatWorkflowListingSource,
 	isMarketplaceRef,
 	isMarketplaceSlug,
 	marketplaceRepoCacheDir,
@@ -21,6 +22,7 @@ import {
 	type MarketplaceManifest,
 	type MarketplacePluginTarget,
 	type MarketplaceWorkflowListing,
+	type WorkflowListingSource,
 	type WorkflowMarketplaceSource,
 } from './marketplaceShared';
 import {
@@ -103,6 +105,7 @@ export function resolveMarketplacePluginTargetFromRepo(
 
 export {
 	findMarketplaceRepoDir,
+	formatWorkflowListingSource,
 	isMarketplaceRef,
 	isMarketplaceSlug,
 	listMarketplaceWorkflows,
@@ -121,5 +124,6 @@ export type {
 	MarketplaceManifest,
 	MarketplacePluginTarget,
 	MarketplaceWorkflowListing,
+	WorkflowListingSource,
 	WorkflowMarketplaceSource,
 };

@@ -49,6 +49,22 @@ vi.mock('../commands/builtins/index', () => ({
 vi.mock('../../infra/plugins/index', () => ({
 	readConfig: readConfigMock,
 	readGlobalConfig: readGlobalConfigMock,
+	resolveActiveWorkflow: ({
+		override,
+		projectConfig,
+		globalConfig,
+	}: {
+		override?: string;
+		projectConfig: {activeWorkflow?: string};
+		globalConfig: {activeWorkflow?: string};
+	}) => {
+		if (override !== undefined) return {name: override, source: 'override'};
+		if (projectConfig.activeWorkflow !== undefined)
+			return {name: projectConfig.activeWorkflow, source: 'project'};
+		if (globalConfig.activeWorkflow !== undefined)
+			return {name: globalConfig.activeWorkflow, source: 'global'};
+		return {name: 'default', source: 'default'};
+	},
 }));
 
 vi.mock('../../infra/plugins/config', () => ({
@@ -127,7 +143,7 @@ const BASE_RUNTIME_BOOTSTRAP = {
 	globalConfig: BASE_CONFIG,
 	projectConfig: BASE_CONFIG,
 	harness: 'claude-code' as const,
-	isolationConfig: {},
+	isolationConfig: {preset: 'strict' as const, pluginDirs: []},
 	pluginMcpConfig: undefined,
 	workflowRef: undefined,
 	workflow: undefined,
@@ -408,6 +424,62 @@ describe('cli exec mode', () => {
 				expect.objectContaining({
 					harnessOverride: undefined,
 				}),
+			);
+		} finally {
+			cli.restore();
+		}
+	});
+
+	it('passes --workflow override into bootstrapRuntimeConfig without writing config', async () => {
+		const cli = await runCli(['exec', 'hello', '--workflow=ad-hoc-workflow']);
+		try {
+			expect(bootstrapRuntimeConfigMock).toHaveBeenCalledWith(
+				expect.objectContaining({
+					workflowOverride: 'ad-hoc-workflow',
+				}),
+			);
+			expect(writeGlobalConfigMock).not.toHaveBeenCalledWith(
+				expect.objectContaining({activeWorkflow: expect.anything()}),
+			);
+			expect(runExecMock).toHaveBeenCalled();
+		} finally {
+			cli.restore();
+		}
+	});
+
+	it('--dry-run prints bootstrap summary and skips runExec', async () => {
+		bootstrapRuntimeConfigMock.mockReturnValue({
+			...BASE_RUNTIME_BOOTSTRAP,
+			isolationConfig: {preset: 'minimal' as const, pluginDirs: ['/p1']},
+			workflow: {name: 'pretend-workflow', version: '1.2.3'},
+		});
+		const cli = await runCli([
+			'exec',
+			'noop',
+			'--workflow=pretend-workflow',
+			'--dry-run',
+		]);
+		try {
+			expect(runExecMock).not.toHaveBeenCalled();
+			const printed = cli.logSpy.mock.calls.map(c => String(c[0])).join('\n');
+			expect(printed).toContain('athena-flow exec --dry-run');
+			expect(printed).toContain('pretend-workflow [override]');
+			expect(printed).toContain('isolation (final): minimal');
+			expect(printed).toContain('/p1');
+			expect(cli.exitSpy).toHaveBeenCalledWith(0);
+		} finally {
+			cli.restore();
+		}
+	});
+
+	it('--dry-run is rejected outside exec mode', async () => {
+		const cli = await runCli(['--dry-run']);
+		try {
+			expect(runExecMock).not.toHaveBeenCalled();
+			expect(renderMock).not.toHaveBeenCalled();
+			expect(cli.exitSpy).toHaveBeenCalledWith(EXEC_EXIT_CODE.USAGE);
+			expect(cli.errorSpy).toHaveBeenCalledWith(
+				expect.stringContaining('--dry-run is only supported in exec mode'),
 			);
 		} finally {
 			cli.restore();

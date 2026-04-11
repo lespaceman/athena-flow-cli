@@ -41,7 +41,7 @@ function loadOptionsFromSources(sources: string[]): WorkflowOption[] {
 			resolved.kind === 'remote'
 				? listMarketplaceWorkflows(resolved.owner, resolved.repo).map(w => ({
 						label: w.name,
-						value: w.ref,
+						value: w.ref ?? w.workflowPath,
 						description: w.description ?? 'Marketplace workflow',
 					}))
 				: listMarketplaceWorkflowsFromRepo(resolved.repoDir).map(w => ({

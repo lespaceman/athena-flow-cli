@@ -54,13 +54,82 @@ export type AthenaConfig = {
 const EMPTY_CONFIG: AthenaConfig = {plugins: [], additionalDirectories: []};
 
 /**
+ * Absolute path to a project's `.athena/config.json` file.
+ */
+export function projectConfigPath(projectDir: string): string {
+	return path.join(projectDir, '.athena', 'config.json');
+}
+
+/**
  * Read per-project plugin config from `{projectDir}/.athena/config.json`.
  * Relative paths are resolved against projectDir.
  * Returns `{ plugins: [] }` if the file does not exist.
  */
 export function readConfig(projectDir: string): AthenaConfig {
-	const configPath = path.join(projectDir, '.athena', 'config.json');
-	return readConfigFile(configPath, projectDir);
+	return readConfigFile(projectConfigPath(projectDir), projectDir);
+}
+
+/**
+ * Origin layer of an active workflow selection.
+ */
+export type ActiveWorkflowSource =
+	| 'override'
+	| 'project'
+	| 'global'
+	| 'default';
+
+export type ActiveWorkflowResolution = {
+	name: string;
+	source: ActiveWorkflowSource;
+	/**
+	 * Layer that supplies workflowSelections (MCP option overrides) for this
+	 * workflow. A `--workflow` CLI override only changes which workflow runs;
+	 * its option overrides still come from whichever layer would otherwise
+	 * have selected the workflow.
+	 */
+	selectionsLayer: AthenaConfig;
+};
+
+/**
+ * Resolve the active workflow name + source layer from configs and an
+ * optional CLI override. Single source of truth for workflow precedence;
+ * used by bootstrap, dry-run summary, and `workflow status`.
+ */
+export function resolveActiveWorkflow(input: {
+	globalConfig: AthenaConfig;
+	projectConfig: AthenaConfig;
+	override?: string;
+}): ActiveWorkflowResolution {
+	const {globalConfig, projectConfig, override} = input;
+	if (override !== undefined) {
+		return {
+			name: override,
+			source: 'override',
+			selectionsLayer:
+				projectConfig.activeWorkflow !== undefined
+					? projectConfig
+					: globalConfig,
+		};
+	}
+	if (projectConfig.activeWorkflow !== undefined) {
+		return {
+			name: projectConfig.activeWorkflow,
+			source: 'project',
+			selectionsLayer: projectConfig,
+		};
+	}
+	if (globalConfig.activeWorkflow !== undefined) {
+		return {
+			name: globalConfig.activeWorkflow,
+			source: 'global',
+			selectionsLayer: globalConfig,
+		};
+	}
+	return {
+		name: 'default',
+		source: 'default',
+		selectionsLayer: globalConfig,
+	};
 }
 
 /**
@@ -240,7 +309,7 @@ function hasActiveWorkflow(configPath: string): boolean {
  * Check whether a project-level config has an active workflow selected.
  */
 export function hasProjectWorkflow(projectDir: string): boolean {
-	return hasActiveWorkflow(path.join(projectDir, '.athena', 'config.json'));
+	return hasActiveWorkflow(projectConfigPath(projectDir));
 }
 
 /**

@@ -3,6 +3,7 @@ import {
 	buildPluginMcpConfig,
 	readConfig,
 	readGlobalConfig,
+	resolveActiveWorkflow,
 	type AthenaConfig,
 	type AthenaHarness,
 } from '../../infra/plugins/index';
@@ -34,6 +35,8 @@ export type RuntimeBootstrapInput = {
 	projectConfig?: AthenaConfig;
 	/** CLI --harness override (highest priority). */
 	harnessOverride?: AthenaHarness;
+	/** CLI --workflow override (highest priority for workflow selection). */
+	workflowOverride?: string;
 };
 
 export type RuntimeBootstrapOutput = {
@@ -79,6 +82,7 @@ export function bootstrapRuntimeConfig({
 	globalConfig: providedGlobalConfig,
 	projectConfig: providedProjectConfig,
 	harnessOverride,
+	workflowOverride,
 }: RuntimeBootstrapInput): RuntimeBootstrapOutput {
 	const globalConfig = providedGlobalConfig ?? readGlobalConfig();
 	const projectConfig = providedProjectConfig ?? readConfig(projectDir);
@@ -88,10 +92,13 @@ export function bootstrapRuntimeConfig({
 		projectConfig.harness ??
 		globalConfig.harness ??
 		DEFAULT_HARNESS;
-	const activeWorkflowConfig =
-		projectConfig.activeWorkflow !== undefined ? projectConfig : globalConfig;
-	const configuredActiveWorkflow =
-		activeWorkflowConfig.activeWorkflow ?? 'default';
+	const activeWorkflowSelection = resolveActiveWorkflow({
+		globalConfig,
+		projectConfig,
+		override: workflowOverride,
+	});
+	const configuredActiveWorkflow = activeWorkflowSelection.name;
+	const activeWorkflowConfig = activeWorkflowSelection.selectionsLayer;
 
 	let workflowPluginDirs: string[] = [];
 	let workflowResolvedPlugins: ResolvedWorkflowPlugin[] = [];

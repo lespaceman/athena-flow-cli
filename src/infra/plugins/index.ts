@@ -1,6 +1,11 @@
 export {registerPlugins, buildPluginMcpConfig} from './register';
 export type {PluginRegistrationResult} from './register';
-export {readConfig, readGlobalConfig} from './config';
+export {
+	readConfig,
+	readGlobalConfig,
+	resolveActiveWorkflow,
+	projectConfigPath,
+} from './config';
 export type {
 	AthenaConfig,
 	AthenaHarness,
@@ -8,6 +13,8 @@ export type {
 	McpServerChoices,
 	WorkflowSelection,
 	WorkflowSelections,
+	ActiveWorkflowSource,
+	ActiveWorkflowResolution,
 } from './config';
 export {
 	isMarketplaceRef,

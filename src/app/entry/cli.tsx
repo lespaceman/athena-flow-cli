@@ -12,7 +12,11 @@ import {type IsolationPreset} from '../../harnesses/claude/config/isolation';
 import type {AthenaHarness} from '../../infra/plugins/config';
 import {listHarnessAdapters} from '../../harnesses/registry';
 import {registerBuiltins} from '../commands/builtins/index';
-import {readConfig, readGlobalConfig} from '../../infra/plugins/index';
+import {
+	readConfig,
+	readGlobalConfig,
+	resolveActiveWorkflow,
+} from '../../infra/plugins/index';
 import {
 	initTelemetry,
 	shutdownTelemetry,
@@ -118,6 +122,63 @@ async function flushTelemetryOptOut(config: {
 	await shutdownTelemetry();
 }
 
+function printExecDryRunSummary(
+	runtimeConfig: ReturnType<typeof bootstrapRuntimeConfig>,
+	context: {
+		projectDir: string;
+		isolationPresetCli: IsolationPreset;
+		workflowOverride: string | undefined;
+		pluginFlags: string[];
+	},
+): void {
+	const selection = resolveActiveWorkflow({
+		globalConfig: runtimeConfig.globalConfig,
+		projectConfig: runtimeConfig.projectConfig,
+		override: context.workflowOverride,
+	});
+	const lines: string[] = [
+		'athena-flow exec --dry-run',
+		`  project:           ${context.projectDir}`,
+		`  harness:           ${runtimeConfig.harness}`,
+		`  active workflow:   ${selection.name} [${selection.source}]`,
+	];
+	if (runtimeConfig.workflow) {
+		const version = runtimeConfig.workflow.version
+			? ` (${runtimeConfig.workflow.version})`
+			: '';
+		lines.push(`  resolved workflow: ${runtimeConfig.workflow.name}${version}`);
+	} else {
+		lines.push('  resolved workflow: <none>');
+	}
+	if (context.workflowOverride !== undefined) {
+		lines.push(`  --workflow flag:   ${context.workflowOverride}`);
+	}
+	lines.push(`  isolation (cli):   ${context.isolationPresetCli}`);
+	lines.push(`  isolation (final): ${runtimeConfig.isolationConfig.preset}`);
+	lines.push(`  model:             ${runtimeConfig.modelName ?? '(default)'}`);
+	const pluginDirs = runtimeConfig.isolationConfig.pluginDirs ?? [];
+	if (pluginDirs.length === 0) {
+		lines.push('  plugin dirs:       <none>');
+	} else {
+		lines.push('  plugin dirs:');
+		for (const dir of pluginDirs) {
+			lines.push(`    - ${dir}`);
+		}
+	}
+	if (context.pluginFlags.length > 0) {
+		lines.push('  --plugin flags:');
+		for (const flag of context.pluginFlags) {
+			lines.push(`    - ${flag}`);
+		}
+	}
+	lines.push(
+		`  plugin mcp config: ${runtimeConfig.pluginMcpConfig ?? '<none>'}`,
+	);
+	for (const line of lines) {
+		console.log(line);
+	}
+}
+
 function inkRenderOptions() {
 	// Ink's incremental diffing corrupts full-frame setup screens when
 	// selection rows grow/shrink and shift surrounding content vertically.
@@ -171,6 +232,8 @@ const cli = meow(
 			--on-permission Policy for permission requests: ${EXEC_PERMISSION_POLICIES_HELP} (default: ${EXEC_DEFAULT_PERMISSION_POLICY}, exec mode)
 			--on-question   Policy for AskUserQuestion: ${EXEC_QUESTION_POLICIES_HELP} (default: ${EXEC_DEFAULT_QUESTION_POLICY}, exec mode)
 			--timeout-ms    Hard timeout for exec run in milliseconds
+			--workflow      Override the active workflow for this run only (no config change)
+			--dry-run       Print resolved bootstrap (workflow, isolation, plugins, harness) and exit (exec mode)
 			--help          Show command help
 			--version       Show CLI version
 
@@ -255,6 +318,13 @@ const cli = meow(
 			timeoutMs: {
 				type: 'number',
 			},
+			workflow: {
+				type: 'string',
+			},
+			dryRun: {
+				type: 'boolean',
+				default: false,
+			},
 		},
 	},
 );
@@ -330,7 +400,9 @@ async function main(): Promise<void> {
 			return;
 		}
 
-		await exitWith(runWorkflowCommand({subcommand, subcommandArgs}));
+		await exitWith(
+			runWorkflowCommand({subcommand, subcommandArgs, projectDir}),
+		);
 		return;
 	}
 
@@ -415,6 +487,7 @@ async function main(): Promise<void> {
 			globalConfig,
 			projectConfig,
 			harnessOverride,
+			workflowOverride: cli.flags.workflow,
 		});
 	} catch (error) {
 		console.error(`Error: ${(error as Error).message}`);
@@ -424,6 +497,22 @@ async function main(): Promise<void> {
 
 	for (const warning of runtimeConfig.warnings) {
 		console.error(warning);
+	}
+
+	if (cli.flags.dryRun) {
+		if (command !== 'exec') {
+			console.error('Error: --dry-run is only supported in exec mode.');
+			await exitWith(EXEC_EXIT_CODE.USAGE);
+			return;
+		}
+		printExecDryRunSummary(runtimeConfig, {
+			projectDir,
+			isolationPresetCli: isolationPreset,
+			workflowOverride: cli.flags.workflow,
+			pluginFlags: cli.flags.plugin ?? [],
+		});
+		await exitWith(0);
+		return;
 	}
 
 	// Initialize anonymous telemetry

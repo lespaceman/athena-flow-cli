@@ -878,6 +878,85 @@ describe('resolveWorkflowInstallSourceFromSources', () => {
 			]),
 		).toBe(`${repoDir}/workflows/local-workflow/workflow.json`);
 	});
+
+	it('matches a version-pinned bare name when the listing version equals the pin', () => {
+		const repoDir = '/tmp/workflow-marketplace';
+		files[`${repoDir}/.athena-workflow/marketplace.json`] = JSON.stringify({
+			name: 'athena-workflow-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [],
+			workflows: [
+				{
+					name: 'pinned-workflow',
+					source: './workflows/pinned-workflow/workflow.json',
+					version: '0.0.2',
+				},
+			],
+		});
+		dirs.add(`${repoDir}/workflows/pinned-workflow`);
+		files[`${repoDir}/workflows/pinned-workflow/workflow.json`] = '{}';
+
+		expect(
+			resolveWorkflowInstallSourceFromSources('pinned-workflow@0.0.2', [
+				repoDir,
+			]),
+		).toBe(`${repoDir}/workflows/pinned-workflow/workflow.json`);
+	});
+
+	it('throws a specific error when only a different version is available', () => {
+		const repoDir = '/tmp/workflow-marketplace';
+		files[`${repoDir}/.athena-workflow/marketplace.json`] = JSON.stringify({
+			name: 'athena-workflow-marketplace',
+			owner: {name: 'Test Team'},
+			plugins: [],
+			workflows: [
+				{
+					name: 'pinned-workflow',
+					source: './workflows/pinned-workflow/workflow.json',
+					version: '0.0.1',
+				},
+			],
+		});
+		dirs.add(`${repoDir}/workflows/pinned-workflow`);
+		files[`${repoDir}/workflows/pinned-workflow/workflow.json`] = '{}';
+
+		expect(() =>
+			resolveWorkflowInstallSourceFromSources('pinned-workflow@0.0.2', [
+				repoDir,
+			]),
+		).toThrowError(/version 0\.0\.2 not found.*found version 0\.0\.1/);
+	});
+
+	it('prefers a later source that has the requested version over an earlier mismatch', () => {
+		const oldRepo = '/tmp/marketplace-old';
+		const newRepo = '/tmp/marketplace-new';
+		const manifest = (version: string) =>
+			JSON.stringify({
+				name: 'athena-workflow-marketplace',
+				owner: {name: 'Test Team'},
+				plugins: [],
+				workflows: [
+					{
+						name: 'pinned-workflow',
+						source: './workflows/pinned-workflow/workflow.json',
+						version,
+					},
+				],
+			});
+		files[`${oldRepo}/.athena-workflow/marketplace.json`] = manifest('0.0.1');
+		files[`${newRepo}/.athena-workflow/marketplace.json`] = manifest('0.0.2');
+		dirs.add(`${oldRepo}/workflows/pinned-workflow`);
+		dirs.add(`${newRepo}/workflows/pinned-workflow`);
+		files[`${oldRepo}/workflows/pinned-workflow/workflow.json`] = '{}';
+		files[`${newRepo}/workflows/pinned-workflow/workflow.json`] = '{}';
+
+		expect(
+			resolveWorkflowInstallSourceFromSources('pinned-workflow@0.0.2', [
+				oldRepo,
+				newRepo,
+			]),
+		).toBe(`${newRepo}/workflows/pinned-workflow/workflow.json`);
+	});
 });
 
 describe('listMarketplaceWorkflows', () => {
@@ -911,13 +990,19 @@ describe('listMarketplaceWorkflows', () => {
 				version: undefined,
 				ref: 'e2e-test-builder@lespaceman/athena-workflow-marketplace',
 				workflowPath: `${cacheBase}/workflows/e2e-test-builder/workflow.json`,
+				source: {
+					kind: 'remote',
+					slug: 'lespaceman/athena-workflow-marketplace',
+					owner: 'lespaceman',
+					repo: 'athena-workflow-marketplace',
+				},
 			},
 		]);
 	});
 });
 
 describe('listMarketplaceWorkflowsFromRepo', () => {
-	it('lists workflows from a local marketplace checkout', () => {
+	it('lists workflows from a local marketplace checkout without a synthetic marketplace ref', () => {
 		const repoDir = '/tmp/workflow-marketplace';
 		files[`${repoDir}/.athena-workflow/marketplace.json`] = JSON.stringify({
 			name: 'athena-workflow-marketplace',
@@ -939,8 +1024,9 @@ describe('listMarketplaceWorkflowsFromRepo', () => {
 				name: 'local-workflow',
 				description: 'Local workflow',
 				version: undefined,
-				ref: 'local-workflow@local/workflow-marketplace',
+				ref: undefined,
 				workflowPath: `${repoDir}/workflows/local-workflow/workflow.json`,
+				source: {kind: 'local', repoDir},
 			},
 		]);
 	});

@@ -40,12 +40,35 @@ export type MarketplaceManifest = {
 	workflows?: MarketplaceEntry[];
 };
 
+/**
+ * Origin of a workflow listing. Local listings intentionally have no
+ * `name@owner/repo` marketplace ref: they aren't addressable via GitHub and
+ * synthesising a fake `@local/<basename>` ref would mislead users into
+ * believing the ref is installable.
+ */
+export type WorkflowListingSource =
+	| {kind: 'remote'; slug: string; owner: string; repo: string}
+	| {kind: 'local'; repoDir: string};
+
+/**
+ * Human-readable label for a workflow listing's origin, suitable for CLI
+ * search output and error messages.
+ */
+export function formatWorkflowListingSource(
+	source: WorkflowListingSource,
+): string {
+	return source.kind === 'remote' ? source.slug : `local:${source.repoDir}`;
+}
+
 export type MarketplaceWorkflowListing = {
 	name: string;
 	description?: string;
 	version?: string;
-	ref: string;
 	workflowPath: string;
+	/** Marketplace ref in `name@owner/repo` form. Only set for remote sources. */
+	ref?: string;
+	/** Origin of this listing, used for display and disambiguation. */
+	source: WorkflowListingSource;
 };
 
 export type WorkflowMarketplaceSource =
@@ -277,8 +300,7 @@ export function resolveWorkflowPathFromManifest(
 export function listWorkflowEntriesFromManifest(
 	repoDir: string,
 	manifestPath: string,
-	owner: string,
-	repo: string,
+	source: WorkflowListingSource,
 ): MarketplaceWorkflowListing[] {
 	const manifest = readManifest(manifestPath);
 	const workflows = manifest.workflows ?? [];
@@ -292,8 +314,12 @@ export function listWorkflowEntriesFromManifest(
 			name: entry.name,
 			description: entry.description,
 			version: entry.version,
-			ref: `${entry.name}@${owner}/${repo}`,
 			workflowPath: resolveWorkflowEntryPath(entry, manifest, repoDir),
+			ref:
+				source.kind === 'remote'
+					? `${entry.name}@${source.owner}/${source.repo}`
+					: undefined,
+			source,
 		}));
 }
 
