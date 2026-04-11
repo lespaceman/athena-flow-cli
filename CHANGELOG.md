@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.18](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.17...cli-v0.3.18) (2026-04-11)
+
+
+### Features
+
+* **sessions:** add persistRun upsert, getLatestRun, linkAdapterSession ([867bd3e](https://github.com/lespaceman/athena-flow-cli/commit/867bd3e15289851b947132f89a1c5365313f0188))
+* **sessions:** add schema v5 with workflow_runs table and adapter_sessions.run_id ([5a7f939](https://github.com/lespaceman/athena-flow-cli/commit/5a7f9391dd6b4b1680f02dba7fdb8624ee652131))
+* **types:** add RunStatus, WorkflowRunSnapshot, PersistedWorkflowRun ([5c0de0e](https://github.com/lespaceman/athena-flow-cli/commit/5c0de0e80a733edf078ec4202013eb543f26f809))
+* **workflows:** add substituteVariables for unified template substitution ([66e639f](https://github.com/lespaceman/athena-flow-cli/commit/66e639ff48c45f7d5d112e79bdea182011557b37))
+* **workflows:** add WorkflowRunner unified core loop ([d10695d](https://github.com/lespaceman/athena-flow-cli/commit/d10695d901a5a8c35e1fed2a5f55600868ee00a1))
+* **workflows:** harness-aware state machine, robust marker detection, marketplace refactor ([6138bc1](https://github.com/lespaceman/athena-flow-cli/commit/6138bc1f3eae82b3f59df13e7bf1536136a3de64))
+
+
+### Bug Fixes
+
+* address code review findings ([2955c36](https://github.com/lespaceman/athena-flow-cli/commit/2955c365ce7cb11316f55979163910978512f3f1))
+* clarify workflow use semantics and status ux ([f6af36d](https://github.com/lespaceman/athena-flow-cli/commit/f6af36daba257e66fcdcb9d7d275e51b0c86e966))
+
 ## [0.3.17](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.16...cli-v0.3.17) (2026-04-02)
 
 
