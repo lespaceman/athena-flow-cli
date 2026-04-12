@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.20](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.19...cli-v0.3.20) (2026-04-12)
+
+
+### Bug Fixes
+
+* **workflows:** refresh pinned plugins on upgrade ([f3a2cc0](https://github.com/lespaceman/athena-flow-cli/commit/f3a2cc00b16fbcc0a42495ea17e44f6853e0cad9))
+
 ## [0.3.19](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.18...cli-v0.3.19) (2026-04-12)
 
 
