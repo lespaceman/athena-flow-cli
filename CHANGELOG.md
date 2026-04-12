@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.19](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.18...cli-v0.3.19) (2026-04-12)
+
+
+### Bug Fixes
+
+* **workflows:** refine task tool instructions ([b5c31de](https://github.com/lespaceman/athena-flow-cli/commit/b5c31deddb2278c0fd9e29ec7f7e2519879abea4))
+
 ## [0.3.18](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.17...cli-v0.3.18) (2026-04-11)
 
 
