@@ -51,9 +51,10 @@ export const darkTheme: Theme = {
 
 	// ── User messages ───────────────────────────────────────
 	userMessage: {
-		text: '#c9d1d9', // Same as primary text.
+		text: '#6e7681', // Dimmed text for user messages in the message panel.
 		background: '#161b22', // Slightly lifted from terminal bg.
 		border: '#30363d', // Subtle border.
+		agentBorder: '#2a4a6a', // Steel blue left border for agent messages.
 	},
 
 	// ── Badges ──────────────────────────────────────────────
@@ -134,9 +135,10 @@ export const lightTheme: Theme = {
 
 	// ── User messages ───────────────────────────────────────
 	userMessage: {
-		text: '#1f2328',
+		text: '#8b949e', // Dimmed text for user messages in the message panel.
 		background: '#f6f8fa',
 		border: '#8c959f',
+		agentBorder: '#6cb0e0', // Medium blue on white bg.
 	},
 
 	// ── Badges ──────────────────────────────────────────────
@@ -221,9 +223,10 @@ export const highContrastTheme: Theme = {
 
 	// ── User messages ───────────────────────────────────────
 	userMessage: {
-		text: '#f0f6fc',
+		text: '#7d8590', // Dimmed text for user messages in the message panel.
 		background: '#1c2128', // Bumped from #161b22 for visible distinction.
 		border: '#444c56', // Bumped from #3d444d for HC visibility.
+		agentBorder: '#5599cc', // Brighter blue for HC.
 	},
 
 	// ── Badges ──────────────────────────────────────────────

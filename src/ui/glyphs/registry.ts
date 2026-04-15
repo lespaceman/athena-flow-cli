@@ -61,6 +61,7 @@ export type GlyphKey =
 	// Message
 	| 'message.user'
 	| 'message.agent'
+	| 'message.indicator'
 	// Permission
 	| 'permission.warn'
 	| 'permission.timeout'
@@ -152,6 +153,7 @@ export const GLYPH_REGISTRY: Record<
 	// Message
 	'message.user': {unicode: '❯', ascii: '>'},
 	'message.agent': {unicode: '▹', ascii: '>'},
+	'message.indicator': {unicode: '┃', ascii: '|'},
 
 	// Permission
 	'permission.warn': {unicode: '⚠', ascii: '!'},
