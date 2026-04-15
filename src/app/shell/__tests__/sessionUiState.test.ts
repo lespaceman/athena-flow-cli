@@ -24,6 +24,8 @@ function makeContext(
 		todoAnchorIndex: -1,
 		staticFloor: 0,
 		messageEntryCount: 0,
+		messageEntryLength: 0,
+		messageEntryLineOffsets: [],
 		messageContentRows: 0,
 		...overrides,
 	};
@@ -413,6 +415,218 @@ describe('sessionUiState', () => {
 				{messageEntryCount: 0, messageContentRows: 10},
 			);
 			expect(result.focusMode).toBe('feed');
+		});
+	});
+
+	describe('message cursor model', () => {
+		it('move_message_cursor moves cursor by delta', () => {
+			const ctx = makeContext({
+				messageEntryCount: 50,
+				messageEntryLength: 5,
+				messageEntryLineOffsets: [0, 10, 20, 30, 40],
+				messageContentRows: 10,
+			});
+			const state: SessionUiState = {
+				...initialSessionUiState,
+				focusMode: 'messages',
+				messageCursorIndex: 2,
+				messageTailFollow: false,
+			};
+			const result = reduceSessionUiState(
+				state,
+				{type: 'move_message_cursor', delta: 1},
+				ctx,
+			);
+			expect(result.messageCursorIndex).toBe(3);
+			expect(result.messageTailFollow).toBe(false);
+		});
+
+		it('move_message_cursor clamps at 0', () => {
+			const ctx = makeContext({
+				messageEntryCount: 50,
+				messageEntryLength: 5,
+				messageEntryLineOffsets: [0, 10, 20, 30, 40],
+				messageContentRows: 10,
+			});
+			const state: SessionUiState = {
+				...initialSessionUiState,
+				focusMode: 'messages',
+				messageCursorIndex: 1,
+				messageTailFollow: false,
+			};
+			const result = reduceSessionUiState(
+				state,
+				{type: 'move_message_cursor', delta: -5},
+				ctx,
+			);
+			expect(result.messageCursorIndex).toBe(0);
+		});
+
+		it('move_message_cursor clamps at max (messageEntryLength - 1)', () => {
+			const ctx = makeContext({
+				messageEntryCount: 50,
+				messageEntryLength: 5,
+				messageEntryLineOffsets: [0, 10, 20, 30, 40],
+				messageContentRows: 10,
+			});
+			const state: SessionUiState = {
+				...initialSessionUiState,
+				focusMode: 'messages',
+				messageCursorIndex: 3,
+				messageTailFollow: false,
+			};
+			const result = reduceSessionUiState(
+				state,
+				{type: 'move_message_cursor', delta: 5},
+				ctx,
+			);
+			expect(result.messageCursorIndex).toBe(4);
+		});
+
+		it('move_message_cursor disables tailFollow', () => {
+			const ctx = makeContext({
+				messageEntryCount: 50,
+				messageEntryLength: 10,
+				messageEntryLineOffsets: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45],
+				messageContentRows: 10,
+			});
+			const state: SessionUiState = {
+				...initialSessionUiState,
+				focusMode: 'messages',
+				messageCursorIndex: 9,
+				messageTailFollow: true,
+			};
+			const result = reduceSessionUiState(
+				state,
+				{type: 'move_message_cursor', delta: -1},
+				ctx,
+			);
+			expect(result.messageTailFollow).toBe(false);
+			expect(result.messageCursorIndex).toBe(8);
+		});
+
+		it('jump_message_tail sets cursor to last entry and enables tailFollow', () => {
+			const ctx = makeContext({
+				messageEntryCount: 50,
+				messageEntryLength: 10,
+				messageEntryLineOffsets: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45],
+				messageContentRows: 10,
+			});
+			const state: SessionUiState = {
+				...initialSessionUiState,
+				focusMode: 'messages',
+				messageCursorIndex: 3,
+				messageTailFollow: false,
+			};
+			const result = reduceSessionUiState(
+				state,
+				{type: 'jump_message_tail'},
+				ctx,
+			);
+			expect(result.messageCursorIndex).toBe(9);
+			expect(result.messageTailFollow).toBe(true);
+		});
+
+		it('jump_message_top sets cursor to 0 and disables tailFollow', () => {
+			const ctx = makeContext({
+				messageEntryCount: 50,
+				messageEntryLength: 10,
+				messageEntryLineOffsets: [0, 5, 10, 15, 20, 25, 30, 35, 40, 45],
+				messageContentRows: 10,
+			});
+			const state: SessionUiState = {
+				...initialSessionUiState,
+				focusMode: 'messages',
+				messageCursorIndex: 7,
+				messageTailFollow: true,
+			};
+			const result = reduceSessionUiState(
+				state,
+				{type: 'jump_message_top'},
+				ctx,
+			);
+			expect(result.messageCursorIndex).toBe(0);
+			expect(result.messageTailFollow).toBe(false);
+		});
+
+		it('resolve clamps messageCursorIndex when entries shrink', () => {
+			const result = resolve(
+				{
+					focusMode: 'messages',
+					messageCursorIndex: 7,
+					messageTailFollow: false,
+				},
+				{
+					messageEntryCount: 30,
+					messageEntryLength: 3,
+					messageEntryLineOffsets: [0, 10, 20],
+					messageContentRows: 10,
+				},
+			);
+			expect(result.messageCursorIndex).toBe(2);
+		});
+
+		it('resolve pins cursor to last entry when tailFollow is true', () => {
+			const result = resolve(
+				{
+					focusMode: 'messages',
+					messageCursorIndex: 0,
+					messageTailFollow: true,
+				},
+				{
+					messageEntryCount: 50,
+					messageEntryLength: 5,
+					messageEntryLineOffsets: [0, 10, 20, 30, 40],
+					messageContentRows: 10,
+				},
+			);
+			expect(result.messageCursorIndex).toBe(4);
+		});
+
+		it('move_message_cursor scrolls viewport so cursor entry is visible', () => {
+			const ctx = makeContext({
+				messageEntryCount: 22,
+				messageEntryLength: 5,
+				messageEntryLineOffsets: [0, 3, 7, 12, 18],
+				messageContentRows: 5,
+			});
+			const state: SessionUiState = {
+				...initialSessionUiState,
+				focusMode: 'messages',
+				messageCursorIndex: 1,
+				messageViewportStart: 0,
+				messageTailFollow: false,
+			};
+			const result = reduceSessionUiState(
+				state,
+				{type: 'move_message_cursor', delta: 2},
+				ctx,
+			);
+			expect(result.messageCursorIndex).toBe(3);
+			expect(result.messageViewportStart).toBe(8);
+		});
+
+		it('move_message_cursor scrolls viewport up when cursor goes above', () => {
+			const ctx = makeContext({
+				messageEntryCount: 22,
+				messageEntryLength: 5,
+				messageEntryLineOffsets: [0, 3, 7, 12, 18],
+				messageContentRows: 5,
+			});
+			const state: SessionUiState = {
+				...initialSessionUiState,
+				focusMode: 'messages',
+				messageCursorIndex: 3,
+				messageViewportStart: 10,
+				messageTailFollow: false,
+			};
+			const result = reduceSessionUiState(
+				state,
+				{type: 'move_message_cursor', delta: -2},
+				ctx,
+			);
+			expect(result.messageCursorIndex).toBe(1);
+			expect(result.messageViewportStart).toBe(3);
 		});
 	});
 

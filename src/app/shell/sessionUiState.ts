@@ -20,6 +20,7 @@ export type SessionUiState = {
 	todoCursorMode: TodoCursorMode;
 	messagePanelTab: MessageTab;
 	messageViewportStart: number;
+	messageCursorIndex: number;
 	messageTailFollow: boolean;
 };
 
@@ -34,6 +35,8 @@ export type SessionUiContext = {
 	todoAnchorIndex: number;
 	staticFloor?: number;
 	messageEntryCount: number;
+	messageEntryLength: number;
+	messageEntryLineOffsets: ReadonlyArray<number>;
 	messageContentRows: number;
 };
 
@@ -65,6 +68,7 @@ export type SessionUiAction =
 	| {type: 'set_search_match_pos'; position: number}
 	| {type: 'set_message_tab'; tab: MessageTab}
 	| {type: 'scroll_message_viewport'; delta: number}
+	| {type: 'move_message_cursor'; delta: number}
 	| {type: 'jump_message_tail'}
 	| {type: 'jump_message_top'};
 
@@ -77,7 +81,7 @@ type FeedState = Pick<
 
 type MessageState = Pick<
 	SessionUiState,
-	'messageViewportStart' | 'messageTailFollow'
+	'messageViewportStart' | 'messageCursorIndex' | 'messageTailFollow'
 >;
 
 const DEFAULT_STATIC_FLOOR = 0;
@@ -99,6 +103,7 @@ export const initialSessionUiState: SessionUiState = {
 	todoCursorMode: 'auto',
 	messagePanelTab: 'both',
 	messageViewportStart: 0,
+	messageCursorIndex: 0,
 	messageTailFollow: true,
 };
 
@@ -133,22 +138,6 @@ function computeScrollState(
 		cursor: nextCursor,
 		tailFollow: false,
 		viewportStart: clamp(nextStart, floor, maxStart),
-	};
-}
-
-function computeViewportScroll(
-	viewportStart: number,
-	tailFollow: boolean,
-	entryCount: number,
-	contentRows: number,
-): {viewportStart: number; tailFollow: boolean} {
-	const maxStart = contentRows <= 0 ? 0 : Math.max(0, entryCount - contentRows);
-	if (tailFollow) {
-		return {viewportStart: maxStart, tailFollow: true};
-	}
-	return {
-		viewportStart: clamp(viewportStart, 0, maxStart),
-		tailFollow: false,
 	};
 }
 
@@ -202,26 +191,47 @@ function computeFeedState(
 	};
 }
 
-function maxMessageViewportStart(ctx: SessionUiContext): number {
-	return ctx.messageContentRows <= 0
-		? 0
-		: Math.max(0, ctx.messageEntryCount - ctx.messageContentRows);
-}
-
 function computeMessageState(
 	viewportStart: number,
 	tailFollow: boolean,
+	cursorIndex: number,
 	ctx: SessionUiContext,
 ): MessageState {
-	const s = computeViewportScroll(
-		viewportStart,
-		tailFollow,
-		ctx.messageEntryCount,
-		ctx.messageContentRows,
-	);
+	const maxCursor = Math.max(0, ctx.messageEntryLength - 1);
+	const maxStart =
+		ctx.messageContentRows <= 0
+			? 0
+			: Math.max(0, ctx.messageEntryCount - ctx.messageContentRows);
+
+	if (tailFollow) {
+		return {
+			messageTailFollow: true,
+			messageViewportStart: maxStart,
+			messageCursorIndex: ctx.messageEntryLength > 0 ? maxCursor : 0,
+		};
+	}
+
+	const nextCursor =
+		ctx.messageEntryLength > 0 ? clamp(cursorIndex, 0, maxCursor) : 0;
+	let nextStart = clamp(viewportStart, 0, maxStart);
+
+	// Auto-scroll viewport to keep cursor visible
+	const offsets = ctx.messageEntryLineOffsets;
+	if (offsets.length > 0 && nextCursor < offsets.length) {
+		const cursorLineStart = offsets[nextCursor]!;
+		if (cursorLineStart < nextStart) {
+			nextStart = cursorLineStart;
+		}
+		if (cursorLineStart >= nextStart + ctx.messageContentRows) {
+			nextStart = cursorLineStart - ctx.messageContentRows + 1;
+		}
+		nextStart = clamp(nextStart, 0, maxStart);
+	}
+
 	return {
-		messageTailFollow: s.tailFollow,
-		messageViewportStart: s.viewportStart,
+		messageTailFollow: false,
+		messageViewportStart: nextStart,
+		messageCursorIndex: nextCursor,
 	};
 }
 
@@ -245,6 +255,7 @@ function withMessageChange(
 ): SessionUiState {
 	if (
 		msg.messageViewportStart === current.messageViewportStart &&
+		msg.messageCursorIndex === current.messageCursorIndex &&
 		msg.messageTailFollow === current.messageTailFollow
 	) {
 		return current;
@@ -306,6 +317,7 @@ export function resolveSessionUiState(
 	const msgState = computeMessageState(
 		state.messageViewportStart,
 		state.messageTailFollow,
+		state.messageCursorIndex,
 		ctx,
 	);
 	const todoCursor = resolveTodoCursor(state, ctx);
@@ -331,6 +343,7 @@ export function resolveSessionUiState(
 		todoCursor === state.todoCursor &&
 		todoScroll === state.todoScroll &&
 		msgState.messageViewportStart === state.messageViewportStart &&
+		msgState.messageCursorIndex === state.messageCursorIndex &&
 		msgState.messageTailFollow === state.messageTailFollow
 	) {
 		return state;
@@ -346,6 +359,7 @@ export function resolveSessionUiState(
 		todoCursor,
 		todoScroll,
 		messageViewportStart: msgState.messageViewportStart,
+		messageCursorIndex: msgState.messageCursorIndex,
 		messageTailFollow: msgState.messageTailFollow,
 	};
 }
@@ -595,17 +609,34 @@ export function reduceSessionUiState(
 				computeMessageState(
 					current.messageViewportStart + action.delta,
 					false,
+					current.messageCursorIndex,
+					ctx,
+				),
+			);
+		case 'move_message_cursor':
+			return withMessageChange(
+				current,
+				computeMessageState(
+					current.messageViewportStart,
+					false,
+					current.messageCursorIndex + action.delta,
 					ctx,
 				),
 			);
 		case 'jump_message_tail':
-			return withMessageChange(current, {
-				messageViewportStart: maxMessageViewportStart(ctx),
-				messageTailFollow: true,
-			});
+			return withMessageChange(
+				current,
+				computeMessageState(
+					current.messageViewportStart,
+					true,
+					current.messageCursorIndex,
+					ctx,
+				),
+			);
 		case 'jump_message_top':
 			return withMessageChange(current, {
 				messageViewportStart: 0,
+				messageCursorIndex: 0,
 				messageTailFollow: false,
 			});
 		default:
