@@ -4,7 +4,6 @@ import {startInputMeasure} from '../../shared/utils/perf';
 
 export type MessageKeyboardCallbacks = {
 	moveCursor: (delta: number) => void;
-	scrollViewport: (delta: number) => void;
 	jumpToTail: () => void;
 	jumpToTop: () => void;
 	yankAtCursor: () => void;

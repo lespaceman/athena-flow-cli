@@ -1255,8 +1255,6 @@ function AppContent({
 		callbacks: {
 			moveCursor: (delta: number) =>
 				dispatchUi({type: 'move_message_cursor', delta}),
-			scrollViewport: (delta: number) =>
-				dispatchUi({type: 'scroll_message_viewport', delta}),
 			jumpToTail: () => dispatchUi({type: 'jump_message_tail'}),
 			jumpToTop: () => dispatchUi({type: 'jump_message_top'}),
 			yankAtCursor: yankMessageAtCursor,

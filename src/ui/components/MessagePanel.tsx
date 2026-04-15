@@ -75,25 +75,31 @@ function buildRenderedLines(
 	return result;
 }
 
+type ViewportStyle = {
+	frameBorder: string;
+	userIndicator: string;
+	agentIndicator: string;
+	focusIndicator: string;
+	mutedColor: string;
+};
+
 function sliceViewport(
 	wrapped: WrappedLine[],
 	contentRows: number,
 	viewportStart: number,
-	frameBorder: string,
-	userIndicator: string,
-	agentIndicator: string,
-	focusIndicator: string,
-	theme: Theme,
+	style: ViewportStyle,
 	width: number,
 	messageCursorIndex?: number,
 ): string[] {
 	const outputLines: string[] = [];
 	const contentWidth = width - INDICATOR_OVERHEAD;
-	const blankRow = frameBorder + spaces(width);
+	const blankRow = style.frameBorder + spaces(width);
 
 	if (wrapped.length === 0) {
-		const emptyMsg = chalk.hex(theme.textMuted)('No messages yet');
-		outputLines.push(frameBorder + '  ' + fitAnsi(emptyMsg, contentWidth));
+		const emptyMsg = chalk.hex(style.mutedColor)('No messages yet');
+		outputLines.push(
+			style.frameBorder + '  ' + fitAnsi(emptyMsg, contentWidth),
+		);
 		for (let i = 1; i < contentRows; i++) {
 			outputLines.push(blankRow);
 		}
@@ -129,21 +135,22 @@ function sliceViewport(
 			messageCursorIndex !== undefined &&
 			line.entryIndex === messageCursorIndex;
 		const indicator = isFocused
-			? focusIndicator
+			? style.focusIndicator
 			: line.kind === 'agent'
-				? agentIndicator
-				: userIndicator;
+				? style.agentIndicator
+				: style.userIndicator;
 		const content = line.text;
 
-		let row = frameBorder + indicator + ' ' + content;
+		let row = style.frameBorder + indicator + ' ' + content;
 
 		if (scrollIndicator && lineIdx === start) {
-			const indicatorStyled = chalk.hex(theme.textMuted)(scrollIndicator);
+			const indicatorStyled = chalk.hex(style.mutedColor)(scrollIndicator);
 			const padded = fitAnsi(
 				line.text,
 				contentWidth - scrollIndicator.length - 1,
 			);
-			row = frameBorder + indicator + ' ' + padded + ' ' + indicatorStyled;
+			row =
+				style.frameBorder + indicator + ' ' + padded + ' ' + indicatorStyled;
 		}
 
 		outputLines.push(row);
@@ -172,11 +179,16 @@ function MessagePanelImpl(props: Props) {
 		[entries, width, theme],
 	);
 
-	const glyphChar = messageGlyphs().indicator;
-	const frameBorder = borderColor ? chalk.hex(borderColor)('\u2502') : '';
-	const userIndicator = chalk.hex(theme.userMessage.border)(glyphChar);
-	const agentIndicator = chalk.hex(theme.userMessage.agentBorder)(glyphChar);
-	const focusIndicator = chalk.hex(theme.userMessage.focusBorder)(glyphChar);
+	const style = useMemo((): ViewportStyle => {
+		const glyphChar = messageGlyphs().indicator;
+		return {
+			frameBorder: borderColor ? chalk.hex(borderColor)('\u2502') : '',
+			userIndicator: chalk.hex(theme.userMessage.border)(glyphChar),
+			agentIndicator: chalk.hex(theme.userMessage.agentBorder)(glyphChar),
+			focusIndicator: chalk.hex(theme.userMessage.focusBorder)(glyphChar),
+			mutedColor: theme.textMuted,
+		};
+	}, [borderColor, theme]);
 
 	const lines = useMemo(
 		() =>
@@ -184,26 +196,11 @@ function MessagePanelImpl(props: Props) {
 				wrapped,
 				contentRows,
 				viewportStart,
-				frameBorder,
-				userIndicator,
-				agentIndicator,
-				focusIndicator,
-				theme,
+				style,
 				width,
 				messageCursorIndex,
 			),
-		[
-			wrapped,
-			contentRows,
-			viewportStart,
-			frameBorder,
-			userIndicator,
-			agentIndicator,
-			focusIndicator,
-			theme,
-			width,
-			messageCursorIndex,
-		],
+		[wrapped, contentRows, viewportStart, style, width, messageCursorIndex],
 	);
 
 	return <Text>{lines.join('\n')}</Text>;

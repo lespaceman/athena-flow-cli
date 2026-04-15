@@ -215,7 +215,6 @@ function computeMessageState(
 		ctx.messageEntryLength > 0 ? clamp(cursorIndex, 0, maxCursor) : 0;
 	let nextStart = clamp(viewportStart, 0, maxStart);
 
-	// Auto-scroll viewport to keep cursor visible
 	const offsets = ctx.messageEntryLineOffsets;
 	if (offsets.length > 0 && nextCursor < offsets.length) {
 		const cursorLineStart = offsets[nextCursor]!;
