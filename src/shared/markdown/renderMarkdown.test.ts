@@ -66,7 +66,7 @@ describe('renderMarkdown', () => {
 		expect(output).toContain('testDir:');
 	});
 
-	it('falls back to stacked key-value rows for narrow tables', () => {
+	it('keeps narrow tables and wraps cell content', () => {
 		const rendered = renderMarkdown({
 			content: [
 				'| TC-ID | Description | Priority |',
@@ -77,14 +77,13 @@ describe('renderMarkdown', () => {
 			mode: 'tool-output',
 		});
 		const output = stripAnsi(rendered.text);
-		const compact = output.replace(/\n/g, '');
 
-		expect(output).toContain('TC-ID: TC-MAP-001');
-		expect(compact).toContain(
-			'Description: Camera markers visible on map after page load',
-		);
-		expect(output).toContain('Priority: Critical');
-		expect(output).not.toContain('┌');
-		expect(output).not.toContain('│');
+		expect(output).toContain('┌');
+		expect(output).toContain('│');
+		expect(output).toContain('Description');
+		expect(output).toContain('Camera markers v');
+		expect(output).toContain('isible on map af');
+		expect(output).toContain('ter page load');
+		expect(output).not.toContain('…');
 	});
 });

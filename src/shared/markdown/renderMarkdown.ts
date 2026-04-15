@@ -37,8 +37,6 @@ const TABLE_CHARS = {
 	middle: '\u2502',
 };
 
-const MIN_TABLE_COLUMN_WIDTH = 12;
-
 function baseTerminalOptions(width: number): Record<string, unknown> {
 	return {
 		width,
@@ -147,38 +145,15 @@ function renderListItem(
 }
 
 function tableRenderer(m: Marked, width: number) {
-	function renderTableAsBlocks(token: Tokens.Table): string {
-		const headers = token.header.map(cell => renderInline(m, cell.text));
-		return (
-			token.rows
-				.map(row =>
-					row
-						.map((cell, index) => {
-							const label = headers[index] ?? `Column ${index + 1}`;
-							const prefix = index === 0 ? '  \u2022 ' : '    ';
-							return `${prefix}${label}: ${renderInline(m, cell.text)}`;
-						})
-						.join('\n'),
-				)
-				.join('\n\n') + '\n'
-		);
-	}
-
 	return {
 		table(token: Tokens.Table): string {
 			const colWidths = computeColWidths(token, width);
-			if (
-				token.header.length > 1 &&
-				colWidths.some(colWidth => colWidth < MIN_TABLE_COLUMN_WIDTH)
-			) {
-				return renderTableAsBlocks(token);
-			}
 
 			const table = new Table({
 				head: token.header.map(cell => renderInline(m, cell.text)),
 				colWidths,
 				wordWrap: true,
-				wrapOnWordBoundary: true,
+				wrapOnWordBoundary: false,
 				style: {
 					head: [],
 					border: [],
