@@ -45,7 +45,7 @@ export type UseLayoutResult = {
 	messageContentRows: number;
 };
 
-const MESSAGE_PANEL_RATIO = 0.4;
+const MESSAGE_PANEL_RATIO = 0.5;
 
 export function useLayout({
 	terminalRows,
