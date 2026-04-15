@@ -19,7 +19,6 @@ export type SessionUiState = {
 	todoScroll: number;
 	todoCursorMode: TodoCursorMode;
 	messagePanelTab: MessageTab;
-	messageCursor: number;
 	messageViewportStart: number;
 	messageTailFollow: boolean;
 };
@@ -64,7 +63,7 @@ export type SessionUiAction =
 	| {type: 'reveal_feed_entry'; cursor: number}
 	| {type: 'set_search_match_pos'; position: number}
 	| {type: 'set_message_tab'; tab: MessageTab}
-	| {type: 'move_message_cursor'; delta: number}
+	| {type: 'scroll_message_viewport'; delta: number}
 	| {type: 'jump_message_tail'}
 	| {type: 'jump_message_top'};
 
@@ -77,7 +76,7 @@ type FeedState = Pick<
 
 type MessageState = Pick<
 	SessionUiState,
-	'messageCursor' | 'messageViewportStart' | 'messageTailFollow'
+	'messageViewportStart' | 'messageTailFollow'
 >;
 
 const DEFAULT_STATIC_FLOOR = 0;
@@ -98,7 +97,6 @@ export const initialSessionUiState: SessionUiState = {
 	todoScroll: 0,
 	todoCursorMode: 'auto',
 	messagePanelTab: 'both',
-	messageCursor: 0,
 	messageViewportStart: 0,
 	messageTailFollow: true,
 };
@@ -137,6 +135,22 @@ function computeScrollState(
 	};
 }
 
+function computeViewportScroll(
+	viewportStart: number,
+	tailFollow: boolean,
+	entryCount: number,
+	contentRows: number,
+): {viewportStart: number; tailFollow: boolean} {
+	const maxStart = contentRows <= 0 ? 0 : Math.max(0, entryCount - contentRows);
+	if (tailFollow) {
+		return {viewportStart: maxStart, tailFollow: true};
+	}
+	return {
+		viewportStart: clamp(viewportStart, 0, maxStart),
+		tailFollow: false,
+	};
+}
+
 function maxFeedCursor(ctx: SessionUiContext): number {
 	return Math.max(
 		ctx.staticFloor ?? DEFAULT_STATIC_FLOOR,
@@ -172,10 +186,6 @@ function computeFeedState(
 	};
 }
 
-function maxMessageCursor(ctx: SessionUiContext): number {
-	return Math.max(0, ctx.messageEntryCount - 1);
-}
-
 function maxMessageViewportStart(ctx: SessionUiContext): number {
 	return ctx.messageContentRows <= 0
 		? 0
@@ -183,21 +193,17 @@ function maxMessageViewportStart(ctx: SessionUiContext): number {
 }
 
 function computeMessageState(
-	cursor: number,
 	viewportStart: number,
 	tailFollow: boolean,
 	ctx: SessionUiContext,
 ): MessageState {
-	const s = computeScrollState(
-		cursor,
+	const s = computeViewportScroll(
 		viewportStart,
 		tailFollow,
 		ctx.messageEntryCount,
 		ctx.messageContentRows,
-		0,
 	);
 	return {
-		messageCursor: s.cursor,
 		messageTailFollow: s.tailFollow,
 		messageViewportStart: s.viewportStart,
 	};
@@ -222,7 +228,6 @@ function withMessageChange(
 	msg: MessageState,
 ): SessionUiState {
 	if (
-		msg.messageCursor === current.messageCursor &&
 		msg.messageViewportStart === current.messageViewportStart &&
 		msg.messageTailFollow === current.messageTailFollow
 	) {
@@ -279,7 +284,6 @@ export function resolveSessionUiState(
 		ctx,
 	);
 	const msgState = computeMessageState(
-		state.messageCursor,
 		state.messageViewportStart,
 		state.messageTailFollow,
 		ctx,
@@ -306,7 +310,6 @@ export function resolveSessionUiState(
 		feedState.tailFollow === state.tailFollow &&
 		todoCursor === state.todoCursor &&
 		todoScroll === state.todoScroll &&
-		msgState.messageCursor === state.messageCursor &&
 		msgState.messageViewportStart === state.messageViewportStart &&
 		msgState.messageTailFollow === state.messageTailFollow
 	) {
@@ -322,7 +325,6 @@ export function resolveSessionUiState(
 		tailFollow: feedState.tailFollow,
 		todoCursor,
 		todoScroll,
-		messageCursor: msgState.messageCursor,
 		messageViewportStart: msgState.messageViewportStart,
 		messageTailFollow: msgState.messageTailFollow,
 	};
@@ -562,25 +564,22 @@ export function reduceSessionUiState(
 		case 'set_message_tab':
 			if (current.messagePanelTab === action.tab) return current;
 			return {...current, messagePanelTab: action.tab};
-		case 'move_message_cursor':
+		case 'scroll_message_viewport':
 			return withMessageChange(
 				current,
 				computeMessageState(
-					current.messageCursor + action.delta,
-					current.messageViewportStart,
+					current.messageViewportStart + action.delta,
 					false,
 					ctx,
 				),
 			);
 		case 'jump_message_tail':
 			return withMessageChange(current, {
-				messageCursor: maxMessageCursor(ctx),
 				messageViewportStart: maxMessageViewportStart(ctx),
 				messageTailFollow: true,
 			});
 		case 'jump_message_top':
 			return withMessageChange(current, {
-				messageCursor: 0,
 				messageViewportStart: 0,
 				messageTailFollow: false,
 			});

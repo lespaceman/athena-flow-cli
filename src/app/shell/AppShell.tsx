@@ -935,12 +935,7 @@ function AppContent({
 		messageContentRows,
 	} = layout;
 
-	const {
-		messageEntries,
-		feedEntries,
-		messageLineCount,
-		messageLineEntryIndexes,
-	} = useFilteredPanels(
+	const {messageEntries, feedEntries, messageLineCount} = useFilteredPanels(
 		filteredEntries,
 		uiState.messagePanelTab,
 		splitMode,
@@ -1200,34 +1195,14 @@ function AppContent({
 		},
 	});
 
-	const messageEntriesRef = useRef(messageEntries);
-	messageEntriesRef.current = messageEntries;
-	const messageLineEntryIndexesRef = useRef(messageLineEntryIndexes);
-	messageLineEntryIndexesRef.current = messageLineEntryIndexes;
-
-	const handleMessageExpandForPager = useCallback(() => {
-		const messageEntryIndex = messageLineEntryIndexesRef.current.at(
-			resolvedUiState.messageCursor,
-		);
-		if (messageEntryIndex === undefined) return;
-		const entry = messageEntriesRef.current.at(messageEntryIndex);
-		if (!entry || !entry.expandable) return;
-		const fullIndex = filteredEntriesRef.current.indexOf(entry);
-		if (fullIndex >= 0) {
-			dispatchUi({type: 'set_feed_cursor', cursor: fullIndex});
-			handleExpandForPager();
-		}
-	}, [resolvedUiState.messageCursor, dispatchUi, handleExpandForPager]);
-
 	useMessageKeyboard({
 		isActive: focusMode === 'messages' && !dialogActive && !pagerActive,
 		pageStep: messagePageStep,
 		callbacks: {
-			moveMessageCursor: (delta: number) =>
-				dispatchUi({type: 'move_message_cursor', delta}),
+			scrollViewport: (delta: number) =>
+				dispatchUi({type: 'scroll_message_viewport', delta}),
 			jumpToTail: () => dispatchUi({type: 'jump_message_tail'}),
 			jumpToTop: () => dispatchUi({type: 'jump_message_top'}),
-			expandAtCursor: handleMessageExpandForPager,
 			cycleFocus,
 			openCommandInput: () => dispatchUi({type: 'open_command_input'}),
 			openSearchInput: () => dispatchUi({type: 'open_search_input'}),
@@ -1246,7 +1221,8 @@ function AppContent({
 		onInputFocus: () =>
 			dispatchUi({type: 'set_focus_mode', focusMode: 'input'}),
 		onFeedWheel: delta => feedNav.moveFeedCursor(delta),
-		onMessageWheel: delta => dispatchUi({type: 'move_message_cursor', delta}),
+		onMessageWheel: delta =>
+			dispatchUi({type: 'scroll_message_viewport', delta}),
 	});
 
 	useTodoKeyboard({
@@ -1478,8 +1454,6 @@ function AppContent({
 								width={messagePanelWidth}
 								contentRows={feedHeaderRows + feedContentRows}
 								viewportStart={resolvedUiState.messageViewportStart}
-								cursor={resolvedUiState.messageCursor}
-								focused={focusMode === 'messages'}
 								theme={theme}
 								borderColor={theme.border}
 							/>

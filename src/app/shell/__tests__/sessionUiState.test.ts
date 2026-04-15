@@ -283,48 +283,76 @@ describe('sessionUiState', () => {
 	});
 
 	describe('message scroll model', () => {
-		it('move_message_cursor scrolls line-by-line within line count', () => {
+		it('scroll_message_viewport moves viewport by delta', () => {
 			const ctx = makeContext({messageEntryCount: 50, messageContentRows: 10});
 			const state: SessionUiState = {
 				...initialSessionUiState,
 				focusMode: 'messages',
-				messageCursor: 0,
 				messageViewportStart: 0,
 				messageTailFollow: false,
 			};
 			const result = reduceSessionUiState(
 				state,
-				{type: 'move_message_cursor', delta: 1},
+				{type: 'scroll_message_viewport', delta: 3},
 				ctx,
 			);
-			expect(result.messageCursor).toBe(1);
+			expect(result.messageViewportStart).toBe(3);
+		});
+
+		it('scroll_message_viewport clamps at bottom', () => {
+			const ctx = makeContext({messageEntryCount: 50, messageContentRows: 10});
+			const state: SessionUiState = {
+				...initialSessionUiState,
+				focusMode: 'messages',
+				messageViewportStart: 39,
+				messageTailFollow: false,
+			};
+			const result = reduceSessionUiState(
+				state,
+				{type: 'scroll_message_viewport', delta: 5},
+				ctx,
+			);
+			expect(result.messageViewportStart).toBe(40);
+		});
+
+		it('scroll_message_viewport clamps at top', () => {
+			const ctx = makeContext({messageEntryCount: 50, messageContentRows: 10});
+			const state: SessionUiState = {
+				...initialSessionUiState,
+				focusMode: 'messages',
+				messageViewportStart: 2,
+				messageTailFollow: false,
+			};
+			const result = reduceSessionUiState(
+				state,
+				{type: 'scroll_message_viewport', delta: -5},
+				ctx,
+			);
 			expect(result.messageViewportStart).toBe(0);
 		});
 
-		it('move_message_cursor scrolls viewport when cursor exits visible range', () => {
+		it('scroll_message_viewport disables tail follow', () => {
 			const ctx = makeContext({messageEntryCount: 50, messageContentRows: 10});
 			const state: SessionUiState = {
 				...initialSessionUiState,
 				focusMode: 'messages',
-				messageCursor: 9,
-				messageViewportStart: 0,
-				messageTailFollow: false,
+				messageViewportStart: 40,
+				messageTailFollow: true,
 			};
 			const result = reduceSessionUiState(
 				state,
-				{type: 'move_message_cursor', delta: 1},
+				{type: 'scroll_message_viewport', delta: -1},
 				ctx,
 			);
-			expect(result.messageCursor).toBe(10);
-			expect(result.messageViewportStart).toBe(1);
+			expect(result.messageTailFollow).toBe(false);
+			expect(result.messageViewportStart).toBe(39);
 		});
 
-		it('jump_message_tail pins to bottom', () => {
+		it('jump_message_tail pins viewport to bottom', () => {
 			const ctx = makeContext({messageEntryCount: 50, messageContentRows: 10});
 			const state: SessionUiState = {
 				...initialSessionUiState,
 				focusMode: 'messages',
-				messageCursor: 5,
 				messageViewportStart: 0,
 				messageTailFollow: false,
 			};
@@ -333,17 +361,15 @@ describe('sessionUiState', () => {
 				{type: 'jump_message_tail'},
 				ctx,
 			);
-			expect(result.messageCursor).toBe(49);
 			expect(result.messageViewportStart).toBe(40);
 			expect(result.messageTailFollow).toBe(true);
 		});
 
-		it('jump_message_top goes to line 0', () => {
+		it('jump_message_top resets viewport to 0', () => {
 			const ctx = makeContext({messageEntryCount: 50, messageContentRows: 10});
 			const state: SessionUiState = {
 				...initialSessionUiState,
 				focusMode: 'messages',
-				messageCursor: 30,
 				messageViewportStart: 25,
 				messageTailFollow: false,
 			};
@@ -352,7 +378,6 @@ describe('sessionUiState', () => {
 				{type: 'jump_message_top'},
 				ctx,
 			);
-			expect(result.messageCursor).toBe(0);
 			expect(result.messageViewportStart).toBe(0);
 			expect(result.messageTailFollow).toBe(false);
 		});
@@ -360,13 +385,11 @@ describe('sessionUiState', () => {
 		it('resolve reclamps message viewport when line count shrinks', () => {
 			const result = resolve(
 				{
-					messageCursor: 30,
 					messageViewportStart: 25,
 					messageTailFollow: false,
 				},
 				{messageEntryCount: 20, messageContentRows: 10},
 			);
-			expect(result.messageCursor).toBe(19);
 			expect(result.messageViewportStart).toBe(10);
 		});
 
@@ -377,7 +400,6 @@ describe('sessionUiState', () => {
 				},
 				{messageEntryCount: 30, messageContentRows: 10},
 			);
-			expect(result.messageCursor).toBe(29);
 			expect(result.messageViewportStart).toBe(20);
 		});
 

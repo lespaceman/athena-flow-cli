@@ -3,10 +3,9 @@ import {type MessageTab} from '../../core/feed/panelFilter';
 import {startInputMeasure} from '../../shared/utils/perf';
 
 export type MessageKeyboardCallbacks = {
-	moveMessageCursor: (delta: number) => void;
+	scrollViewport: (delta: number) => void;
 	jumpToTail: () => void;
 	jumpToTop: () => void;
-	expandAtCursor: () => void;
 	cycleFocus: () => void;
 	openCommandInput: () => void;
 	openSearchInput: () => void;
@@ -68,24 +67,19 @@ export function useMessageKeyboard({
 					return;
 				}
 				if (key.pageUp) {
-					callbacks.moveMessageCursor(-pageStep);
+					callbacks.scrollViewport(-pageStep);
 					return;
 				}
 				if (key.pageDown) {
-					callbacks.moveMessageCursor(pageStep);
+					callbacks.scrollViewport(pageStep);
 					return;
 				}
 				if (key.upArrow) {
-					callbacks.moveMessageCursor(-1);
+					callbacks.scrollViewport(-1);
 					return;
 				}
 				if (key.downArrow) {
-					callbacks.moveMessageCursor(1);
-					return;
-				}
-
-				if (key.return || (key.ctrl && key.rightArrow)) {
-					callbacks.expandAtCursor();
+					callbacks.scrollViewport(1);
 					return;
 				}
 			} finally {

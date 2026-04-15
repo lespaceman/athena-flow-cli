@@ -13,8 +13,6 @@ type Props = {
 	width: number;
 	contentRows: number;
 	viewportStart: number;
-	cursor: number;
-	focused: boolean;
 	theme: Theme;
 	borderColor?: string;
 };
@@ -76,8 +74,6 @@ function sliceViewport(
 	wrapped: WrappedLine[],
 	contentRows: number,
 	viewportStart: number,
-	cursor: number,
-	focused: boolean,
 	frameBorder: string,
 	userIndicator: string,
 	agentIndicator: string,
@@ -123,18 +119,11 @@ function sliceViewport(
 		}
 
 		const indicator = line.kind === 'agent' ? agentIndicator : userIndicator;
-		const isCursorLine = focused && lineIdx === cursor;
-		let content = line.text;
-
-		if (isCursorLine) {
-			content = chalk.bgHex(theme.feed.focusBackground)(
-				fitAnsi(content, contentWidth),
-			);
-		}
+		const content = line.text;
 
 		let row = frameBorder + indicator + ' ' + content;
 
-		if (scrollIndicator && lineIdx === start && !isCursorLine) {
+		if (scrollIndicator && lineIdx === start) {
 			const indicatorStyled = chalk.hex(theme.textMuted)(scrollIndicator);
 			const padded = fitAnsi(
 				line.text,
@@ -154,16 +143,8 @@ function sliceViewport(
 }
 
 function MessagePanelImpl(props: Props) {
-	const {
-		entries,
-		width,
-		contentRows,
-		viewportStart,
-		cursor,
-		focused,
-		theme,
-		borderColor,
-	} = props;
+	const {entries, width, contentRows, viewportStart, theme, borderColor} =
+		props;
 
 	const wrapped = useMemo(
 		() => buildRenderedLines(entries, width, theme),
@@ -181,8 +162,6 @@ function MessagePanelImpl(props: Props) {
 				wrapped,
 				contentRows,
 				viewportStart,
-				cursor,
-				focused,
 				frameBorder,
 				userIndicator,
 				agentIndicator,
@@ -193,8 +172,6 @@ function MessagePanelImpl(props: Props) {
 			wrapped,
 			contentRows,
 			viewportStart,
-			cursor,
-			focused,
 			frameBorder,
 			userIndicator,
 			agentIndicator,

@@ -29,7 +29,7 @@ function makeEntry(overrides: Partial<TimelineEntry>): TimelineEntry {
 }
 
 describe('useFilteredPanels', () => {
-	it('tracks which message entry owns each wrapped line', () => {
+	it('partitions entries and counts message lines in split mode', () => {
 		const entries = [
 			makeEntry({
 				id: 'agent-1',
@@ -55,11 +55,6 @@ describe('useFilteredPanels', () => {
 
 		expect(result.current.messageEntries).toHaveLength(2);
 		expect(result.current.feedEntries).toHaveLength(1);
-		expect(result.current.messageLineCount).toBe(
-			result.current.messageLineEntryIndexes.length,
-		);
-		expect(result.current.messageLineEntryIndexes).toContain(0);
-		expect(result.current.messageLineEntryIndexes).toContain(1);
-		expect(result.current.messageLineEntryIndexes.at(-1)).toBe(1);
+		expect(result.current.messageLineCount).toBeGreaterThan(0);
 	});
 });
