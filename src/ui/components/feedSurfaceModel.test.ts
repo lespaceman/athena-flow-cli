@@ -98,7 +98,7 @@ describe('buildFeedSurface', () => {
 		expect(withDivider.headerLines.length).toBe(2);
 		// The divider line should contain repeated horizontal glyphs
 		const dividerStripped = stripAnsi(withDivider.headerLines[1]!);
-		expect(dividerStripped).toMatch(/^[|][-]+[|]$/);
+		expect(dividerStripped).toMatch(/^[+][-]+[+]$/);
 
 		// Case 2: feedHeaderRows > 0 && feedContentRows = 1 => no divider
 		const noDivider = buildFeedSurface(

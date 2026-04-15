@@ -199,8 +199,8 @@ describe('FeedGrid line-buffer via buildFeedSurface', () => {
 		// Each line should be bordered (first and last visible char is border glyph)
 		for (const line of surface.allLines) {
 			const stripped = stripAnsi(line);
-			expect(stripped[0]).toBe('|'); // ascii vertical glyph
-			expect(stripped[stripped.length - 1]).toBe('|');
+			expect(['|', '+']).toContain(stripped[0]); // ascii vertical/join glyph
+			expect(['|', '+']).toContain(stripped[stripped.length - 1]);
 		}
 	});
 

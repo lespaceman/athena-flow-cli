@@ -1,3 +1,4 @@
+import type {MessageTab} from '../../core/feed/panelFilter';
 import type {FocusMode, InputMode} from './types';
 
 export type TodoCursorMode = 'auto' | 'manual';
@@ -17,6 +18,10 @@ export type SessionUiState = {
 	todoCursor: number;
 	todoScroll: number;
 	todoCursorMode: TodoCursorMode;
+	messagePanelTab: MessageTab;
+	messageCursor: number;
+	messageViewportStart: number;
+	messageTailFollow: boolean;
 };
 
 export type SessionUiContext = {
@@ -28,6 +33,8 @@ export type SessionUiContext = {
 	todoFocusable: boolean;
 	todoAnchorIndex: number;
 	staticFloor?: number;
+	messageEntryCount: number;
+	messageContentRows: number;
 };
 
 export type SessionUiAction =
@@ -55,11 +62,22 @@ export type SessionUiAction =
 	| {type: 'move_todo_cursor'; delta: number}
 	| {type: 'set_todo_cursor'; cursor: number}
 	| {type: 'reveal_feed_entry'; cursor: number}
-	| {type: 'set_search_match_pos'; position: number};
+	| {type: 'set_search_match_pos'; position: number}
+	| {type: 'set_message_tab'; tab: MessageTab}
+	| {type: 'move_message_cursor'; delta: number}
+	| {type: 'jump_message_tail'}
+	| {type: 'jump_message_top'};
+
+type ScrollState = {cursor: number; viewportStart: number; tailFollow: boolean};
 
 type FeedState = Pick<
 	SessionUiState,
 	'feedCursor' | 'feedViewportStart' | 'tailFollow'
+>;
+
+type MessageState = Pick<
+	SessionUiState,
+	'messageCursor' | 'messageViewportStart' | 'messageTailFollow'
 >;
 
 const DEFAULT_STATIC_FLOOR = 0;
@@ -79,10 +97,44 @@ export const initialSessionUiState: SessionUiState = {
 	todoCursor: 0,
 	todoScroll: 0,
 	todoCursorMode: 'auto',
+	messagePanelTab: 'both',
+	messageCursor: 0,
+	messageViewportStart: 0,
+	messageTailFollow: true,
 };
 
 function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(value, max));
+}
+
+function computeScrollState(
+	cursor: number,
+	viewportStart: number,
+	tailFollow: boolean,
+	entryCount: number,
+	contentRows: number,
+	floor: number,
+): ScrollState {
+	const maxCursor = Math.max(floor, entryCount - 1);
+	const maxStart = contentRows <= 0 ? 0 : Math.max(0, entryCount - contentRows);
+	if (tailFollow) {
+		return {cursor: maxCursor, tailFollow: true, viewportStart: maxStart};
+	}
+	const nextCursor = clamp(cursor, floor, maxCursor);
+	let nextStart = clamp(viewportStart, floor, maxStart);
+	if (nextCursor < nextStart) {
+		nextStart = nextCursor;
+	} else if (contentRows > 0) {
+		const visibleEnd = nextStart + contentRows - 1;
+		if (nextCursor > visibleEnd) {
+			nextStart = nextCursor - contentRows + 1;
+		}
+	}
+	return {
+		cursor: nextCursor,
+		tailFollow: false,
+		viewportStart: clamp(nextStart, floor, maxStart),
+	};
 }
 
 function maxFeedCursor(ctx: SessionUiContext): number {
@@ -104,26 +156,50 @@ function computeFeedState(
 	tailFollow: boolean,
 	ctx: SessionUiContext,
 ): FeedState {
-	const staticFloor = ctx.staticFloor ?? DEFAULT_STATIC_FLOOR;
-	const mCursor = maxFeedCursor(ctx);
-	const mStart = maxFeedViewportStart(ctx);
-	if (tailFollow) {
-		return {feedCursor: mCursor, tailFollow: true, feedViewportStart: mStart};
-	}
-	const nextCursor = clamp(cursor, staticFloor, mCursor);
-	let nextStart = clamp(viewportStart, staticFloor, mStart);
-	if (nextCursor < nextStart) {
-		nextStart = nextCursor;
-	} else if (ctx.feedContentRows > 0) {
-		const visibleEnd = nextStart + ctx.feedContentRows - 1;
-		if (nextCursor > visibleEnd) {
-			nextStart = nextCursor - ctx.feedContentRows + 1;
-		}
-	}
+	const floor = ctx.staticFloor ?? DEFAULT_STATIC_FLOOR;
+	const s = computeScrollState(
+		cursor,
+		viewportStart,
+		tailFollow,
+		ctx.feedEntryCount,
+		ctx.feedContentRows,
+		floor,
+	);
 	return {
-		feedCursor: nextCursor,
-		tailFollow: false,
-		feedViewportStart: clamp(nextStart, staticFloor, mStart),
+		feedCursor: s.cursor,
+		tailFollow: s.tailFollow,
+		feedViewportStart: s.viewportStart,
+	};
+}
+
+function maxMessageCursor(ctx: SessionUiContext): number {
+	return Math.max(0, ctx.messageEntryCount - 1);
+}
+
+function maxMessageViewportStart(ctx: SessionUiContext): number {
+	return ctx.messageContentRows <= 0
+		? 0
+		: Math.max(0, ctx.messageEntryCount - ctx.messageContentRows);
+}
+
+function computeMessageState(
+	cursor: number,
+	viewportStart: number,
+	tailFollow: boolean,
+	ctx: SessionUiContext,
+): MessageState {
+	const s = computeScrollState(
+		cursor,
+		viewportStart,
+		tailFollow,
+		ctx.messageEntryCount,
+		ctx.messageContentRows,
+		0,
+	);
+	return {
+		messageCursor: s.cursor,
+		messageTailFollow: s.tailFollow,
+		messageViewportStart: s.viewportStart,
 	};
 }
 
@@ -139,6 +215,20 @@ function withFeedChange(
 		return current;
 	}
 	return {...current, ...feed};
+}
+
+function withMessageChange(
+	current: SessionUiState,
+	msg: MessageState,
+): SessionUiState {
+	if (
+		msg.messageCursor === current.messageCursor &&
+		msg.messageViewportStart === current.messageViewportStart &&
+		msg.messageTailFollow === current.messageTailFollow
+	) {
+		return current;
+	}
+	return {...current, ...msg};
 }
 
 function resolveTodoCursor(
@@ -188,11 +278,20 @@ export function resolveSessionUiState(
 		state.tailFollow,
 		ctx,
 	);
+	const msgState = computeMessageState(
+		state.messageCursor,
+		state.messageViewportStart,
+		state.messageTailFollow,
+		ctx,
+	);
 	const todoCursor = resolveTodoCursor(state, ctx);
-	const focusMode =
-		state.focusMode === 'todo' && (!state.todoVisible || !ctx.todoFocusable)
-			? 'feed'
-			: state.focusMode;
+	let focusMode = state.focusMode;
+	if (focusMode === 'todo' && (!state.todoVisible || !ctx.todoFocusable)) {
+		focusMode = 'feed';
+	}
+	if (focusMode === 'messages' && ctx.messageEntryCount <= 0) {
+		focusMode = 'feed';
+	}
 	const searchMatchPos =
 		ctx.searchMatchCount <= 0
 			? 0
@@ -206,7 +305,10 @@ export function resolveSessionUiState(
 		feedState.feedViewportStart === state.feedViewportStart &&
 		feedState.tailFollow === state.tailFollow &&
 		todoCursor === state.todoCursor &&
-		todoScroll === state.todoScroll
+		todoScroll === state.todoScroll &&
+		msgState.messageCursor === state.messageCursor &&
+		msgState.messageViewportStart === state.messageViewportStart &&
+		msgState.messageTailFollow === state.messageTailFollow
 	) {
 		return state;
 	}
@@ -220,6 +322,9 @@ export function resolveSessionUiState(
 		tailFollow: feedState.tailFollow,
 		todoCursor,
 		todoScroll,
+		messageCursor: msgState.messageCursor,
+		messageViewportStart: msgState.messageViewportStart,
+		messageTailFollow: msgState.messageTailFollow,
 	};
 }
 
@@ -236,21 +341,27 @@ export function reduceSessionUiState(
 ): SessionUiState {
 	const current = resolveSessionUiState(state, ctx);
 	switch (action.type) {
-		case 'cycle_focus':
-			if (current.focusMode === 'feed') {
-				return {...current, focusMode: 'input'};
-			}
+		case 'cycle_focus': {
 			if (current.focusMode === 'input') {
-				return {
-					...current,
-					focusMode: current.todoVisible && ctx.todoFocusable ? 'todo' : 'feed',
-					todoCursorMode:
-						current.todoVisible && ctx.todoFocusable
-							? 'auto'
-							: current.todoCursorMode,
-				};
+				if (current.todoVisible && ctx.todoFocusable) {
+					return {...current, focusMode: 'todo', todoCursorMode: 'auto'};
+				}
+				if (ctx.messageEntryCount > 0) {
+					return {...current, focusMode: 'messages'};
+				}
+				return {...current, focusMode: 'feed'};
 			}
-			return {...current, focusMode: 'feed'};
+			if (current.focusMode === 'todo') {
+				if (ctx.messageEntryCount > 0) {
+					return {...current, focusMode: 'messages'};
+				}
+				return {...current, focusMode: 'feed'};
+			}
+			if (current.focusMode === 'messages') {
+				return {...current, focusMode: 'feed'};
+			}
+			return {...current, focusMode: 'input'};
+		}
 		case 'set_focus_mode':
 			return {
 				...current,
@@ -448,6 +559,31 @@ export function reduceSessionUiState(
 		case 'set_search_match_pos':
 			if (current.searchMatchPos === action.position) return current;
 			return {...current, searchMatchPos: action.position};
+		case 'set_message_tab':
+			if (current.messagePanelTab === action.tab) return current;
+			return {...current, messagePanelTab: action.tab};
+		case 'move_message_cursor':
+			return withMessageChange(
+				current,
+				computeMessageState(
+					current.messageCursor + action.delta,
+					current.messageViewportStart,
+					false,
+					ctx,
+				),
+			);
+		case 'jump_message_tail':
+			return withMessageChange(current, {
+				messageCursor: maxMessageCursor(ctx),
+				messageViewportStart: maxMessageViewportStart(ctx),
+				messageTailFollow: true,
+			});
+		case 'jump_message_top':
+			return withMessageChange(current, {
+				messageCursor: 0,
+				messageViewportStart: 0,
+				messageTailFollow: false,
+			});
 		default:
 			return current;
 	}

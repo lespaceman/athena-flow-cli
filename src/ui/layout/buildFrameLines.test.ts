@@ -20,7 +20,7 @@ describe('buildFrameLines contextual prompt', () => {
 	it('shows default prompt when no run has completed', () => {
 		const {inputLines} = buildFrameLines(baseCtx);
 		const line = inputLines.join('');
-		expect(line).toContain('Type a prompt to begin');
+		expect(line).toContain('Write a message');
 	});
 
 	it('shows contextual prompt after completed run (X2)', () => {
@@ -29,13 +29,13 @@ describe('buildFrameLines contextual prompt', () => {
 			lastRunStatus: 'completed',
 		});
 		const line = inputLines.join('');
-		expect(line).toContain('Done');
+		expect(line).toContain('Write a message');
 	});
 
 	it('shows contextual prompt after failed run (X2)', () => {
 		const {inputLines} = buildFrameLines({...baseCtx, lastRunStatus: 'failed'});
 		const line = inputLines.join('');
-		expect(line).toContain('Run failed');
+		expect(line).toContain('Write a message');
 	});
 
 	it('shows Esc Back hint in input mode when idle', () => {

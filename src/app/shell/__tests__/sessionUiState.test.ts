@@ -19,6 +19,8 @@ function makeContext(
 		todoFocusable: false,
 		todoAnchorIndex: -1,
 		staticFloor: 0,
+		messageEntryCount: 0,
+		messageContentRows: 0,
 		...overrides,
 	};
 }
@@ -277,6 +279,114 @@ describe('sessionUiState', () => {
 				ctx,
 			);
 			expect(result).toBe(state);
+		});
+	});
+
+	describe('message scroll model', () => {
+		it('move_message_cursor scrolls line-by-line within line count', () => {
+			const ctx = makeContext({messageEntryCount: 50, messageContentRows: 10});
+			const state: SessionUiState = {
+				...initialSessionUiState,
+				focusMode: 'messages',
+				messageCursor: 0,
+				messageViewportStart: 0,
+				messageTailFollow: false,
+			};
+			const result = reduceSessionUiState(
+				state,
+				{type: 'move_message_cursor', delta: 1},
+				ctx,
+			);
+			expect(result.messageCursor).toBe(1);
+			expect(result.messageViewportStart).toBe(0);
+		});
+
+		it('move_message_cursor scrolls viewport when cursor exits visible range', () => {
+			const ctx = makeContext({messageEntryCount: 50, messageContentRows: 10});
+			const state: SessionUiState = {
+				...initialSessionUiState,
+				focusMode: 'messages',
+				messageCursor: 9,
+				messageViewportStart: 0,
+				messageTailFollow: false,
+			};
+			const result = reduceSessionUiState(
+				state,
+				{type: 'move_message_cursor', delta: 1},
+				ctx,
+			);
+			expect(result.messageCursor).toBe(10);
+			expect(result.messageViewportStart).toBe(1);
+		});
+
+		it('jump_message_tail pins to bottom', () => {
+			const ctx = makeContext({messageEntryCount: 50, messageContentRows: 10});
+			const state: SessionUiState = {
+				...initialSessionUiState,
+				focusMode: 'messages',
+				messageCursor: 5,
+				messageViewportStart: 0,
+				messageTailFollow: false,
+			};
+			const result = reduceSessionUiState(
+				state,
+				{type: 'jump_message_tail'},
+				ctx,
+			);
+			expect(result.messageCursor).toBe(49);
+			expect(result.messageViewportStart).toBe(40);
+			expect(result.messageTailFollow).toBe(true);
+		});
+
+		it('jump_message_top goes to line 0', () => {
+			const ctx = makeContext({messageEntryCount: 50, messageContentRows: 10});
+			const state: SessionUiState = {
+				...initialSessionUiState,
+				focusMode: 'messages',
+				messageCursor: 30,
+				messageViewportStart: 25,
+				messageTailFollow: false,
+			};
+			const result = reduceSessionUiState(
+				state,
+				{type: 'jump_message_top'},
+				ctx,
+			);
+			expect(result.messageCursor).toBe(0);
+			expect(result.messageViewportStart).toBe(0);
+			expect(result.messageTailFollow).toBe(false);
+		});
+
+		it('resolve reclamps message viewport when line count shrinks', () => {
+			const result = resolve(
+				{
+					messageCursor: 30,
+					messageViewportStart: 25,
+					messageTailFollow: false,
+				},
+				{messageEntryCount: 20, messageContentRows: 10},
+			);
+			expect(result.messageCursor).toBe(19);
+			expect(result.messageViewportStart).toBe(10);
+		});
+
+		it('tail follow reclamps when line count changes', () => {
+			const result = resolve(
+				{
+					messageTailFollow: true,
+				},
+				{messageEntryCount: 30, messageContentRows: 10},
+			);
+			expect(result.messageCursor).toBe(29);
+			expect(result.messageViewportStart).toBe(20);
+		});
+
+		it('falls back to feed focus when message entries are empty', () => {
+			const result = resolve(
+				{focusMode: 'messages'},
+				{messageEntryCount: 0, messageContentRows: 10},
+			);
+			expect(result.focusMode).toBe('feed');
 		});
 	});
 });

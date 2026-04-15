@@ -20,6 +20,8 @@ export type UseLayoutOptions = {
 	footerRows: number;
 	/** Number of visual rows the input field occupies (default: 1) */
 	inputRows?: number;
+	/** Whether there are message entries to show in a split panel */
+	hasMessages?: boolean;
 };
 
 export type UseLayoutResult = {
@@ -33,7 +35,17 @@ export type UseLayoutResult = {
 	pageStep: number;
 	todoListHeight: number;
 	baseFeedContentRows: number;
+	/** Whether the UI is in horizontal split mode (messages + feed side by side) */
+	splitMode: boolean;
+	/** Width of the message panel (left side) when in split mode */
+	messagePanelWidth: number;
+	/** Width of the feed panel (right side) when in split mode */
+	feedPanelWidth: number;
+	/** Content rows available for message panel entries (excludes header) */
+	messageContentRows: number;
 };
+
+const MESSAGE_PANEL_RATIO = 0.4;
 
 export function useLayout({
 	terminalRows,
@@ -44,6 +56,7 @@ export function useLayout({
 	feedEntryCount = 0,
 	footerRows,
 	inputRows = 1,
+	hasMessages = false,
 }: UseLayoutOptions): UseLayoutResult {
 	const stickyTodoRowsRef = useRef(0);
 	const frameWidth = Math.max(4, terminalWidth);
@@ -101,6 +114,15 @@ export function useLayout({
 			? Math.max(0, itemSlots - 2)
 			: itemSlots;
 
+	const splitMode = hasMessages;
+	const messagePanelWidth = splitMode
+		? Math.floor(innerWidth * MESSAGE_PANEL_RATIO) - 1
+		: 0;
+	const feedPanelWidth = splitMode
+		? innerWidth - messagePanelWidth - 1
+		: innerWidth;
+	const messageContentRows = feedHeaderRows + feedContentRows;
+
 	return {
 		frameWidth,
 		innerWidth,
@@ -112,5 +134,9 @@ export function useLayout({
 		pageStep,
 		todoListHeight,
 		baseFeedContentRows,
+		splitMode,
+		messagePanelWidth,
+		feedPanelWidth,
+		messageContentRows,
 	};
 }

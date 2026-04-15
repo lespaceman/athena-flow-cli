@@ -8,6 +8,7 @@ import React, {
 	useState,
 } from 'react';
 import {Box, Text, useInput} from 'ink';
+import chalk from 'chalk';
 import * as registry from '../../app/commands/registry';
 import {type Command} from '../../app/commands/types';
 import {
@@ -39,6 +40,7 @@ type Props = {
 	textInputPlaceholder: string;
 	textColor: string;
 	inputPlaceholderColor: string;
+	inputBackground: string;
 	isInputActive: boolean;
 	onChange?: (value: string) => void;
 	onSubmit?: (value: string) => void;
@@ -46,9 +48,6 @@ type Props = {
 	onHistoryForward?: () => string | undefined;
 	suppressArrows?: boolean;
 	setValueRef?: (setValue: (value: string) => void) => void;
-	badgeText: string;
-	runBadgeStyled: string;
-	modeBadgeStyled: string;
 	border: (text: string) => string;
 	bottomBorder: string;
 	commandSuggestionsEnabled: boolean;
@@ -67,6 +66,7 @@ const ShellInputImpl = forwardRef<ShellInputHandle, Props>(function ShellInput(
 		textInputPlaceholder,
 		textColor,
 		inputPlaceholderColor,
+		inputBackground,
 		isInputActive,
 		onChange,
 		onSubmit,
@@ -74,9 +74,6 @@ const ShellInputImpl = forwardRef<ShellInputHandle, Props>(function ShellInput(
 		onHistoryForward,
 		suppressArrows,
 		setValueRef,
-		badgeText,
-		runBadgeStyled,
-		modeBadgeStyled,
 		border,
 		bottomBorder,
 		commandSuggestionsEnabled,
@@ -266,6 +263,14 @@ const ShellInputImpl = forwardRef<ShellInputHandle, Props>(function ShellInput(
 		isInputActive,
 		textInputPlaceholder,
 	);
+	const fill = useMemo(() => chalk.bgHex(inputBackground), [inputBackground]);
+	const paintCell = useCallback(
+		(text: string, color?: string) => {
+			const styled = color ? chalk.hex(color)(text) : text;
+			return fill(styled);
+		},
+		[fill],
+	);
 
 	return (
 		<>
@@ -283,21 +288,27 @@ const ShellInputImpl = forwardRef<ShellInputHandle, Props>(function ShellInput(
 				borderColor={borderColor}
 				height={inputRows}
 			>
+				<Box width={1} flexShrink={0}>
+					<Text>{paintCell(' ')}</Text>
+				</Box>
 				<Box width={inputPrefix.length} flexShrink={0}>
-					<Text>{inputPromptStyled}</Text>
+					<Text>{paintCell(inputPromptStyled)}</Text>
+				</Box>
+				<Box width={1} flexShrink={0}>
+					<Text>{paintCell(' ')}</Text>
 				</Box>
 				<Box width={inputContentWidth} flexShrink={0} flexDirection="column">
 					{lines.map((line, index) => (
-						<Text
-							key={index}
-							color={value.length === 0 ? inputPlaceholderColor : textColor}
-						>
-							{line}
+						<Text key={index}>
+							{paintCell(
+								line,
+								value.length === 0 ? inputPlaceholderColor : textColor,
+							)}
 						</Text>
 					))}
 				</Box>
-				<Box width={badgeText.length} flexShrink={0}>
-					<Text>{runBadgeStyled + modeBadgeStyled}</Text>
+				<Box width={1} flexShrink={0}>
+					<Text>{paintCell(' ')}</Text>
 				</Box>
 			</FrameRow>
 			<Text>{border(bottomBorder)}</Text>

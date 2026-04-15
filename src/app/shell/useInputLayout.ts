@@ -1,23 +1,19 @@
 import {useMemo} from 'react';
 import type {InputMode} from './types';
 
-const INPUT_PREFIX = 'input> ';
+const INPUT_PREFIX = '›';
+const INPUT_SIDE_PADDING = 3;
 
 export function deriveInputPlaceholder(
 	inputMode: InputMode,
-	lastRunStatus: string | null,
+	_lastRunStatus: string | null,
 	startupFailureMessage?: string | null,
-	ascii = false,
+	_ascii = false,
 ): string {
-	const dash = ascii ? '-' : '\u2014';
 	if (inputMode === 'search') return ':search';
 	if (inputMode === 'command') return '/command';
-	if (startupFailureMessage)
-		return `Startup failed ${dash} fix issue and retry`;
-	if (lastRunStatus === 'completed') return `Done ${dash} send a follow-up`;
-	if (lastRunStatus === 'failed' || lastRunStatus === 'aborted')
-		return `Run failed ${dash} retry or adjust prompt`;
-	return 'Type a prompt to begin';
+	if (startupFailureMessage) return 'Write a message';
+	return 'Write a message';
 }
 
 export function deriveTextInputPlaceholder(
@@ -33,7 +29,6 @@ export function deriveTextInputPlaceholder(
 
 type InputLayoutResult = {
 	inputPrefix: string;
-	badgeText: string;
 	inputContentWidth: number;
 	textInputPlaceholder: string;
 };
@@ -51,7 +46,6 @@ export function useInputLayout(opts: {
 	const {
 		innerWidth,
 		inputMode,
-		isHarnessRunning,
 		lastRunStatus,
 		startupFailureMessage,
 		dialogActive,
@@ -60,20 +54,9 @@ export function useInputLayout(opts: {
 	} = opts;
 
 	return useMemo(() => {
-		const runBadge = startupFailureMessage
-			? '[ERR]'
-			: isHarnessRunning
-				? '[RUN]'
-				: '[IDLE]';
-		const modeBadges = [
-			runBadge,
-			...(inputMode === 'search' ? ['[SEARCH]'] : []),
-			...(inputMode === 'command' ? ['[CMD]'] : []),
-		];
-		const badgeText = modeBadges.join('');
 		const inputContentWidth = Math.max(
 			1,
-			innerWidth - INPUT_PREFIX.length - badgeText.length,
+			innerWidth - INPUT_PREFIX.length - INPUT_SIDE_PADDING,
 		);
 		const inputPlaceholder = deriveInputPlaceholder(
 			inputMode,
@@ -89,14 +72,12 @@ export function useInputLayout(opts: {
 
 		return {
 			inputPrefix: INPUT_PREFIX,
-			badgeText,
 			inputContentWidth,
 			textInputPlaceholder,
 		};
 	}, [
 		innerWidth,
 		inputMode,
-		isHarnessRunning,
 		lastRunStatus,
 		startupFailureMessage,
 		dialogActive,

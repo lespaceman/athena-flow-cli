@@ -221,9 +221,7 @@ export function buildBodyLines({
 			}
 
 			// Divider line (subtle, close to frame border tone)
-			const divider = chalk
-				.hex(theme.border)
-				.dim(g.dividerChar.repeat(innerWidth));
+			const divider = chalk.hex(theme.border)(g.dividerChar.repeat(innerWidth));
 			bodyLines.push(fitAnsi(divider, innerWidth));
 		}
 	}

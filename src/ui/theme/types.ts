@@ -33,6 +33,7 @@ export type Theme = {
 	};
 	inputPrompt: string;
 	inputChevron: string;
+	inputBackground: string;
 	feed: {
 		headerLabel: string;
 		stripeBackground: string | null;

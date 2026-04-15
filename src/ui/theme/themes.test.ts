@@ -25,6 +25,7 @@ function assertValidTheme(theme: Theme) {
 		theme.dialog.borderQuestion,
 		theme.inputPrompt,
 		theme.inputChevron,
+		theme.inputBackground,
 		theme.feed.headerLabel,
 		theme.userMessage.text,
 		theme.userMessage.background,

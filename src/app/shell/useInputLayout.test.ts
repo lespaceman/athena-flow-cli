@@ -11,75 +11,61 @@ describe('deriveInputPlaceholder', () => {
 
 	it('returns follow-up message on completed run', () => {
 		expect(deriveInputPlaceholder('normal', 'completed')).toBe(
-			'Done — send a follow-up',
+			'Write a message',
 		);
 	});
 
 	it('returns startup failure message when startup failed', () => {
 		expect(deriveInputPlaceholder('normal', null, 'Socket path too long')).toBe(
-			'Startup failed — fix issue and retry',
+			'Write a message',
 		);
 	});
 
 	it('returns failed message on failed run', () => {
-		expect(deriveInputPlaceholder('normal', 'failed')).toBe(
-			'Run failed — retry or adjust prompt',
-		);
+		expect(deriveInputPlaceholder('normal', 'failed')).toBe('Write a message');
 	});
 
 	it('returns failed message on aborted run', () => {
-		expect(deriveInputPlaceholder('normal', 'aborted')).toBe(
-			'Run failed — retry or adjust prompt',
-		);
-	});
-
-	it('uses ASCII-safe separator in ascii mode', () => {
-		expect(deriveInputPlaceholder('normal', 'completed', null, true)).toBe(
-			'Done - send a follow-up',
-		);
+		expect(deriveInputPlaceholder('normal', 'aborted')).toBe('Write a message');
 	});
 
 	it('returns default prompt for normal mode without status', () => {
-		expect(deriveInputPlaceholder('normal', null)).toBe(
-			'Type a prompt to begin',
-		);
+		expect(deriveInputPlaceholder('normal', null)).toBe('Write a message');
 	});
 
 	it('returns default prompt for normal mode with working status', () => {
-		expect(deriveInputPlaceholder('normal', 'working')).toBe(
-			'Type a prompt to begin',
-		);
+		expect(deriveInputPlaceholder('normal', 'working')).toBe('Write a message');
 	});
 });
 
 describe('deriveTextInputPlaceholder', () => {
 	it('returns input placeholder when dialog is not active', () => {
 		expect(
-			deriveTextInputPlaceholder(false, undefined, 'Type a prompt to begin'),
-		).toBe('Type a prompt to begin');
+			deriveTextInputPlaceholder(false, undefined, 'Write a message'),
+		).toBe('Write a message');
 	});
 
 	it('returns question message for question dialog', () => {
 		expect(
-			deriveTextInputPlaceholder(true, 'question', 'Type a prompt to begin'),
+			deriveTextInputPlaceholder(true, 'question', 'Write a message'),
 		).toBe('Answer question in dialog...');
 	});
 
 	it('returns permission message for permission dialog', () => {
 		expect(
-			deriveTextInputPlaceholder(true, 'permission', 'Type a prompt to begin'),
+			deriveTextInputPlaceholder(true, 'permission', 'Write a message'),
 		).toBe('Respond to permission dialog...');
 	});
 
 	it('returns diagnostics message for diagnostics dialog', () => {
 		expect(
-			deriveTextInputPlaceholder(true, 'diagnostics', 'Type a prompt to begin'),
+			deriveTextInputPlaceholder(true, 'diagnostics', 'Write a message'),
 		).toBe('Respond to diagnostics dialog...');
 	});
 
 	it('returns permission message for other dialog types', () => {
-		expect(
-			deriveTextInputPlaceholder(true, 'working', 'Type a prompt to begin'),
-		).toBe('Respond to permission dialog...');
+		expect(deriveTextInputPlaceholder(true, 'working', 'Write a message')).toBe(
+			'Respond to permission dialog...',
+		);
 	});
 });

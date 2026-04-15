@@ -20,12 +20,13 @@ function renderShellInput(ref = createRef<ShellInputHandle>()) {
 				useAscii={false}
 				borderColor="#666666"
 				inputRows={1}
-				inputPrefix="input> "
-				inputPromptStyled="input> "
-				inputContentWidth={46}
+				inputPrefix="›"
+				inputPromptStyled="›"
+				inputContentWidth={56}
 				textInputPlaceholder="/command"
 				textColor="#ffffff"
 				inputPlaceholderColor="#999999"
+				inputBackground="#101418"
 				isInputActive={true}
 				onChange={noop}
 				onSubmit={noop}
@@ -33,9 +34,6 @@ function renderShellInput(ref = createRef<ShellInputHandle>()) {
 				onHistoryForward={() => undefined}
 				suppressArrows={true}
 				setValueRef={noop}
-				badgeText="[IDLE][CMD]"
-				runBadgeStyled=" RUN "
-				modeBadgeStyled=" CMD "
 				border={(text: string) => text}
 				bottomBorder="└────────────────────────────────────────────────────────────┘"
 				commandSuggestionsEnabled={true}
@@ -96,12 +94,13 @@ describe('ShellInput', () => {
 					useAscii={false}
 					borderColor="#666666"
 					inputRows={1}
-					inputPrefix="input> "
-					inputPromptStyled="input> "
-					inputContentWidth={46}
+					inputPrefix="›"
+					inputPromptStyled="›"
+					inputContentWidth={56}
 					textInputPlaceholder="/command"
 					textColor="#ffffff"
 					inputPlaceholderColor="#999999"
+					inputBackground="#101418"
 					isInputActive={true}
 					onChange={value => {
 						setCommandSuggestionsEnabled(value.startsWith('/'));
@@ -111,9 +110,6 @@ describe('ShellInput', () => {
 					onHistoryForward={() => undefined}
 					suppressArrows={commandSuggestionsEnabled}
 					setValueRef={noop}
-					badgeText="[IDLE][CMD]"
-					runBadgeStyled=" RUN "
-					modeBadgeStyled=" CMD "
 					border={(text: string) => text}
 					bottomBorder="└────────────────────────────────────────────────────────────┘"
 					commandSuggestionsEnabled={commandSuggestionsEnabled}
@@ -168,12 +164,13 @@ describe('ShellInput', () => {
 				useAscii={false}
 				borderColor="#666666"
 				inputRows={1}
-				inputPrefix="input> "
-				inputPromptStyled="input> "
-				inputContentWidth={46}
+				inputPrefix="›"
+				inputPromptStyled="›"
+				inputContentWidth={56}
 				textInputPlaceholder="/command"
 				textColor="#ffffff"
 				inputPlaceholderColor="#999999"
+				inputBackground="#101418"
 				isInputActive={true}
 				onChange={noop}
 				onSubmit={noop}
@@ -181,9 +178,6 @@ describe('ShellInput', () => {
 				onHistoryForward={() => undefined}
 				suppressArrows={true}
 				setValueRef={noop}
-				badgeText="[IDLE][CMD]"
-				runBadgeStyled=" RUN "
-				modeBadgeStyled=" CMD "
 				border={(text: string) => text}
 				bottomBorder="└────────────────────────────────────────────────────────────┘"
 				commandSuggestionsEnabled={true}

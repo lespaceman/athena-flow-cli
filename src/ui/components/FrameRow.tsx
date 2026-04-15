@@ -23,7 +23,7 @@ export function FrameRow({
 	const borderText =
 		height <= 1 ? fr.vertical : Array(height).fill(fr.vertical).join('\n');
 	const styledBorderText = borderColor
-		? chalk.hex(borderColor).dim(borderText)
+		? chalk.hex(borderColor)(borderText)
 		: borderText;
 	return (
 		<Box

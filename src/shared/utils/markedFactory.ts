@@ -158,3 +158,49 @@ export function createMarkedInstance(
 	});
 	return m;
 }
+
+const markedInstances = new Map<number, Marked>();
+
+function getCachedMarkedInstance(width: number): Marked {
+	let instance = markedInstances.get(width);
+	if (!instance) {
+		instance = createMarkedInstance(width);
+		markedInstances.set(width, instance);
+	}
+	return instance;
+}
+
+/**
+ * Render markdown to ANSI-formatted terminal lines at the given width.
+ * Caches Marked instances per width and render results per (text, width).
+ */
+export function renderMarkdown(text: string, width: number): string[] {
+	if (!text) return [''];
+	const cacheKey = `${width}\0${text}`;
+	const cached = renderCache.get(cacheKey);
+	if (cached) return cached;
+	const marked = getCachedMarkedInstance(width);
+	let lines: string[];
+	try {
+		const result = marked.parse(text);
+		if (typeof result !== 'string') {
+			lines = text.split('\n');
+		} else {
+			lines = result
+				.trimEnd()
+				.replace(/\n{3,}/g, '\n\n')
+				.split('\n');
+		}
+	} catch {
+		lines = text.split('\n');
+	}
+	renderCache.set(cacheKey, lines);
+	return lines;
+}
+
+const renderCache = new Map<string, string[]>();
+
+/** Clear the render cache (e.g. on terminal resize when widths change). */
+export function clearRenderCache(): void {
+	renderCache.clear();
+}

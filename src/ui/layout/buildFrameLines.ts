@@ -30,7 +30,7 @@ export type FrameLines = {
 
 function buildHintPairs(pairs: Array<[string, string]>): string {
 	return pairs
-		.map(([glyph, label]) => `${chalk.bold(glyph)} ${chalk.dim(label)}`)
+		.map(([glyph, label]) => `${chalk.bold(glyph)} ${label}`)
 		.join('   ');
 }
 
@@ -95,35 +95,18 @@ export function buildFrameLines(ctx: FrameContext): FrameLines {
 	})();
 
 	// Input lines (multi-line)
-	const runBadge = ctx.isClaudeRunning ? '[RUN]' : '[IDLE]';
-	const modeBadges = [
-		runBadge,
-		...(ctx.inputMode === 'search' ? ['[SEARCH]'] : []),
-		...(ctx.inputMode === 'command' ? ['[CMD]'] : []),
-	];
-	const badgeText = modeBadges.join('');
-	const rawPrefix = 'input> ';
+	const rawPrefix = ctx.ascii ? '>' : '›';
 	const inputPrefix = ctx.accentColor
 		? chalk.hex(ctx.accentColor)(rawPrefix)
 		: rawPrefix;
-	const inputContentWidth = Math.max(
-		1,
-		innerWidth - rawPrefix.length - badgeText.length,
-	);
+	const inputContentWidth = Math.max(1, innerWidth - rawPrefix.length - 3);
 	let inputPlaceholder: string;
 	if (ctx.inputMode === 'search') {
 		inputPlaceholder = ':search';
 	} else if (ctx.inputMode === 'command') {
 		inputPlaceholder = '/command';
-	} else if (ctx.lastRunStatus === 'completed') {
-		inputPlaceholder = 'Done \u2014 send a follow-up';
-	} else if (
-		ctx.lastRunStatus === 'failed' ||
-		ctx.lastRunStatus === 'aborted'
-	) {
-		inputPlaceholder = 'Run failed \u2014 retry or adjust prompt';
 	} else {
-		inputPlaceholder = 'Type a prompt to begin';
+		inputPlaceholder = 'Write a message';
 	}
 
 	const contentLines = ctx.dialogActive
@@ -151,11 +134,11 @@ export function buildFrameLines(ctx: FrameContext): FrameLines {
 	// First line gets prefix + badge, subsequent lines get padding
 	const inputLines = contentLines.map((content, i) => {
 		if (i === 0) {
-			return fitAnsi(`${inputPrefix}${content}${badgeText}`, innerWidth);
+			return fitAnsi(` ${inputPrefix} ${content} `, innerWidth);
 		}
 		// Continuation lines: pad prefix area, no badge
-		const pad = ' '.repeat(rawPrefix.length);
-		return fitAnsi(`${pad}${content}`, innerWidth);
+		const pad = ' '.repeat(rawPrefix.length + 2);
+		return fitAnsi(` ${pad}${content} `, innerWidth);
 	});
 
 	return {footerHelp, inputLines};

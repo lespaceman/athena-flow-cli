@@ -40,6 +40,7 @@ export const darkTheme: Theme = {
 	// ── Input ───────────────────────────────────────────────
 	inputPrompt: '#388bfd', // Blue "input" keyword in prompt.
 	inputChevron: '#484f58', // Bumped from #30363d for visibility (~2.8:1).
+	inputBackground: '#141a21', // Slight lift so the input row reads as its own surface.
 
 	// ── Feed ────────────────────────────────────────────────
 	feed: {
@@ -91,7 +92,7 @@ export const lightTheme: Theme = {
 	textInverse: '#ffffff', // White on colored backgrounds.
 
 	// ── Accent ──────────────────────────────────────────────
-	border: '#d0d7de', // Light border, not accent-colored.
+	border: '#8c959f', // Darker neutral border so frame lines stay visible on white.
 	accent: '#0969da', // Darker blue for light backgrounds.
 	accentSecondary: '#8250df', // Purple, darkened for readability.
 
@@ -122,6 +123,7 @@ export const lightTheme: Theme = {
 	// ── Input ───────────────────────────────────────────────
 	inputPrompt: '#0969da',
 	inputChevron: '#656d76',
+	inputBackground: '#f3f6f9',
 
 	// ── Feed ────────────────────────────────────────────────
 	feed: {
@@ -134,7 +136,7 @@ export const lightTheme: Theme = {
 	userMessage: {
 		text: '#1f2328',
 		background: '#f6f8fa',
-		border: '#d0d7de',
+		border: '#8c959f',
 	},
 
 	// ── Badges ──────────────────────────────────────────────
@@ -208,6 +210,7 @@ export const highContrastTheme: Theme = {
 	// ── Input ───────────────────────────────────────────────
 	inputPrompt: '#71b7ff',
 	inputChevron: '#9ea7b3', // Bumped from #7d8590 for visibility.
+	inputBackground: '#16202b',
 
 	// ── Feed ────────────────────────────────────────────────
 	feed: {

@@ -198,7 +198,7 @@ export function buildFeedSurface(params: BuildFeedSurfaceParams): FeedSurface {
 		headerLines.push(fl(formatFeedHeaderLine(cols, theme, innerWidth)));
 		if (showHeaderDivider) {
 			headerLines.push(
-				fl(chalk.hex(borderColor)(fr.horizontal.repeat(innerWidth))),
+				`${border(fr.teeLeft)}${chalk.hex(borderColor)(fr.horizontal.repeat(innerWidth))}${border(fr.teeRight)}`,
 			);
 		}
 	}

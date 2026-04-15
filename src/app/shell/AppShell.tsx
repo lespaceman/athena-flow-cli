@@ -29,6 +29,7 @@ import {
 } from '../../ui/hooks/useInputHistory';
 import {useTodoPanel} from '../../ui/hooks/useTodoPanel';
 import {useFeedKeyboard} from '../../ui/hooks/useFeedKeyboard';
+import {useMessageKeyboard} from '../../ui/hooks/useMessageKeyboard';
 import {useTodoKeyboard} from '../../ui/hooks/useTodoKeyboard';
 import {useSpinner} from '../../ui/hooks/useSpinner';
 import {useTodoDisplayItems} from '../../ui/hooks/useTodoDisplayItems';
@@ -41,8 +42,12 @@ import {
 	buildTodoHeaderLine,
 } from '../../ui/layout/buildBodyLines';
 import {FeedGrid} from '../../ui/components/FeedGrid';
+import {MessagePanel} from '../../ui/components/MessagePanel';
 import {resolveFeedBackend} from '../../ui/components/FeedSurface';
 import {useFeedColumns} from '../../ui/hooks/useFeedColumns';
+import {useFilteredPanels} from '../../ui/hooks/useFilteredPanels';
+import {classifyEntry} from '../../core/feed/panelFilter';
+import {todoGlyphs} from '../../core/feed/todoPanel';
 import {buildHeaderModel} from '../../ui/header/model';
 import {renderHeaderLines} from '../../ui/header/renderLines';
 import type {Message as MessageType} from '../../shared/types/common';
@@ -73,6 +78,8 @@ import {fit} from '../../shared/utils/format';
 import {copyToClipboard} from '../../shared/utils/clipboard';
 import {extractYankContent} from '../../ui/utils/yankContent';
 import {detectHarness} from '../../shared/utils/detectHarness';
+import {frameGlyphs} from '../../ui/glyphs';
+import stripAnsi from 'strip-ansi';
 import type {WorkflowConfig, WorkflowPlan} from '../../core/workflows';
 import type {TurnContinuation} from '../../core/runtime/process';
 import SetupWizard from '../../setup/SetupWizard';
@@ -709,6 +716,8 @@ function AppContent({
 		todoFocusable: false,
 		todoAnchorIndex: -1,
 		staticFloor: 0,
+		messageEntryCount: 0,
+		messageContentRows: 0,
 	});
 	const dispatchUi = useCallback((action: SessionUiAction) => {
 		setUiState(prev =>
@@ -896,6 +905,10 @@ function AppContent({
 	// buildFrameLines always produces non-null footerHelp when inputValue is
 	// empty (the provisional case), so this is a compile-time constant.
 	const provisionalFooterRows = 3;
+	const hasMessages = useMemo(
+		() => filteredEntries.some(e => classifyEntry(e) !== 'feed'),
+		[filteredEntries],
+	);
 	const layout = useLayout({
 		terminalRows,
 		terminalWidth: safeTerminalWidth,
@@ -905,6 +918,7 @@ function AppContent({
 		feedEntryCount: filteredEntries.length,
 		footerRows: provisionalFooterRows,
 		inputRows,
+		hasMessages,
 	});
 
 	const {
@@ -912,7 +926,24 @@ function AppContent({
 		feedContentRows,
 		actualTodoRows,
 		actualRunOverlayRows,
+		splitMode,
+		messagePanelWidth,
+		feedPanelWidth,
+		messageContentRows,
 	} = layout;
+
+	const {
+		messageEntries,
+		feedEntries,
+		messageLineCount,
+		messageLineEntryIndexes,
+	} = useFilteredPanels(
+		filteredEntries,
+		uiState.messagePanelTab,
+		splitMode,
+		messagePanelWidth,
+	);
+	const displayedFeedEntries = splitMode ? feedEntries : filteredEntries;
 
 	// ── Feed backend & feedStartRow ────────────────────────────────
 	// Resolve once per render so all consumers agree on the backend.
@@ -943,9 +974,10 @@ function AppContent({
 		feedContentRows - (showFeedHeaderDivider ? 1 : 0),
 	);
 	const pageStep = Math.max(1, Math.floor(visibleFeedContentRows / 2));
+	const messagePageStep = Math.max(1, Math.floor(messageContentRows / 2));
 	const uiContext = useMemo(
 		(): SessionUiContext => ({
-			feedEntryCount: filteredEntries.length,
+			feedEntryCount: displayedFeedEntries.length,
 			feedContentRows: visibleFeedContentRows,
 			searchMatchCount: searchMatches.length,
 			todoVisibleCount: todoPanel.visibleTodoItems.length,
@@ -954,14 +986,18 @@ function AppContent({
 				uiState.todoVisible && todoPanel.visibleTodoItems.length > 0,
 			todoAnchorIndex: todoPanel.autoFocusIndex,
 			staticFloor: 0,
+			messageEntryCount: messageLineCount,
+			messageContentRows,
 		}),
 		[
-			filteredEntries.length,
+			displayedFeedEntries.length,
 			visibleFeedContentRows,
 			searchMatches.length,
 			layout.todoListHeight,
 			uiState.todoVisible,
 			todoPanel.visibleTodoItems.length,
+			messageLineCount,
+			messageContentRows,
 			todoPanel.autoFocusIndex,
 		],
 	);
@@ -1135,6 +1171,42 @@ function AppContent({
 		},
 	});
 
+	const messageEntriesRef = useRef(messageEntries);
+	messageEntriesRef.current = messageEntries;
+	const messageLineEntryIndexesRef = useRef(messageLineEntryIndexes);
+	messageLineEntryIndexesRef.current = messageLineEntryIndexes;
+
+	const handleMessageExpandForPager = useCallback(() => {
+		const messageEntryIndex = messageLineEntryIndexesRef.current.at(
+			resolvedUiState.messageCursor,
+		);
+		if (messageEntryIndex === undefined) return;
+		const entry = messageEntriesRef.current.at(messageEntryIndex);
+		if (!entry || !entry.expandable) return;
+		const fullIndex = filteredEntriesRef.current.indexOf(entry);
+		if (fullIndex >= 0) {
+			dispatchUi({type: 'set_feed_cursor', cursor: fullIndex});
+			handleExpandForPager();
+		}
+	}, [resolvedUiState.messageCursor, dispatchUi, handleExpandForPager]);
+
+	useMessageKeyboard({
+		isActive: focusMode === 'messages' && !dialogActive && !pagerActive,
+		pageStep: messagePageStep,
+		callbacks: {
+			moveMessageCursor: (delta: number) =>
+				dispatchUi({type: 'move_message_cursor', delta}),
+			jumpToTail: () => dispatchUi({type: 'jump_message_tail'}),
+			jumpToTop: () => dispatchUi({type: 'jump_message_top'}),
+			expandAtCursor: handleMessageExpandForPager,
+			cycleFocus,
+			openCommandInput: () => dispatchUi({type: 'open_command_input'}),
+			openSearchInput: () => dispatchUi({type: 'open_search_input'}),
+			setInputValue: stableSetInputValue,
+			setMessageTab: tab => dispatchUi({type: 'set_message_tab', tab}),
+		},
+	});
+
 	useTodoKeyboard({
 		isActive: focusMode === 'todo' && !dialogActive,
 		todoCursor: resolvedUiState.todoCursor,
@@ -1225,11 +1297,13 @@ function AppContent({
 		theme,
 	]);
 
-	const computedFeedCols = useFeedColumns(filteredEntries, innerWidth);
-	const feedCols = computedFeedCols;
+	const feedCols = useFeedColumns(
+		displayedFeedEntries,
+		splitMode ? feedPanelWidth : innerWidth,
+	);
 
-	const {inputPrefix, badgeText, inputContentWidth, textInputPlaceholder} =
-		useInputLayout({
+	const {inputPrefix, inputContentWidth, textInputPlaceholder} = useInputLayout(
+		{
 			innerWidth,
 			inputMode,
 			isHarnessRunning,
@@ -1238,33 +1312,16 @@ function AppContent({
 			dialogActive,
 			dialogType: activeDialogType,
 			ascii: useAscii,
-		});
+		},
+	);
 	inputContentWidthRef.current = inputContentWidth;
 	const border = useMemo(() => chalk.hex(theme.border), [theme.border]);
-	const inputKeywordColor = theme.inputPrompt;
-	const inputChevronColor = theme.inputChevron;
 	const inputPlaceholderColor = theme.textMuted;
+	const inputBackground = theme.inputBackground;
 	const inputPromptStyled = useMemo(
-		() =>
-			chalk.hex(inputKeywordColor).bold('input') +
-			chalk.hex(inputChevronColor)('> '),
-		[inputChevronColor, inputKeywordColor],
+		() => chalk.hex(theme.inputPrompt).bold(inputPrefix),
+		[inputPrefix, theme.inputPrompt],
 	);
-	const runBadgeStyled = startupFailure
-		? chalk.bgHex(theme.badge.error.bg).hex(theme.badge.error.fg)(' ERR ')
-		: isHarnessRunning
-			? chalk.bgHex(theme.badge.running.bg).hex(theme.badge.running.fg)(' RUN ')
-			: chalk.bgHex(theme.badge.idle.bg).hex(theme.badge.idle.fg)(' IDLE ');
-	let modeBadgeStyled = '';
-	if (inputMode === 'search') {
-		modeBadgeStyled = chalk.bgHex(theme.badge.search.bg).hex(theme.accent)(
-			' SEARCH ',
-		);
-	} else if (inputMode === 'command') {
-		modeBadgeStyled = chalk.bgHex(theme.badge.command.bg).hex(theme.accent)(
-			' CMD ',
-		);
-	}
 	const withBorderEdges = useCallback(
 		(line: string): string => {
 			if (line.length < 2) return line;
@@ -1274,6 +1331,28 @@ function AppContent({
 		},
 		[border],
 	);
+	const withSectionEdges = useCallback(
+		(content: string): string => {
+			const glyphs = frameGlyphs(useAscii);
+			return `${border(glyphs.teeLeft)}${content}${border(glyphs.teeRight)}`;
+		},
+		[border, useAscii],
+	);
+	const footerSectionBorder = useMemo(() => {
+		if (!splitMode) return sectionBorder;
+		const glyphs = frameGlyphs(useAscii);
+		const dividerOffset = Math.max(
+			1,
+			Math.min(innerWidth - 1, messagePanelWidth),
+		);
+		return (
+			glyphs.teeLeft +
+			glyphs.horizontal.repeat(dividerOffset) +
+			(useAscii ? '+' : '┴') +
+			glyphs.horizontal.repeat(Math.max(0, innerWidth - dividerOffset - 1)) +
+			glyphs.teeRight
+		);
+	}, [splitMode, sectionBorder, useAscii, innerWidth, messagePanelWidth]);
 
 	// Stable callback for shell input suggestion rows — composes frameLine + border edges.
 	const wrapFrameLine = useCallback(
@@ -1340,6 +1419,7 @@ function AppContent({
 					runSummaries={runSummaries}
 					theme={theme}
 					withBorderEdges={withBorderEdges}
+					withSectionEdges={withSectionEdges}
 					frameLine={frameLine}
 					isWorking={appMode.type === 'working'}
 					pausedAtMs={todoPanel.pausedAtMs}
@@ -1365,12 +1445,45 @@ function AppContent({
 							onWorkflowSelected(name);
 						}}
 					/>
+				) : splitMode ? (
+					<Box flexDirection="row">
+						<Box width={messagePanelWidth + 1} flexShrink={0}>
+							<MessagePanel
+								entries={messageEntries}
+								width={messagePanelWidth}
+								contentRows={feedHeaderRows + feedContentRows}
+								viewportStart={resolvedUiState.messageViewportStart}
+								cursor={resolvedUiState.messageCursor}
+								focused={focusMode === 'messages'}
+								theme={theme}
+								borderColor={theme.border}
+							/>
+						</Box>
+						<Box flexGrow={1}>
+							<FeedGrid
+								feedHeaderRows={feedHeaderRows}
+								feedContentRows={feedContentRows}
+								feedViewportStart={feedNav.feedViewportStart}
+								filteredEntries={displayedFeedEntries}
+								feedCursor={feedNav.feedCursor}
+								focusMode={focusMode}
+								searchMatchSet={searchMatchSet}
+								ascii={useAscii}
+								theme={theme}
+								innerWidth={feedPanelWidth}
+								cols={feedCols}
+								feedStartRow={feedStartRow}
+								backend={feedBackend}
+								onboarding={feedOnboarding}
+							/>
+						</Box>
+					</Box>
 				) : (
 					<FeedGrid
 						feedHeaderRows={feedHeaderRows}
 						feedContentRows={feedContentRows}
 						feedViewportStart={feedNav.feedViewportStart}
-						filteredEntries={filteredEntries}
+						filteredEntries={displayedFeedEntries}
 						feedCursor={feedNav.feedCursor}
 						focusMode={focusMode}
 						searchMatchSet={searchMatchSet}
@@ -1391,9 +1504,11 @@ function AppContent({
 			>
 				<FooterSection
 					border={border}
-					sectionBorder={sectionBorder}
+					sectionBorder={footerSectionBorder}
 					frameFooterHelp={frame.footerHelp}
 					toastMessage={toastMessage}
+					inputBackground={theme.inputBackground}
+					hintTextColor={theme.textMuted}
 					innerWidth={innerWidth}
 					frameLine={frameLine}
 					withBorderEdges={withBorderEdges}
@@ -1415,6 +1530,7 @@ function AppContent({
 					textInputPlaceholder={textInputPlaceholder}
 					textColor={theme.text}
 					inputPlaceholderColor={inputPlaceholderColor}
+					inputBackground={inputBackground}
 					isInputActive={
 						focusMode === 'input' && !dialogActive && !workflowPickerVisible
 					}
@@ -1427,9 +1543,6 @@ function AppContent({
 					commandSuggestionsEnabled={inputMode === 'command'}
 					wrapSuggestionLine={wrapFrameLine}
 					inputRef={shellInputRef}
-					badgeText={badgeText}
-					runBadgeStyled={runBadgeStyled}
-					modeBadgeStyled={modeBadgeStyled}
 					border={border}
 					bottomBorder={bottomBorder}
 				/>
@@ -1617,6 +1730,7 @@ const TodoBodySection = React.memo(function TodoBodySection({
 	runSummaries,
 	theme,
 	withBorderEdges,
+	withSectionEdges,
 	frameLine,
 	isWorking,
 	pausedAtMs,
@@ -1650,11 +1764,16 @@ const TodoBodySection = React.memo(function TodoBodySection({
 	runSummaries: import('../../core/feed/timeline').RunSummary[];
 	theme: Theme;
 	withBorderEdges: (line: string) => string;
+	withSectionEdges: (content: string) => string;
 	frameLine: (content: string) => string;
 	isWorking: boolean;
 	pausedAtMs: number | null;
 	todoTickActive: boolean;
 }) {
+	const dividerChar = useMemo(
+		() => todoGlyphs(useAscii, todoColors).dividerChar,
+		[useAscii, todoColors],
+	);
 	const displayTodoItems = useTodoDisplayItems({
 		items: visibleTodoItems,
 		isWorking,
@@ -1706,10 +1825,25 @@ const TodoBodySection = React.memo(function TodoBodySection({
 		() =>
 			prefixBodyLines.length > 0
 				? prefixBodyLines
-						.map(line => withBorderEdges(frameLine(line)))
+						.map(line => {
+							const plain = stripAnsi(line);
+							const isDivider =
+								plain.length === innerWidth &&
+								plain === dividerChar.repeat(innerWidth);
+							return isDivider
+								? withSectionEdges(line)
+								: withBorderEdges(frameLine(line));
+						})
 						.join('\n')
 				: null,
-		[prefixBodyLines, withBorderEdges, frameLine],
+		[
+			prefixBodyLines,
+			withBorderEdges,
+			withSectionEdges,
+			frameLine,
+			innerWidth,
+			dividerChar,
+		],
 	);
 
 	if (output === null) return null;
@@ -1721,6 +1855,8 @@ const FooterSection = React.memo(function FooterSection({
 	sectionBorder,
 	frameFooterHelp,
 	toastMessage,
+	inputBackground,
+	hintTextColor,
 	innerWidth,
 	frameLine,
 	withBorderEdges,
@@ -1729,23 +1865,29 @@ const FooterSection = React.memo(function FooterSection({
 	sectionBorder: string;
 	frameFooterHelp: string | null;
 	toastMessage: string | null;
+	inputBackground: string;
+	hintTextColor: string;
 	innerWidth: number;
 	frameLine: (content: string) => string;
 	withBorderEdges: (line: string) => string;
 }) {
 	const output = useMemo(() => {
+		const fillBackground = chalk.bgHex(inputBackground);
+		const mutedHint = chalk.hex(hintTextColor);
+		const fillLine = (content: string) =>
+			fillBackground(fit(content, innerWidth));
 		const lines = [border(sectionBorder)];
 		if (frameFooterHelp !== null) {
 			lines.push(
 				withBorderEdges(
 					frameLine(
 						toastMessage
-							? chalk.bold.green(toastMessage)
-							: fit(frameFooterHelp, innerWidth),
+							? fillLine(chalk.bold.green(`  ${toastMessage}`))
+							: fillLine(mutedHint(`  ${frameFooterHelp}`)),
 					),
 				),
 			);
-			lines.push(withBorderEdges(frameLine('')));
+			lines.push(withBorderEdges(frameLine(fillLine(''))));
 		}
 		return lines.join('\n');
 	}, [
@@ -1753,6 +1895,8 @@ const FooterSection = React.memo(function FooterSection({
 		sectionBorder,
 		frameFooterHelp,
 		toastMessage,
+		inputBackground,
+		hintTextColor,
 		innerWidth,
 		frameLine,
 		withBorderEdges,
@@ -1772,6 +1916,7 @@ const InputSection = React.memo(function InputSection({
 	textInputPlaceholder,
 	textColor,
 	inputPlaceholderColor,
+	inputBackground,
 	isInputActive,
 	handleInputChange,
 	handleInputSubmit,
@@ -1782,9 +1927,6 @@ const InputSection = React.memo(function InputSection({
 	commandSuggestionsEnabled,
 	wrapSuggestionLine,
 	inputRef,
-	badgeText,
-	runBadgeStyled,
-	modeBadgeStyled,
 	border,
 	bottomBorder,
 }: {
@@ -1798,6 +1940,7 @@ const InputSection = React.memo(function InputSection({
 	textInputPlaceholder: string;
 	textColor: string;
 	inputPlaceholderColor: string;
+	inputBackground: string;
 	isInputActive: boolean;
 	handleInputChange: (value: string) => void;
 	handleInputSubmit: (value: string) => void;
@@ -1808,9 +1951,6 @@ const InputSection = React.memo(function InputSection({
 	commandSuggestionsEnabled: boolean;
 	wrapSuggestionLine: (line: string) => string;
 	inputRef: React.RefObject<ShellInputHandle | null>;
-	badgeText: string;
-	runBadgeStyled: string;
-	modeBadgeStyled: string;
 	border: (text: string) => string;
 	bottomBorder: string;
 }) {
@@ -1827,6 +1967,7 @@ const InputSection = React.memo(function InputSection({
 			textInputPlaceholder={textInputPlaceholder}
 			textColor={textColor}
 			inputPlaceholderColor={inputPlaceholderColor}
+			inputBackground={inputBackground}
 			isInputActive={isInputActive}
 			onChange={handleInputChange}
 			onSubmit={handleInputSubmit}
@@ -1836,9 +1977,6 @@ const InputSection = React.memo(function InputSection({
 			setValueRef={handleSetValueRef}
 			commandSuggestionsEnabled={commandSuggestionsEnabled}
 			wrapSuggestionLine={wrapSuggestionLine}
-			badgeText={badgeText}
-			runBadgeStyled={runBadgeStyled}
-			modeBadgeStyled={modeBadgeStyled}
 			border={border}
 			bottomBorder={bottomBorder}
 		/>
