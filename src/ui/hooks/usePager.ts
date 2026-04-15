@@ -137,7 +137,7 @@ export function usePager({
 		process.stdout.write('\x1B[?1049h');
 		process.stdout.write('\x1B[?1000h\x1B[?1006h');
 		paintPager();
-	}, [pagerActive, paintPager]);
+	}, [pagerActive, paintPager, theme]);
 
 	// While pager is active, AppShell still re-renders as feed events arrive.
 	// Ink can repaint an empty frame over the alternate-screen content, so

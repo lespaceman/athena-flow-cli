@@ -162,8 +162,8 @@ export function entryRelativeSourcePath(
 	} else {
 		const sourceRecord = entry.source;
 		if (
-			sourceRecord?.source !== 'local' ||
-			typeof sourceRecord?.path !== 'string'
+			sourceRecord.source !== 'local' ||
+			typeof sourceRecord.path !== 'string'
 		) {
 			throw new Error(
 				`Plugin "${pluginName}" uses a remote source type which is not supported by athena-cli. Only local relative path sources are supported.`,

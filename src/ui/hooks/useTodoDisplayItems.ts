@@ -39,6 +39,7 @@ export function buildTodoDisplayItems(
 		changed = true;
 		return {...item, elapsed};
 	});
+	// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- TypeScript doesn't track `changed = true` inside map callbacks
 	return changed ? nextItems : items;
 }
 

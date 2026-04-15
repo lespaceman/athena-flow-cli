@@ -834,7 +834,7 @@ export function installStdoutWriteMonitor(
 				? Buffer.byteLength(chunk, encoding as BufferEncoding | undefined)
 				: Buffer.isBuffer(chunk)
 					? chunk.byteLength
-					: typeof (chunk as {byteLength?: unknown})?.byteLength === 'number'
+					: typeof (chunk as {byteLength?: unknown}).byteLength === 'number'
 						? Number((chunk as {byteLength: number}).byteLength)
 						: Buffer.byteLength(String(chunk ?? ''));
 		const startedAt = performance.now();

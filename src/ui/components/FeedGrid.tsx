@@ -123,7 +123,7 @@ function FeedGridImpl({
 		if (visibleContentRows <= 0) return signatures;
 		for (let offset = 0; offset < visibleContentRows; offset++) {
 			const idx = feedViewportStart + offset;
-			const entry = filteredEntries[idx];
+			const entry = filteredEntries[idx] as TimelineEntry | undefined;
 			if (!entry) continue;
 			signatures.push(
 				[

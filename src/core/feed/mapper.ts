@@ -126,6 +126,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 				return 'in_progress';
 			case 'completed':
 				return 'completed';
+			case undefined:
 			default:
 				return 'pending';
 		}

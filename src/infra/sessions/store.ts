@@ -407,14 +407,14 @@ export function createSessionStore(opts: SessionStoreOptions): SessionStore {
 		return {
 			id: row.id as string,
 			sessionId: row.session_id as string,
-			workflowName: (row.workflow_name as string) ?? undefined,
+			workflowName: (row.workflow_name as string | null) ?? undefined,
 			startedAt: row.started_at as number,
-			endedAt: (row.ended_at as number) ?? undefined,
+			endedAt: (row.ended_at as number | null) ?? undefined,
 			iteration: row.iteration as number,
 			maxIterations: row.max_iterations as number,
 			status: row.status as PersistedWorkflowRun['status'],
-			stopReason: (row.stop_reason as string) ?? undefined,
-			trackerPath: (row.tracker_path as string) ?? undefined,
+			stopReason: (row.stop_reason as string | null) ?? undefined,
+			trackerPath: (row.tracker_path as string | null) ?? undefined,
 		};
 	}
 

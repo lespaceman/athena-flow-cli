@@ -77,6 +77,7 @@ function getSimulatedStartupFailure(): {
 				code: 'socket_bind_failed',
 				message: `Simulated hook server startup failure via ${SIMULATED_STARTUP_FAILURE_ENV}=socket_bind_failed`,
 			};
+		case undefined:
 		default:
 			return null;
 	}
