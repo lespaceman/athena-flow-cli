@@ -19,6 +19,13 @@ export type UseFrameChromeOptions = {
 	accentColor: string;
 	runSummaries: RunSummary[];
 	staticHighWaterMark: number;
+	/**
+	 * When set, splice junction characters into horizontal border strings at
+	 * this column offset (0-based within the inner horizontal fill).  Used in
+	 * split-panel layouts where a vertical divider needs to connect to the
+	 * top, section, and bottom borders.
+	 */
+	dividerColumn?: number;
 };
 
 type LastRunStatus = 'completed' | 'failed' | 'aborted' | null;
@@ -55,6 +62,7 @@ export function useFrameChrome({
 	accentColor,
 	runSummaries,
 	staticHighWaterMark,
+	dividerColumn,
 }: UseFrameChromeOptions): UseFrameChromeResult {
 	const lastRunStatus = useMemo((): LastRunStatus => {
 		if (isHarnessRunning) return null;
@@ -109,14 +117,26 @@ export function useFrameChrome({
 
 	const glyphs = useMemo(() => frameGlyphs(ascii), [ascii]);
 
-	const {topBorder, bottomBorder, sectionBorder} = useMemo(
-		() => ({
-			topBorder: `${glyphs.topLeft}${glyphs.horizontal.repeat(innerWidth)}${glyphs.topRight}`,
-			bottomBorder: `${glyphs.bottomLeft}${glyphs.horizontal.repeat(innerWidth)}${glyphs.bottomRight}`,
-			sectionBorder: `${glyphs.teeLeft}${glyphs.horizontal.repeat(innerWidth)}${glyphs.teeRight}`,
-		}),
-		[glyphs, innerWidth],
-	);
+	const {topBorder, bottomBorder, sectionBorder} = useMemo(() => {
+		const hFill = glyphs.horizontal.repeat(innerWidth);
+		const spliceJunction = (fill: string, junction: string): string => {
+			if (
+				dividerColumn === undefined ||
+				dividerColumn < 0 ||
+				dividerColumn >= innerWidth
+			) {
+				return fill;
+			}
+			return (
+				fill.slice(0, dividerColumn) + junction + fill.slice(dividerColumn + 1)
+			);
+		};
+		return {
+			topBorder: `${glyphs.topLeft}${spliceJunction(hFill, glyphs.teeTop)}${glyphs.topRight}`,
+			bottomBorder: `${glyphs.bottomLeft}${spliceJunction(hFill, glyphs.teeBottom)}${glyphs.bottomRight}`,
+			sectionBorder: `${glyphs.teeLeft}${spliceJunction(hFill, glyphs.cross)}${glyphs.teeRight}`,
+		};
+	}, [glyphs, innerWidth, dividerColumn]);
 
 	const frameLine = useCallback(
 		(content: string): string =>

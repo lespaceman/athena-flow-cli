@@ -28,6 +28,9 @@ export type GlyphKey =
 	| 'frame.vertical'
 	| 'frame.teeLeft'
 	| 'frame.teeRight'
+	| 'frame.teeTop'
+	| 'frame.teeBottom'
+	| 'frame.cross'
 	// Status
 	| 'status.active'
 	| 'status.error'
@@ -114,6 +117,9 @@ export const GLYPH_REGISTRY: Record<
 	'frame.vertical': {unicode: '│', ascii: '|'},
 	'frame.teeLeft': {unicode: '├', ascii: '+'},
 	'frame.teeRight': {unicode: '┤', ascii: '+'},
+	'frame.teeTop': {unicode: '┬', ascii: '+'},
+	'frame.teeBottom': {unicode: '┴', ascii: '+'},
+	'frame.cross': {unicode: '┼', ascii: '+'},
 
 	// Status
 	'status.active': {unicode: '◉', ascii: '*'},
