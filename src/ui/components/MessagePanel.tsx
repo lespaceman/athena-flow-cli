@@ -25,7 +25,7 @@ type WrappedLine = {
 };
 
 /** [frame border][indicator ┃][ ][content...] — indicator + space = 2 columns */
-const INDICATOR_OVERHEAD = 2;
+export const INDICATOR_OVERHEAD = 2;
 
 function buildRenderedLines(
 	entries: TimelineEntry[],
