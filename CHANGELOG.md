@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.3.21](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.20...cli-v0.3.21) (2026-04-16)
+
+
+### Features
+
+* add split message panel ([d32ea01](https://github.com/lespaceman/athena-flow-cli/commit/d32ea01450af78954461df571d97f00954e9e870))
+* **markdown:** consolidate rendering and add narrow table fallback ([de2b8d0](https://github.com/lespaceman/athena-flow-cli/commit/de2b8d0bba6a51f806d3019f3be9e7721fff4324))
+* **messages:** add dedicated footer hints for messages focus mode ([0f4193c](https://github.com/lespaceman/athena-flow-cli/commit/0f4193c802ba3bf7eaea504bbea4db8f0d3e1b07))
+* **messages:** add messageCursorIndex to SessionUiState with move/jump actions ([fe57441](https://github.com/lespaceman/athena-flow-cli/commit/fe574418d3f8b8d7931e5ca22cdc89d5c8e16339))
+* **messages:** render focused-message indicator with accent-colored left border ([8b811d6](https://github.com/lespaceman/athena-flow-cli/commit/8b811d65634a21f97a19a0cf8ee8f7e9129de123))
+* **messages:** replace left-border indicators with role glyphs and user background tint ([27b3dd0](https://github.com/lespaceman/athena-flow-cli/commit/27b3dd08d02fa575314d64980ee61d717674ab14))
+* **messages:** wire up message cursor, yank, and mouse wheel in AppShell ([b39e319](https://github.com/lespaceman/athena-flow-cli/commit/b39e319a18b98aecbeedff85d0f83b7c95268b80))
+* **tui:** add mouse focus and panel wheel scroll ([f75d4ac](https://github.com/lespaceman/athena-flow-cli/commit/f75d4ace5524b967991d3236cbf5df4437d85bf7))
+* **ui:** improve message panel differentiation and spacing ([0d697d8](https://github.com/lespaceman/athena-flow-cli/commit/0d697d8ef397452f2f9ae63c8634a40b5e76aaec))
+
+
+### Bug Fixes
+
+* **feed:** dedupe final messages and tidy inline markdown ([4443e22](https://github.com/lespaceman/athena-flow-cli/commit/4443e22124bdf9b5465da62a7a3a5f2368e01abc))
+* **lint:** resolve all ESLint warnings across 8 files ([ba4d615](https://github.com/lespaceman/athena-flow-cli/commit/ba4d615dcd179e146f47163f61a39f65ac807969))
+* **markdown:** wrap narrow table cells instead of flattening ([d4dc738](https://github.com/lespaceman/athena-flow-cli/commit/d4dc7385b9de4d8f24bcb1f332db228c0c1849a8))
+* **messages:** allow scrolling past last message in panel ([ead1420](https://github.com/lespaceman/athena-flow-cli/commit/ead14200b4bd04d9b2774bedb1e7efe53f08d9f8))
+* **ui:** add junction characters where vertical divider meets horizontal borders ([ef42bc0](https://github.com/lespaceman/athena-flow-cli/commit/ef42bc06d0f6410133568c46ec91be82f3fca4da))
+* **ui:** correct message panel viewport height calculation ([11bbf92](https://github.com/lespaceman/athena-flow-cli/commit/11bbf924371d7611c36fb1e77166abcc6db13b6e))
+* **ui:** equalize chat and feed panel widths in split mode ([f0a4df2](https://github.com/lespaceman/athena-flow-cli/commit/f0a4df275caa6993d05b62b314a7adf8de63a41a))
+* **ui:** reduce dimming on completed todo items ([0ffc04a](https://github.com/lespaceman/athena-flow-cli/commit/0ffc04a26cd0e7f2f65c23196ce3de131493b069))
+* **ui:** vertically center input glyph and placeholder text ([8ff0e42](https://github.com/lespaceman/athena-flow-cli/commit/8ff0e4204fc1ab634366a5d83baf384a6b84ce43))
+
+
+### Performance Improvements
+
+* **feed:** reduce per-event work in timeline cascade ([ff10027](https://github.com/lespaceman/athena-flow-cli/commit/ff10027776bb69387b85b423954c4d81c8647cae))
+
 ## [0.3.20](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.19...cli-v0.3.20) (2026-04-12)
 
 
