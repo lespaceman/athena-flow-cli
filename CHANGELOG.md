@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.22](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.21...cli-v0.3.22) (2026-04-17)
+
+
+### Features
+
+* **ui:** show active model in header ([af1a343](https://github.com/lespaceman/athena-flow-cli/commit/af1a34326bcc07f2e6c3440efa9074a5685f3d37))
+* **workflow:** add installWorkflowFromSource with canonical source metadata ([7cfd84b](https://github.com/lespaceman/athena-flow-cli/commit/7cfd84b12f2ffc43817db05445fb19b1a98107e1))
+* **workflow:** add ResolvedWorkflowSource type ([238cafe](https://github.com/lespaceman/athena-flow-cli/commit/238cafe0623cf502c31e7770d71010ef1fea6302))
+* **workflow:** add typed source-resolution errors ([e830ad4](https://github.com/lespaceman/athena-flow-cli/commit/e830ad4de3f8b6f71f2f4ba065ed39a7afa69e9b))
+* **workflow:** cli install uses canonical resolver, reports ambiguity ([90a0b3a](https://github.com/lespaceman/athena-flow-cli/commit/90a0b3a83f87a10768ed32fc453a6bbbaa2a3bec))
+* **workflow:** gather canonical sources from a marketplace config ([eb8b9ce](https://github.com/lespaceman/athena-flow-cli/commit/eb8b9cea291fdeb3d5fa898bf4c4e04c5459cec9))
+* **workflow:** resolve install source across all marketplaces with ambiguity detection ([99a0717](https://github.com/lespaceman/athena-flow-cli/commit/99a071705a7887cc15e81af87ee3b7aa2f02f64f))
+* **workflow:** upgrade re-resolves via canonical source identity ([6f549da](https://github.com/lespaceman/athena-flow-cli/commit/6f549dab91f0d09a7895f36b4bee69e000bc76f3))
+* **workflow:** upgrade rewrites legacy source.json and reports origin ([0240e16](https://github.com/lespaceman/athena-flow-cli/commit/0240e169e23f334e8b21a8ef61ff8ce26995c2a4))
+
 ## [0.3.21](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.20...cli-v0.3.21) (2026-04-16)
 
 
