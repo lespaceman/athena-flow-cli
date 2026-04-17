@@ -71,20 +71,20 @@ export function resolveWorkflowPlugins(
 		try {
 			const source = '__source' in workflow ? workflow.__source : undefined;
 
+			const repoDir =
+				source?.kind === 'marketplace-local' ? source.repoDir : undefined;
+
 			if (version) {
 				const target = resolveVersionedMarketplacePluginTarget(
 					ref,
 					version,
-					source?.kind === 'local' ? source.repoDir : undefined,
+					repoDir,
 				);
 				return toResolvedWorkflowPlugin(target, ref, version);
 			}
 
-			if (source?.kind === 'local' && source.repoDir) {
-				const target = resolveMarketplacePluginTargetFromRepo(
-					ref,
-					source.repoDir,
-				);
+			if (repoDir) {
+				const target = resolveMarketplacePluginTargetFromRepo(ref, repoDir);
 				return toResolvedWorkflowPlugin(target, ref);
 			}
 
@@ -127,7 +127,7 @@ export function refreshPinnedWorkflowPlugins(
 			refreshVersionedMarketplacePluginTarget(
 				ref,
 				version,
-				source?.kind === 'local' ? source.repoDir : undefined,
+				source?.kind === 'marketplace-local' ? source.repoDir : undefined,
 			);
 		} catch (error) {
 			throw new Error(

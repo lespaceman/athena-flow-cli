@@ -81,15 +81,14 @@ export type WorkflowConfig = {
 };
 
 export type WorkflowSourceMetadata =
+	| {kind: 'marketplace-remote'; ref: string; version?: string}
 	| {
-			kind: 'marketplace';
-			ref: string;
+			kind: 'marketplace-local';
+			repoDir: string;
+			workflowName: string;
+			version?: string;
 	  }
-	| {
-			kind: 'local';
-			path: string;
-			repoDir?: string;
-	  };
+	| {kind: 'filesystem'; path: string};
 
 export type ResolvedWorkflowConfig = WorkflowConfig & {
 	__source?: WorkflowSourceMetadata;

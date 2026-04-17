@@ -70,6 +70,7 @@ vi.mock('../installer', () => ({
 const {
 	resolveWorkflow,
 	installWorkflow,
+	installWorkflowFromSource,
 	updateWorkflow,
 	listWorkflows,
 	removeWorkflow,
@@ -134,9 +135,8 @@ describe('resolveWorkflow', () => {
 		const result = resolveWorkflow('local-marketplace');
 
 		expect(result.__source).toEqual({
-			kind: 'local',
+			kind: 'filesystem',
 			path: '/tmp/workflow-marketplace/workflows/local-marketplace/workflow.json',
-			repoDir: '/tmp/workflow-marketplace',
 		});
 	});
 
@@ -465,7 +465,8 @@ describe('installWorkflow', () => {
 				]!,
 			),
 		).toEqual({
-			kind: 'local',
+			v: 2,
+			kind: 'filesystem',
 			path: '/tmp/workflow.json',
 		});
 	});
@@ -513,7 +514,8 @@ describe('installWorkflow', () => {
 			files['/home/testuser/.config/athena/workflows/mkt-workflow/source.json'];
 		expect(sourceFile).toBeDefined();
 		expect(JSON.parse(sourceFile!)).toEqual({
-			kind: 'marketplace',
+			v: 2,
+			kind: 'marketplace-remote',
 			ref: 'mkt-workflow@owner/repo',
 		});
 	});
@@ -536,7 +538,8 @@ describe('installWorkflow', () => {
 				]!,
 			),
 		).toEqual({
-			kind: 'local',
+			v: 2,
+			kind: 'filesystem',
 			path: '/tmp/workflow.json',
 		});
 	});
@@ -628,7 +631,7 @@ describe('updateWorkflow', () => {
 			workflowFile:
 				'/home/testuser/.config/athena/workflows/update-me/workflow.md',
 			__source: {
-				kind: 'marketplace',
+				kind: 'marketplace-remote',
 				ref: 'update-me@owner/repo',
 			},
 		});
@@ -718,5 +721,93 @@ describe('removeWorkflow', () => {
 
 	it('throws when workflow does not exist', () => {
 		expect(() => removeWorkflow('nonexistent')).toThrow(/not found/);
+	});
+});
+
+describe('installWorkflowFromSource', () => {
+	it('persists marketplace-local identity in source.json v2', () => {
+		files['/tmp/m/workflows/w/workflow.json'] = JSON.stringify({
+			name: 'w',
+			plugins: [],
+			promptTemplate: '{input}',
+			workflowFile: 'workflow.md',
+		});
+		files['/tmp/m/workflows/w/workflow.md'] = '# w';
+
+		const name = installWorkflowFromSource({
+			kind: 'marketplace-local',
+			repoDir: '/tmp/m',
+			workflowName: 'w',
+			version: '1.0.0',
+			manifestPath: '/tmp/m/.athena-workflow/marketplace.json',
+			workflowPath: '/tmp/m/workflows/w/workflow.json',
+		});
+		expect(name).toBe('w');
+
+		const stored = JSON.parse(
+			files['/home/testuser/.config/athena/workflows/w/source.json']!,
+		);
+		expect(stored).toEqual({
+			v: 2,
+			kind: 'marketplace-local',
+			repoDir: '/tmp/m',
+			workflowName: 'w',
+			version: '1.0.0',
+		});
+	});
+
+	it('persists marketplace-remote identity with ref and version', () => {
+		files['/tmp/cache/workflow.json'] = JSON.stringify({
+			name: 'w',
+			plugins: [],
+			promptTemplate: '{input}',
+			workflowFile: 'workflow.md',
+		});
+		files['/tmp/cache/workflow.md'] = '# w';
+
+		installWorkflowFromSource({
+			kind: 'marketplace-remote',
+			slug: 'owner/repo',
+			owner: 'owner',
+			repo: 'repo',
+			workflowName: 'w',
+			version: '1.2.3',
+			ref: 'w@owner/repo',
+			manifestPath: '/tmp/cache/.athena-workflow/marketplace.json',
+			workflowPath: '/tmp/cache/workflow.json',
+		});
+
+		const stored = JSON.parse(
+			files['/home/testuser/.config/athena/workflows/w/source.json']!,
+		);
+		expect(stored).toEqual({
+			v: 2,
+			kind: 'marketplace-remote',
+			ref: 'w@owner/repo',
+			version: '1.2.3',
+		});
+	});
+
+	it('persists filesystem identity for loose workflow.json installs', () => {
+		files['/tmp/loose/workflow.json'] = JSON.stringify({
+			name: 'loose-w',
+			plugins: [],
+			promptTemplate: '{input}',
+			workflowFile: 'workflow.md',
+		});
+		files['/tmp/loose/workflow.md'] = '# w';
+
+		installWorkflowFromSource({
+			kind: 'filesystem',
+			workflowPath: '/tmp/loose/workflow.json',
+		});
+		const stored = JSON.parse(
+			files['/home/testuser/.config/athena/workflows/loose-w/source.json']!,
+		);
+		expect(stored).toEqual({
+			v: 2,
+			kind: 'filesystem',
+			path: '/tmp/loose/workflow.json',
+		});
 	});
 });

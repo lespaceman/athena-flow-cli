@@ -99,9 +99,9 @@ describe('installWorkflowPlugins', () => {
 			plugins: ['plugin-a@owner/repo'],
 			promptTemplate: '{input}',
 			__source: {
-				kind: 'local',
-				path: '/tmp/workflow.json',
+				kind: 'marketplace-local',
 				repoDir: '/local/workflow-marketplace',
+				workflowName: 'test-workflow',
 			},
 		});
 
@@ -186,9 +186,9 @@ describe('refreshPinnedWorkflowPlugins', () => {
 			plugins: [{ref: 'pinned-plugin@owner/repo', version: '1.2.3'}],
 			promptTemplate: '{input}',
 			__source: {
-				kind: 'local',
-				path: '/tmp/workflow.json',
+				kind: 'marketplace-local',
 				repoDir: '/local/workflow-marketplace',
+				workflowName: 'test-workflow',
 			},
 		});
 

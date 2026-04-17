@@ -121,6 +121,18 @@ export {
 	resolveWorkflowMarketplaceSource,
 };
 
+export {
+	resolveWorkflowInstall,
+	gatherMarketplaceWorkflowSources,
+	type ResolvedWorkflowSource,
+} from './workflowSourceResolution';
+export {
+	WorkflowAmbiguityError,
+	WorkflowNotFoundError,
+	WorkflowVersionNotFoundError,
+	type WorkflowAmbiguityCandidate,
+} from './workflowSourceErrors';
+
 export type {
 	MarketplaceEntry,
 	MarketplaceManifest,

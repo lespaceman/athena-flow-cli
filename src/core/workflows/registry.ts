@@ -10,8 +10,8 @@ import os from 'node:os';
 import path from 'node:path';
 import {
 	isMarketplaceRef,
-	findMarketplaceRepoDir,
 	resolveMarketplaceWorkflow,
+	type ResolvedWorkflowSource,
 } from '../../infra/plugins/marketplace';
 import type {
 	ResolvedWorkflowConfig,
@@ -52,34 +52,57 @@ function readStoredWorkflowSource(
 	const sourceFile = path.join(workflowDir, 'source.json');
 	if (!fs.existsSync(sourceFile)) return;
 
-	let source: unknown;
+	let raw: unknown;
 	try {
-		source = JSON.parse(fs.readFileSync(sourceFile, 'utf-8')) as unknown;
+		raw = JSON.parse(fs.readFileSync(sourceFile, 'utf-8'));
 	} catch {
 		throw new Error(`Invalid source.json: ${sourceFile} is not valid JSON`);
 	}
 
-	if (!source || typeof source !== 'object') {
+	if (!raw || typeof raw !== 'object') {
 		throw new Error(
 			`Invalid source.json: ${sourceFile} must contain an object`,
 		);
 	}
 
-	const record = source as Record<string, unknown>;
-	if (record['kind'] === 'marketplace' && typeof record['ref'] === 'string') {
-		return {kind: 'marketplace', ref: record['ref']};
+	const r = raw as Record<string, unknown>;
+
+	// New v2 shape
+	if (r['v'] === 2) {
+		if (r['kind'] === 'marketplace-remote' && typeof r['ref'] === 'string') {
+			return {
+				kind: 'marketplace-remote',
+				ref: r['ref'],
+				...(typeof r['version'] === 'string' ? {version: r['version']} : {}),
+			};
+		}
+		if (
+			r['kind'] === 'marketplace-local' &&
+			typeof r['repoDir'] === 'string' &&
+			typeof r['workflowName'] === 'string'
+		) {
+			return {
+				kind: 'marketplace-local',
+				repoDir: r['repoDir'],
+				workflowName: r['workflowName'],
+				...(typeof r['version'] === 'string' ? {version: r['version']} : {}),
+			};
+		}
+		if (r['kind'] === 'filesystem' && typeof r['path'] === 'string') {
+			return {kind: 'filesystem', path: r['path']};
+		}
 	}
-	if (record['kind'] === 'local' && typeof record['path'] === 'string') {
-		return {
-			kind: 'local',
-			path: record['path'],
-			repoDir:
-				typeof record['repoDir'] === 'string' ? record['repoDir'] : undefined,
-		};
+
+	// Legacy shapes (Task 8 supersedes with explicit migration).
+	if (r['kind'] === 'marketplace' && typeof r['ref'] === 'string') {
+		return {kind: 'marketplace-remote', ref: r['ref']};
+	}
+	if (r['kind'] === 'local' && typeof r['path'] === 'string') {
+		return {kind: 'filesystem', path: r['path']};
 	}
 
 	throw new Error(
-		`Invalid source.json: ${sourceFile} must use {kind: "marketplace", ref} or {kind: "local", path}`,
+		`Invalid source.json: ${sourceFile} must use a supported {kind, ...} shape`,
 	);
 }
 
@@ -90,15 +113,15 @@ function syncFromSource(
 	if (!source) return undefined;
 
 	try {
-		if (source.kind === 'marketplace') {
+		if (source.kind === 'marketplace-remote') {
 			const sourcePath = resolveMarketplaceWorkflow(source.ref);
 			copyWorkflowFiles(sourcePath, workflowDir);
 			return source;
 		}
-		return {
-			...source,
-			repoDir: source.repoDir ?? findMarketplaceRepoDir(source.path),
-		};
+		// For marketplace-local and filesystem, no implicit sync here. Task 10
+		// moves explicit refresh into updateWorkflow; this read path leaves the
+		// installed snapshot alone.
+		return source;
 	} catch {
 		// Graceful degradation: use installed copy if sync fails (e.g. offline)
 		return source;
@@ -283,20 +306,59 @@ export function installWorkflow(source: string, name?: string): string {
 	const destDir = path.join(registryDir(), workflowName);
 	copyWorkflowFiles(sourcePath, destDir);
 
-	const sourceMetadata: WorkflowSourceMetadata = isMarketplace
-		? {kind: 'marketplace', ref: source}
-		: {
-				kind: 'local',
-				path: path.resolve(sourcePath),
-				repoDir: findMarketplaceRepoDir(sourcePath),
-			};
-
+	const metadata: WorkflowSourceMetadata = isMarketplace
+		? {kind: 'marketplace-remote', ref: source}
+		: {kind: 'filesystem', path: path.resolve(sourcePath)};
 	fs.writeFileSync(
 		path.join(destDir, 'source.json'),
-		JSON.stringify(sourceMetadata),
+		JSON.stringify({v: 2, ...metadata}),
 		'utf-8',
 	);
 
+	return workflowName;
+}
+
+function toStoredMetadata(
+	source: ResolvedWorkflowSource,
+): WorkflowSourceMetadata {
+	if (source.kind === 'marketplace-remote') {
+		return {
+			kind: 'marketplace-remote',
+			ref: source.ref,
+			...(source.version ? {version: source.version} : {}),
+		};
+	}
+	if (source.kind === 'marketplace-local') {
+		return {
+			kind: 'marketplace-local',
+			repoDir: source.repoDir,
+			workflowName: source.workflowName,
+			...(source.version ? {version: source.version} : {}),
+		};
+	}
+	return {kind: 'filesystem', path: source.workflowPath};
+}
+
+export function installWorkflowFromSource(
+	source: ResolvedWorkflowSource,
+	name?: string,
+): string {
+	const {workflow} = readWorkflowSource(source.workflowPath);
+	const workflowName = name ?? workflow.name;
+	if (!workflowName) {
+		throw new Error(
+			'Workflow has no "name" field. Provide --name to specify one.',
+		);
+	}
+	const destDir = path.join(registryDir(), workflowName);
+	copyWorkflowFiles(source.workflowPath, destDir);
+
+	const metadata = toStoredMetadata(source);
+	fs.writeFileSync(
+		path.join(destDir, 'source.json'),
+		JSON.stringify({v: 2, ...metadata}),
+		'utf-8',
+	);
 	return workflowName;
 }
 
@@ -310,8 +372,18 @@ export function updateWorkflow(name: string): string {
 		);
 	}
 
+	// Task 10 will route marketplace-local through installWorkflowFromSource.
+	// For now, only marketplace-remote and filesystem have a direct installWorkflow path.
 	const installSource =
-		source.kind === 'marketplace' ? source.ref : source.path;
+		source.kind === 'marketplace-remote'
+			? source.ref
+			: source.kind === 'filesystem'
+				? source.path
+				: (() => {
+						throw new Error(
+							`Workflow "${name}" uses a marketplace-local source. Use \`athena-flow workflow install\` to reinstall it.`,
+						);
+					})();
 	const installedName = installWorkflow(installSource, name);
 	refreshPinnedWorkflowPlugins(resolveWorkflow(installedName));
 	return installedName;
