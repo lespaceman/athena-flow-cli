@@ -4,6 +4,10 @@ import {
 	type WorkflowCommandDeps,
 	type WorkflowCommandInput,
 } from './workflowCommand';
+import {
+	WorkflowAmbiguityError,
+	type ResolvedWorkflowSource,
+} from '../../infra/plugins/marketplace';
 
 const TEST_PROJECT_DIR = '/test/project';
 
@@ -23,14 +27,16 @@ describe('runWorkflowCommand', () => {
 	describe('install', () => {
 		it('installs a workflow and prints the name', () => {
 			const logOut = vi.fn();
-			const installWorkflow = vi.fn().mockReturnValue('my-workflow');
+			const resolvedSource: ResolvedWorkflowSource = {
+				kind: 'filesystem',
+				workflowPath: '/path/to/workflow.json',
+			};
+			const resolveWorkflowInstall = vi.fn().mockReturnValue(resolvedSource);
+			const installWorkflowFromSource = vi.fn().mockReturnValue('my-workflow');
 			const resolveWorkflow = vi.fn().mockReturnValue({
 				name: 'my-workflow',
 				version: '1.0.0',
 			});
-			const resolveWorkflowInstallSourceFromSources = vi
-				.fn()
-				.mockReturnValue('/path/to/workflow.json');
 			const readGlobalConfig = vi.fn().mockReturnValue(emptyConfig);
 
 			const code = runCmd(
@@ -39,21 +45,20 @@ describe('runWorkflowCommand', () => {
 					subcommandArgs: ['/path/to/workflow.json'],
 				},
 				{
-					installWorkflow,
+					resolveWorkflowInstall,
+					installWorkflowFromSource,
 					resolveWorkflow,
-					resolveWorkflowInstallSourceFromSources,
 					readGlobalConfig,
 					logOut,
 				},
 			);
 
 			expect(code).toBe(0);
-			expect(resolveWorkflowInstallSourceFromSources).toHaveBeenCalledWith(
+			expect(resolveWorkflowInstall).toHaveBeenCalledWith(
 				'/path/to/workflow.json',
 				['lespaceman/athena-workflow-marketplace'],
 			);
-			expect(installWorkflow).toHaveBeenCalledWith('/path/to/workflow.json');
-			expect(resolveWorkflow).toHaveBeenCalledWith('my-workflow');
+			expect(installWorkflowFromSource).toHaveBeenCalledWith(resolvedSource);
 			expect(logOut).toHaveBeenCalledWith(
 				'Installed workflow: my-workflow (1.0.0)',
 			);
@@ -61,16 +66,23 @@ describe('runWorkflowCommand', () => {
 
 		it('resolves bare workflow names from configured marketplace sources', () => {
 			const logOut = vi.fn();
-			const installWorkflow = vi.fn().mockReturnValue('e2e-test-builder');
+			const resolvedSource: ResolvedWorkflowSource = {
+				kind: 'marketplace-local',
+				repoDir: '/local/workflow-marketplace',
+				workflowName: 'e2e-test-builder',
+				manifestPath:
+					'/local/workflow-marketplace/workflows/e2e-test-builder/workflow.json',
+				workflowPath:
+					'/local/workflow-marketplace/workflows/e2e-test-builder/workflow.json',
+			};
+			const resolveWorkflowInstall = vi.fn().mockReturnValue(resolvedSource);
+			const installWorkflowFromSource = vi
+				.fn()
+				.mockReturnValue('e2e-test-builder');
 			const resolveWorkflow = vi.fn().mockReturnValue({
 				name: 'e2e-test-builder',
 				version: '2.4.1',
 			});
-			const resolveWorkflowInstallSourceFromSources = vi
-				.fn()
-				.mockReturnValue(
-					'/local/workflow-marketplace/workflows/e2e-test-builder/workflow.json',
-				);
 			const readGlobalConfig = vi.fn().mockReturnValue({
 				...emptyConfig,
 				workflowMarketplaceSources: ['/local/workflow-marketplace'],
@@ -82,35 +94,43 @@ describe('runWorkflowCommand', () => {
 					subcommandArgs: ['e2e-test-builder'],
 				},
 				{
-					installWorkflow,
+					resolveWorkflowInstall,
+					installWorkflowFromSource,
 					resolveWorkflow,
-					resolveWorkflowInstallSourceFromSources,
 					readGlobalConfig,
 					logOut,
 				},
 			);
 
 			expect(code).toBe(0);
-			expect(resolveWorkflowInstallSourceFromSources).toHaveBeenCalledWith(
-				'e2e-test-builder',
-				['/local/workflow-marketplace'],
-			);
-			expect(installWorkflow).toHaveBeenCalledWith(
-				'/local/workflow-marketplace/workflows/e2e-test-builder/workflow.json',
-			);
+			expect(resolveWorkflowInstall).toHaveBeenCalledWith('e2e-test-builder', [
+				'/local/workflow-marketplace',
+			]);
+			expect(installWorkflowFromSource).toHaveBeenCalledWith(resolvedSource);
 			expect(logOut).toHaveBeenCalledWith(
 				'Installed workflow: e2e-test-builder (2.4.1)',
 			);
 		});
 
 		it('forwards version-pinned identifiers to the resolver', () => {
-			const installWorkflow = vi.fn().mockReturnValue('e2e-test-builder');
+			const resolvedSource: ResolvedWorkflowSource = {
+				kind: 'marketplace-remote',
+				slug: 'lespaceman/athena-workflow-marketplace',
+				owner: 'lespaceman',
+				repo: 'athena-workflow-marketplace',
+				workflowName: 'e2e-test-builder',
+				version: '0.0.2',
+				ref: 'e2e-test-builder@0.0.2',
+				manifestPath: '/resolved/manifest.json',
+				workflowPath: '/resolved/path',
+			};
+			const resolveWorkflowInstall = vi.fn().mockReturnValue(resolvedSource);
+			const installWorkflowFromSource = vi
+				.fn()
+				.mockReturnValue('e2e-test-builder');
 			const resolveWorkflow = vi
 				.fn()
 				.mockReturnValue({name: 'e2e-test-builder', version: '0.0.2'});
-			const resolveWorkflowInstallSourceFromSources = vi
-				.fn()
-				.mockReturnValue('/resolved/path');
 			const readGlobalConfig = vi.fn().mockReturnValue(emptyConfig);
 
 			const code = runCmd(
@@ -119,16 +139,16 @@ describe('runWorkflowCommand', () => {
 					subcommandArgs: ['e2e-test-builder@0.0.2'],
 				},
 				{
-					installWorkflow,
+					resolveWorkflowInstall,
+					installWorkflowFromSource,
 					resolveWorkflow,
-					resolveWorkflowInstallSourceFromSources,
 					readGlobalConfig,
 					logOut: vi.fn(),
 				},
 			);
 
 			expect(code).toBe(0);
-			expect(resolveWorkflowInstallSourceFromSources).toHaveBeenCalledWith(
+			expect(resolveWorkflowInstall).toHaveBeenCalledWith(
 				'e2e-test-builder@0.0.2',
 				['lespaceman/athena-workflow-marketplace'],
 			);
@@ -136,12 +156,9 @@ describe('runWorkflowCommand', () => {
 
 		it('prints error when install fails', () => {
 			const logError = vi.fn();
-			const installWorkflow = vi.fn().mockImplementation(() => {
+			const resolveWorkflowInstall = vi.fn().mockImplementation(() => {
 				throw new Error('file not found');
 			});
-			const resolveWorkflowInstallSourceFromSources = vi
-				.fn()
-				.mockReturnValue('/bad/path');
 			const readGlobalConfig = vi.fn().mockReturnValue(emptyConfig);
 
 			const code = runCmd(
@@ -150,8 +167,7 @@ describe('runWorkflowCommand', () => {
 					subcommandArgs: ['/bad/path'],
 				},
 				{
-					installWorkflow,
-					resolveWorkflowInstallSourceFromSources,
+					resolveWorkflowInstall,
 					readGlobalConfig,
 					logError,
 				},
@@ -884,5 +900,40 @@ describe('runWorkflowCommand', () => {
 				expect.stringContaining('Usage: athena-flow workflow'),
 			);
 		});
+	});
+});
+
+describe('workflow install (ambiguity)', () => {
+	it('prints all candidates when the same name is in two marketplaces', () => {
+		const errLines: string[] = [];
+		const outLines: string[] = [];
+		const ambiguity = new WorkflowAmbiguityError('dup', [
+			{sourceLabel: 'marketplace owner/a', disambiguator: 'dup@owner/a'},
+			{
+				sourceLabel: 'local marketplace /tmp/b',
+				disambiguator: '/tmp/b/workflows/dup/workflow.json',
+			},
+		]);
+		const code = runWorkflowCommand(
+			{subcommand: 'install', subcommandArgs: ['dup'], projectDir: '/tmp/proj'},
+			{
+				readGlobalConfig: () =>
+					({
+						...emptyConfig,
+						workflowMarketplaceSources: ['owner/a', '/tmp/b'],
+					}) as ReturnType<
+						typeof import('../../infra/plugins/config').readGlobalConfig
+					>,
+				resolveWorkflowInstall: () => {
+					throw ambiguity;
+				},
+				installWorkflowFromSource: () => 'dup',
+				logError: m => errLines.push(m),
+				logOut: m => outLines.push(m),
+			},
+		);
+		expect(code).toBe(1);
+		expect(errLines.join('\n')).toContain('dup@owner/a');
+		expect(errLines.join('\n')).toContain('/tmp/b');
 	});
 });

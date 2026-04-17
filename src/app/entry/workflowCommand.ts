@@ -1,5 +1,6 @@
 import {
 	installWorkflow,
+	installWorkflowFromSource,
 	listBuiltinWorkflows,
 	listWorkflows,
 	removeWorkflow,
@@ -10,6 +11,7 @@ import {
 	formatWorkflowListingSource,
 	listMarketplaceWorkflows,
 	listMarketplaceWorkflowsFromRepo,
+	resolveWorkflowInstall,
 	resolveWorkflowInstallSourceFromSources,
 	resolveWorkflowMarketplaceSource,
 	type MarketplaceWorkflowListing,
@@ -47,6 +49,7 @@ export type WorkflowCommandInput = {
 
 export type WorkflowCommandDeps = {
 	installWorkflow?: typeof installWorkflow;
+	installWorkflowFromSource?: typeof installWorkflowFromSource;
 	listWorkflows?: typeof listWorkflows;
 	listBuiltinWorkflows?: typeof listBuiltinWorkflows;
 	removeWorkflow?: typeof removeWorkflow;
@@ -54,6 +57,8 @@ export type WorkflowCommandDeps = {
 	resolveWorkflow?: typeof resolveWorkflow;
 	listMarketplaceWorkflows?: typeof listMarketplaceWorkflows;
 	listMarketplaceWorkflowsFromRepo?: typeof listMarketplaceWorkflowsFromRepo;
+	resolveWorkflowInstall?: typeof resolveWorkflowInstall;
+	// Legacy field retained for now (removed in Task 12):
 	resolveWorkflowInstallSourceFromSources?: typeof resolveWorkflowInstallSourceFromSources;
 	resolveWorkflowMarketplaceSource?: typeof resolveWorkflowMarketplaceSource;
 	readGlobalConfig?: typeof readGlobalConfig;
@@ -104,7 +109,6 @@ export function runWorkflowCommand(
 	input: WorkflowCommandInput,
 	deps: WorkflowCommandDeps = {},
 ): number {
-	const install = deps.installWorkflow ?? installWorkflow;
 	const list = deps.listWorkflows ?? listWorkflows;
 	const listBuiltins = deps.listBuiltinWorkflows ?? listBuiltinWorkflows;
 	const remove = deps.removeWorkflow ?? removeWorkflow;
@@ -114,9 +118,6 @@ export function runWorkflowCommand(
 		deps.listMarketplaceWorkflows ?? listMarketplaceWorkflows;
 	const listMarketplaceFromRepo =
 		deps.listMarketplaceWorkflowsFromRepo ?? listMarketplaceWorkflowsFromRepo;
-	const resolveInstallFromSources =
-		deps.resolveWorkflowInstallSourceFromSources ??
-		resolveWorkflowInstallSourceFromSources;
 	const resolveMarketplaceSource =
 		deps.resolveWorkflowMarketplaceSource ?? resolveWorkflowMarketplaceSource;
 	const readGlobal = deps.readGlobalConfig ?? readGlobalConfig;
@@ -162,11 +163,12 @@ export function runWorkflowCommand(
 				return 1;
 			}
 			try {
-				const installSource = resolveInstallFromSources(
-					source,
-					getMarketplaceSources(),
-				);
-				const name = install(installSource);
+				const resolveInstall =
+					deps.resolveWorkflowInstall ?? resolveWorkflowInstall;
+				const installFromSource =
+					deps.installWorkflowFromSource ?? installWorkflowFromSource;
+				const resolved = resolveInstall(source, getMarketplaceSources());
+				const name = installFromSource(resolved);
 				logOut(`Installed workflow: ${formatWorkflowLabel(name)}`);
 				return 0;
 			} catch (error) {
