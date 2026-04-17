@@ -310,6 +310,8 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 				scope,
 				msg.text,
 				'transcript',
+				undefined,
+				msg.model,
 			);
 			if (agentMsg) {
 				results.push(agentMsg);
@@ -340,6 +342,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 		message: string,
 		source: 'hook' | 'transcript',
 		cause?: Partial<FeedEventCause>,
+		model?: string,
 	): FeedEvent | null {
 		const normalized = normalizeAgentMessage(message);
 		if (!normalized) return null;
@@ -358,6 +361,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 				message: normalized,
 				source,
 				scope,
+				...(model ? {model} : {}),
 			} satisfies import('./types').AgentMessageData,
 			runtimeEvent,
 			cause,
@@ -536,7 +540,6 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 					session_id: event.sessionId,
 					started_at: event.timestamp,
 					source,
-					model: readString(d['model']),
 					agent_type: readString(d['agent_type']),
 				};
 				if (source === 'resume' || source === 'clear' || source === 'compact') {
@@ -551,7 +554,6 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 						'system',
 						{
 							source,
-							model: readString(d['model']),
 							agent_type: readString(d['agent_type']),
 						} satisfies import('./types').SessionStartData,
 						event,

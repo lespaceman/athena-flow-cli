@@ -56,7 +56,6 @@ export function translateClaudeEnvelope(
 				kind: 'session.start',
 				data: {
 					source: payload['source'] as string | undefined,
-					model: payload['model'] as string | undefined,
 					agent_type: payload['agent_type'] as string | undefined,
 				},
 			};

@@ -12,6 +12,7 @@ const model: HeaderModel = {
 	context: {used: 50000, max: 200000},
 	total_tokens: null,
 	run_count: 0,
+	model_name: null,
 	status: 'idle',
 	tail_mode: false,
 };

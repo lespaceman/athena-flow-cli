@@ -65,7 +65,6 @@ export type FeedEventBase = {
 
 export type SessionStartData = {
 	source: 'startup' | 'resume' | 'clear' | 'compact' | string;
-	model?: string;
 	agent_type?: string;
 };
 
@@ -230,6 +229,7 @@ export type AgentMessageData = {
 	message: string;
 	source: 'hook' | 'transcript';
 	scope: 'root' | 'subagent';
+	model?: string;
 };
 
 // ── Discriminated union ──────────────────────────────────

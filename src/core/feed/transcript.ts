@@ -12,6 +12,7 @@ import type {
 export type TranscriptMessage = {
 	text: string;
 	timestamp?: string;
+	model?: string;
 };
 
 export type TranscriptReader = {
@@ -61,9 +62,21 @@ export function createTranscriptReader(): TranscriptReader {
 					const content = entry.message?.content;
 					if (!content) continue;
 
+					const messageRecord = entry.message as
+						| Record<string, unknown>
+						| undefined;
+					const model =
+						typeof messageRecord?.['model'] === 'string'
+							? (messageRecord['model'] as string)
+							: undefined;
+
 					if (typeof content === 'string') {
 						if (content.trim()) {
-							messages.push({text: content, timestamp: entry.timestamp});
+							messages.push({
+								text: content,
+								timestamp: entry.timestamp,
+								model,
+							});
 						}
 						continue;
 					}
@@ -78,6 +91,7 @@ export function createTranscriptReader(): TranscriptReader {
 						messages.push({
 							text: textParts.join('\n'),
 							timestamp: entry.timestamp,
+							model,
 						});
 					}
 				} catch {

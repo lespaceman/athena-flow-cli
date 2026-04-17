@@ -575,16 +575,7 @@ describe('eventSummary', () => {
 		expect(result.segments).toEqual([{text: 'id:agent-123', role: 'target'}]);
 	});
 
-	it('formats session.start as natural text with model', () => {
-		const ev = {
-			...base({kind: 'session.start'}),
-			kind: 'session.start' as const,
-			data: {source: 'startup', model: 'opus'},
-		};
-		expect(eventSummary(ev).text).toBe('startup (opus)');
-	});
-
-	it('formats session.start without model', () => {
+	it('formats session.start as natural text', () => {
 		const ev = {
 			...base({kind: 'session.start'}),
 			kind: 'session.start' as const,

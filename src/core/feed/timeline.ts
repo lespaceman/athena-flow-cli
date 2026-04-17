@@ -439,12 +439,8 @@ function eventSummaryText(event: FeedEvent): string {
 			);
 		case 'stop.decision':
 			return compactText(event.data.reason || event.data.decision_type, 200);
-		case 'session.start': {
-			const model = event.data.model;
-			return model
-				? compactText(`${event.data.source} (${model})`, 200)
-				: compactText(event.data.source, 200);
-		}
+		case 'session.start':
+			return compactText(event.data.source, 200);
 		case 'session.end':
 			return compactText(event.data.reason, 200);
 		case 'notification':

@@ -9,6 +9,7 @@ export interface HeaderModel {
 	session_total: number;
 	workflow: string;
 	harness: string;
+	model_name: string | null;
 	context: {used: number | null; max: number | null};
 	total_tokens: number | null;
 	run_count: number;
@@ -37,6 +38,7 @@ export interface HeaderModelInput {
 	now: number;
 	workflowRef?: string;
 	harness?: string;
+	modelName?: string | null;
 	contextUsed?: number | null;
 	contextMax?: number | null;
 	totalTokens?: number | null;
@@ -90,6 +92,7 @@ export function buildHeaderModel(input: HeaderModelInput): HeaderModel {
 		session_total: sessionTotal,
 		workflow: workflowRef ?? 'default',
 		harness: detectHarness(input.harness),
+		model_name: input.modelName ?? null,
 		context: {used: input.contextUsed ?? null, max: input.contextMax ?? null},
 		total_tokens: input.totalTokens ?? null,
 		run_count: input.runCount ?? 0,

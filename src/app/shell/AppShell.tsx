@@ -1343,6 +1343,7 @@ function AppContent({
 			sessionIndex: sessionScope.current,
 			sessionTotal: sessionScope.total,
 			harness,
+			modelName: metrics.modelName ?? modelName,
 			errorReason: startupFailure?.message,
 		});
 		return renderHeaderLines(headerModel, innerWidth, hasColor, theme)[0];
@@ -1364,6 +1365,8 @@ function AppContent({
 		tokenUsage.total,
 		sessionScope,
 		harness,
+		modelName,
+		metrics.modelName,
 		startupFailure?.message,
 		innerWidth,
 		hasColor,

@@ -8,6 +8,7 @@ import {
 	renderContextBar,
 	type ContextBarPalette,
 } from './contextBar';
+import {formatModelName} from '../../shared/utils/formatters';
 
 export function truncateSessionId(id: string, maxWidth: number): string {
 	if (id.length <= maxWidth) return id;
@@ -57,6 +58,7 @@ export function renderHeaderLines(
 	const sidText = `${sidLabel}${sidValue}${style(sidScope, palette.label)}`;
 	const wfText = `${style('Workflow: ', palette.label)}${style(model.workflow, palette.value)}`;
 	const harnessText = `${style('Harness: ', palette.label)}${style(model.harness, palette.value)}`;
+	const modelText = `${style('Model: ', palette.label)}${style(formatModelName(model.model_name), palette.value)}`;
 
 	type Token = {text: string; priority: number};
 	const leftTokens: Token[] = [
@@ -65,6 +67,7 @@ export function renderHeaderLines(
 		{text: sidText, priority: 90},
 		{text: wfText, priority: 70},
 		{text: harnessText, priority: 60},
+		{text: modelText, priority: 65},
 		// Token count (e.g., "Tokens: 45.2k")
 		...(model.total_tokens !== null
 			? [

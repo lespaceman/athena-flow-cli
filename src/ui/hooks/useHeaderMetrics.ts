@@ -55,9 +55,13 @@ export function useHeaderMetrics(events: FeedEvent[]): SessionMetrics {
 				if (sessionStartTime === null) {
 					sessionStartTime = new Date(event.ts);
 				}
-				if (modelName === null && typeof event.data.model === 'string') {
-					modelName = event.data.model;
-				}
+			}
+
+			if (
+				event.kind === 'agent.message' &&
+				typeof event.data.model === 'string'
+			) {
+				modelName = event.data.model;
 			}
 
 			// Count top-level tool uses (tool.pre, not subagent events)

@@ -162,7 +162,6 @@ export type SetupEvent = BaseHookEvent & {
 export type SessionStartEvent = BaseHookEvent & {
 	hook_event_name: 'SessionStart';
 	source: 'startup' | 'resume' | 'clear' | 'compact';
-	model?: string;
 	agent_type?: string;
 };
 

@@ -49,12 +49,22 @@ describe('useHeaderMetrics', () => {
 		});
 	});
 
-	it('extracts model name from session.start event', () => {
+	it('extracts model name from agent.message event', () => {
 		const events = [
 			makeFeedEvent({
 				kind: 'session.start',
 				title: 'Session started',
-				data: {source: 'startup', model: 'claude-opus-4-6'},
+				data: {source: 'startup'},
+			}),
+			makeFeedEvent({
+				kind: 'agent.message',
+				title: 'agent message',
+				data: {
+					message: 'hello',
+					source: 'transcript',
+					scope: 'root',
+					model: 'claude-opus-4-6',
+				},
 			}),
 		];
 
