@@ -50,11 +50,16 @@ vi.mock('node:os', () => ({
 	},
 }));
 
+const resolveMarketplaceWorkflowMock = vi.fn(
+	() => '/tmp/resolved-workflow.json',
+);
+
 vi.mock('../../../infra/plugins/marketplace', () => ({
 	isMarketplaceRef: (entry: string) =>
 		/^[a-zA-Z0-9_-]+@[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(entry),
 	findMarketplaceRepoDir: () => undefined,
-	resolveMarketplaceWorkflow: () => '/tmp/resolved-workflow.json',
+	resolveMarketplaceWorkflow: (...args: unknown[]) =>
+		resolveMarketplaceWorkflowMock(...args),
 }));
 
 vi.mock('../builtins/index', () => ({
@@ -82,6 +87,8 @@ beforeEach(() => {
 	}
 	dirs.clear();
 	refreshPinnedWorkflowPluginsMock.mockReset();
+	resolveMarketplaceWorkflowMock.mockReset();
+	resolveMarketplaceWorkflowMock.mockReturnValue('/tmp/resolved-workflow.json');
 });
 
 describe('resolveWorkflow', () => {
@@ -302,96 +309,40 @@ describe('resolveWorkflow', () => {
 		);
 	});
 
-	it('re-syncs workflow files from marketplace when source ref exists', () => {
-		// Simulate a previously installed marketplace workflow
-		const staleWorkflow = {
-			name: 'mkt-workflow',
-			plugins: ['plugin@owner/repo'],
-			promptTemplate: '{input}',
-			description: 'old description',
-			workflowFile: 'workflow.md',
-		};
-		files[
-			'/home/testuser/.config/athena/workflows/mkt-workflow/workflow.json'
-		] = JSON.stringify(staleWorkflow);
-		files['/home/testuser/.config/athena/workflows/mkt-workflow/source.json'] =
-			JSON.stringify({kind: 'marketplace', ref: 'mkt-workflow@owner/repo'});
-
-		// Simulate git pull having fetched a newer version in the marketplace cache
-		const freshWorkflow = {
-			name: 'mkt-workflow',
-			plugins: ['plugin@owner/repo'],
-			promptTemplate: '{input}',
-			description: 'updated description',
-			workflowFile: 'workflow.md',
-		};
-		files['/tmp/resolved-workflow.json'] = JSON.stringify(freshWorkflow);
-		files['/tmp/workflow.md'] = '# Workflow';
-
-		const result = resolveWorkflow('mkt-workflow');
-
-		expect(result.description).toBe('updated description');
-		// Installed copy should also be updated
-		const installed = JSON.parse(
-			files[
-				'/home/testuser/.config/athena/workflows/mkt-workflow/workflow.json'
-			]!,
-		);
-		expect(installed.description).toBe('updated description');
-	});
-
-	it('re-syncs workflow.md from workflowFile in marketplace source', () => {
-		files['/home/testuser/.config/athena/workflows/synced/workflow.json'] =
+	it('resolveWorkflow does not rewrite installed workflow files', () => {
+		files['/home/testuser/.config/athena/workflows/w/workflow.json'] =
 			JSON.stringify({
-				name: 'synced',
+				name: 'w',
 				plugins: [],
-				promptTemplate: '{input}',
+				promptTemplate: 'installed-copy',
 				workflowFile: 'workflow.md',
 			});
-		files['/home/testuser/.config/athena/workflows/synced/workflow.md'] =
-			'# Old Workflow';
-		files['/home/testuser/.config/athena/workflows/synced/source.json'] =
-			JSON.stringify({kind: 'marketplace', ref: 'synced@owner/repo'});
+		files['/home/testuser/.config/athena/workflows/w/workflow.md'] =
+			'# installed';
+		files['/home/testuser/.config/athena/workflows/w/source.json'] =
+			JSON.stringify({
+				v: 2,
+				kind: 'marketplace-remote',
+				ref: 'w@o/r',
+			});
 
-		// Marketplace has updated workflow and prompt
-		files['/tmp/resolved-workflow.json'] = JSON.stringify({
-			name: 'synced',
+		// Arrange a marketplace cache copy that differs from the installed copy.
+		files['/tmp/newer-workflow.json'] = JSON.stringify({
+			name: 'w',
 			plugins: [],
-			promptTemplate: '{input}',
+			promptTemplate: 'newer-cache',
 			workflowFile: 'workflow.md',
 		});
-		files['/tmp/workflow.md'] = '# New Workflow';
+		resolveMarketplaceWorkflowMock.mockReturnValue('/tmp/newer-workflow.json');
 
-		const result = resolveWorkflow('synced');
+		const before =
+			files['/home/testuser/.config/athena/workflows/w/workflow.json'];
+		resolveWorkflow('w');
+		const after =
+			files['/home/testuser/.config/athena/workflows/w/workflow.json'];
 
-		expect(result.workflowFile).toBe(
-			'/home/testuser/.config/athena/workflows/synced/workflow.md',
-		);
-		expect(
-			files['/home/testuser/.config/athena/workflows/synced/workflow.md'],
-		).toBe('# New Workflow');
-	});
-
-	it('gracefully falls back to installed copy when marketplace sync fails', () => {
-		const workflow = {
-			name: 'offline-wf',
-			plugins: [],
-			promptTemplate: '{input}',
-			workflowFile: 'workflow.md',
-		};
-		files['/home/testuser/.config/athena/workflows/offline-wf/workflow.json'] =
-			JSON.stringify(workflow);
-		files['/home/testuser/.config/athena/workflows/offline-wf/workflow.md'] =
-			'# Workflow';
-		// source.json references a marketplace, but resolveMarketplaceWorkflow
-		// points to a file that doesn't exist (simulating failure)
-		files['/home/testuser/.config/athena/workflows/offline-wf/source.json'] =
-			JSON.stringify({kind: 'marketplace', ref: 'offline-wf@owner/repo'});
-		// Do NOT create /tmp/resolved-workflow.json — simulates marketplace being unavailable
-
-		const result = resolveWorkflow('offline-wf');
-
-		expect(result.name).toBe('offline-wf');
+		expect(after).toBe(before);
+		expect(resolveMarketplaceWorkflowMock).not.toHaveBeenCalled();
 	});
 
 	it('allows extra legacy keys when required workflowFile is present', () => {

@@ -46,33 +46,6 @@ function ensurePathWithinRoot(
 }
 
 /**
- * If a source.json exists for this workflow and it's a marketplace ref,
- * re-copy files from the marketplace cache (which ensureRepo already pulled).
- * Fails silently so offline/broken marketplace doesn't block startup.
- */
-function syncFromSource(
-	workflowDir: string,
-): WorkflowSourceMetadata | undefined {
-	const source = readWorkflowSourceMetadata(workflowDir);
-	if (!source) return undefined;
-
-	try {
-		if (source.kind === 'marketplace-remote') {
-			const sourcePath = resolveMarketplaceWorkflow(source.ref);
-			copyWorkflowFiles(sourcePath, workflowDir);
-			return source;
-		}
-		// For marketplace-local and filesystem, no implicit sync here. Task 10
-		// moves explicit refresh into updateWorkflow; this read path leaves the
-		// installed snapshot alone.
-		return source;
-	} catch {
-		// Graceful degradation: use installed copy if sync fails (e.g. offline)
-		return source;
-	}
-}
-
-/**
  * Resolve a workflow by name from the registry.
  * Throws if the workflow is not installed.
  */
@@ -91,8 +64,7 @@ export function resolveWorkflow(name: string): ResolvedWorkflowConfig {
 		);
 	}
 
-	// Re-sync from the recorded source if this workflow was installed from one.
-	const source = syncFromSource(workflowDir);
+	const source = readWorkflowSourceMetadata(workflowDir);
 
 	const raw = JSON.parse(fs.readFileSync(workflowPath, 'utf-8')) as Record<
 		string,
