@@ -18,6 +18,7 @@ import {
 	requireGitForMarketplace,
 	resolvePluginDirFromManifest,
 	resolvePluginManifestPath,
+	resolveWorkflowManifestPath,
 	type MarketplaceEntry,
 	type MarketplaceManifest,
 	type MarketplacePluginTarget,
@@ -118,6 +119,7 @@ export {
 	resolveVersionedPluginDir,
 	resolveWorkflowInstallSource,
 	resolveWorkflowInstallSourceFromSources,
+	resolveWorkflowManifestPath,
 	resolveWorkflowMarketplaceSource,
 };
 

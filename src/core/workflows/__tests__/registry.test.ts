@@ -53,6 +53,8 @@ vi.mock('node:os', () => ({
 const resolveMarketplaceWorkflowMock = vi.fn(
 	() => '/tmp/resolved-workflow.json',
 );
+const listMarketplaceWorkflowsFromRepoMock = vi.fn(() => []);
+const resolveWorkflowInstallMock = vi.fn();
 
 vi.mock('../../../infra/plugins/marketplace', () => ({
 	isMarketplaceRef: (entry: string) =>
@@ -60,6 +62,12 @@ vi.mock('../../../infra/plugins/marketplace', () => ({
 	findMarketplaceRepoDir: () => undefined,
 	resolveMarketplaceWorkflow: (...args: unknown[]) =>
 		resolveMarketplaceWorkflowMock(...args),
+	listMarketplaceWorkflowsFromRepo: (...args: unknown[]) =>
+		listMarketplaceWorkflowsFromRepoMock(...args),
+	resolveWorkflowManifestPath: (repoDir: string) =>
+		`${repoDir}/.athena-workflow/marketplace.json`,
+	resolveWorkflowInstall: (...args: unknown[]) =>
+		resolveWorkflowInstallMock(...args),
 }));
 
 vi.mock('../builtins/index', () => ({
@@ -89,6 +97,27 @@ beforeEach(() => {
 	refreshPinnedWorkflowPluginsMock.mockReset();
 	resolveMarketplaceWorkflowMock.mockReset();
 	resolveMarketplaceWorkflowMock.mockReturnValue('/tmp/resolved-workflow.json');
+	listMarketplaceWorkflowsFromRepoMock.mockReset();
+	listMarketplaceWorkflowsFromRepoMock.mockReturnValue([]);
+	resolveWorkflowInstallMock.mockReset();
+	resolveWorkflowInstallMock.mockImplementation((ref: string) => {
+		const atIdx = ref.indexOf('@');
+		const workflowName = atIdx >= 0 ? ref.slice(0, atIdx) : ref;
+		const slug = atIdx >= 0 ? ref.slice(atIdx + 1) : 'owner/repo';
+		const slashIdx = slug.indexOf('/');
+		const owner = slashIdx >= 0 ? slug.slice(0, slashIdx) : 'owner';
+		const repo = slashIdx >= 0 ? slug.slice(slashIdx + 1) : 'repo';
+		return {
+			kind: 'marketplace-remote',
+			slug,
+			owner,
+			repo,
+			workflowName,
+			ref,
+			manifestPath: '/tmp/resolved-manifest.json',
+			workflowPath: '/tmp/resolved-workflow.json',
+		};
+	});
 });
 
 describe('resolveWorkflow', () => {
@@ -760,5 +789,138 @@ describe('installWorkflowFromSource', () => {
 			kind: 'filesystem',
 			path: '/tmp/loose/workflow.json',
 		});
+	});
+});
+
+describe('updateWorkflow (canonical source)', () => {
+	it('re-resolves a marketplace-remote workflow via resolveMarketplaceWorkflow', () => {
+		files['/home/testuser/.config/athena/workflows/w/workflow.json'] =
+			JSON.stringify({
+				name: 'w',
+				plugins: [],
+				promptTemplate: 'old',
+				workflowFile: 'workflow.md',
+			});
+		files['/home/testuser/.config/athena/workflows/w/workflow.md'] = '# old';
+		files['/home/testuser/.config/athena/workflows/w/source.json'] =
+			JSON.stringify({
+				v: 2,
+				kind: 'marketplace-remote',
+				ref: 'w@o/r',
+			});
+
+		files['/tmp/cache/workflow.json'] = JSON.stringify({
+			name: 'w',
+			plugins: [],
+			promptTemplate: 'new',
+			workflowFile: 'workflow.md',
+		});
+		files['/tmp/cache/workflow.md'] = '# new';
+		resolveWorkflowInstallMock.mockReturnValue({
+			kind: 'marketplace-remote',
+			slug: 'o/r',
+			owner: 'o',
+			repo: 'r',
+			workflowName: 'w',
+			ref: 'w@o/r',
+			manifestPath: '/tmp/cache/.athena-workflow/marketplace.json',
+			workflowPath: '/tmp/cache/workflow.json',
+		});
+
+		updateWorkflow('w');
+
+		expect(
+			JSON.parse(
+				files['/home/testuser/.config/athena/workflows/w/workflow.json']!,
+			).promptTemplate,
+		).toBe('new');
+	});
+
+	it('re-resolves a marketplace-local workflow by (repoDir, workflowName)', () => {
+		files['/home/testuser/.config/athena/workflows/w/workflow.json'] =
+			JSON.stringify({
+				name: 'w',
+				plugins: [],
+				promptTemplate: 'old',
+				workflowFile: 'workflow.md',
+			});
+		files['/home/testuser/.config/athena/workflows/w/workflow.md'] = '# old';
+		files['/home/testuser/.config/athena/workflows/w/source.json'] =
+			JSON.stringify({
+				v: 2,
+				kind: 'marketplace-local',
+				repoDir: '/tmp/m',
+				workflowName: 'w',
+			});
+
+		// Stub listMarketplaceWorkflowsFromRepo to return the canonical entry.
+		listMarketplaceWorkflowsFromRepoMock.mockReturnValue([
+			{
+				name: 'w',
+				workflowPath: '/tmp/m/workflows/w/workflow.json',
+				source: {kind: 'local', repoDir: '/tmp/m'},
+			},
+		]);
+		files['/tmp/m/workflows/w/workflow.json'] = JSON.stringify({
+			name: 'w',
+			plugins: [],
+			promptTemplate: 'new-local',
+			workflowFile: 'workflow.md',
+		});
+		files['/tmp/m/workflows/w/workflow.md'] = '# new';
+
+		updateWorkflow('w');
+
+		expect(
+			JSON.parse(
+				files['/home/testuser/.config/athena/workflows/w/workflow.json']!,
+			).promptTemplate,
+		).toBe('new-local');
+	});
+
+	it('throws a clear error when a local marketplace entry has been renamed', () => {
+		files['/home/testuser/.config/athena/workflows/w/workflow.json'] = '{}';
+		files['/home/testuser/.config/athena/workflows/w/source.json'] =
+			JSON.stringify({
+				v: 2,
+				kind: 'marketplace-local',
+				repoDir: '/tmp/m',
+				workflowName: 'w',
+			});
+		listMarketplaceWorkflowsFromRepoMock.mockReturnValue([
+			{
+				name: 'not-w',
+				workflowPath: '/tmp/m/workflows/not-w/workflow.json',
+				source: {kind: 'local', repoDir: '/tmp/m'},
+			},
+		]);
+
+		expect(() => updateWorkflow('w')).toThrow(/no longer.*marketplace/i);
+	});
+
+	it('upgrades a filesystem workflow by re-copying from the recorded path', () => {
+		files['/home/testuser/.config/athena/workflows/w/workflow.json'] =
+			JSON.stringify({name: 'w'});
+		files['/home/testuser/.config/athena/workflows/w/source.json'] =
+			JSON.stringify({
+				v: 2,
+				kind: 'filesystem',
+				path: '/tmp/loose/workflow.json',
+			});
+		files['/tmp/loose/workflow.json'] = JSON.stringify({
+			name: 'w',
+			plugins: [],
+			promptTemplate: 'loose-new',
+			workflowFile: 'workflow.md',
+		});
+		files['/tmp/loose/workflow.md'] = '# loose';
+
+		updateWorkflow('w');
+
+		expect(
+			JSON.parse(
+				files['/home/testuser/.config/athena/workflows/w/workflow.json']!,
+			).promptTemplate,
+		).toBe('loose-new');
 	});
 });

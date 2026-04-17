@@ -10,7 +10,10 @@ import os from 'node:os';
 import path from 'node:path';
 import {
 	isMarketplaceRef,
+	listMarketplaceWorkflowsFromRepo,
 	resolveMarketplaceWorkflow,
+	resolveWorkflowInstall,
+	resolveWorkflowManifestPath,
 	type ResolvedWorkflowSource,
 } from '../../infra/plugins/marketplace';
 import type {
@@ -270,29 +273,45 @@ export function installWorkflowFromSource(
 	return workflowName;
 }
 
+function reResolveFromMetadata(
+	metadata: import('./types').WorkflowSourceMetadata,
+): ResolvedWorkflowSource {
+	if (metadata.kind === 'marketplace-remote') {
+		return resolveWorkflowInstall(metadata.ref, []);
+	}
+	if (metadata.kind === 'marketplace-local') {
+		const manifestPath = resolveWorkflowManifestPath(metadata.repoDir);
+		const listings = listMarketplaceWorkflowsFromRepo(metadata.repoDir);
+		const entry = listings.find(l => l.name === metadata.workflowName);
+		if (!entry) {
+			throw new Error(
+				`Workflow "${metadata.workflowName}" is no longer in the local marketplace at ${metadata.repoDir}.`,
+			);
+		}
+		return {
+			kind: 'marketplace-local',
+			repoDir: metadata.repoDir,
+			workflowName: metadata.workflowName,
+			...(entry.version ? {version: entry.version} : {}),
+			manifestPath,
+			workflowPath: entry.workflowPath,
+		};
+	}
+	return {kind: 'filesystem', workflowPath: metadata.path};
+}
+
 export function updateWorkflow(name: string): string {
 	const workflowDir = path.join(registryDir(), name);
-	const source = readWorkflowSourceMetadata(workflowDir);
+	const metadata = readWorkflowSourceMetadata(workflowDir);
 
-	if (!source) {
+	if (!metadata) {
 		throw new Error(
 			`Workflow "${name}" has no recorded source. Reinstall it with: athena-flow workflow install <source>`,
 		);
 	}
 
-	// Task 10 will route marketplace-local through installWorkflowFromSource.
-	// For now, only marketplace-remote and filesystem have a direct installWorkflow path.
-	const installSource =
-		source.kind === 'marketplace-remote'
-			? source.ref
-			: source.kind === 'filesystem'
-				? source.path
-				: (() => {
-						throw new Error(
-							`Workflow "${name}" uses a marketplace-local source. Use \`athena-flow workflow install\` to reinstall it.`,
-						);
-					})();
-	const installedName = installWorkflow(installSource, name);
+	const source = reResolveFromMetadata(metadata);
+	const installedName = installWorkflowFromSource(source, name);
 	refreshPinnedWorkflowPlugins(resolveWorkflow(installedName));
 	return installedName;
 }
