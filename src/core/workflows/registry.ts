@@ -20,6 +20,10 @@ import type {
 } from './types';
 import {refreshPinnedWorkflowPlugins} from './installer';
 import {resolveBuiltinWorkflow, listBuiltinWorkflows} from './builtins/index';
+import {
+	readWorkflowSourceMetadata,
+	writeWorkflowSourceMetadata,
+} from './sourceMetadata';
 
 function registryDir(): string {
 	return path.join(os.homedir(), '.config', 'athena', 'workflows');
@@ -46,70 +50,10 @@ function ensurePathWithinRoot(
  * re-copy files from the marketplace cache (which ensureRepo already pulled).
  * Fails silently so offline/broken marketplace doesn't block startup.
  */
-function readStoredWorkflowSource(
-	workflowDir: string,
-): WorkflowSourceMetadata | undefined {
-	const sourceFile = path.join(workflowDir, 'source.json');
-	if (!fs.existsSync(sourceFile)) return;
-
-	let raw: unknown;
-	try {
-		raw = JSON.parse(fs.readFileSync(sourceFile, 'utf-8'));
-	} catch {
-		throw new Error(`Invalid source.json: ${sourceFile} is not valid JSON`);
-	}
-
-	if (!raw || typeof raw !== 'object') {
-		throw new Error(
-			`Invalid source.json: ${sourceFile} must contain an object`,
-		);
-	}
-
-	const r = raw as Record<string, unknown>;
-
-	// New v2 shape
-	if (r['v'] === 2) {
-		if (r['kind'] === 'marketplace-remote' && typeof r['ref'] === 'string') {
-			return {
-				kind: 'marketplace-remote',
-				ref: r['ref'],
-				...(typeof r['version'] === 'string' ? {version: r['version']} : {}),
-			};
-		}
-		if (
-			r['kind'] === 'marketplace-local' &&
-			typeof r['repoDir'] === 'string' &&
-			typeof r['workflowName'] === 'string'
-		) {
-			return {
-				kind: 'marketplace-local',
-				repoDir: r['repoDir'],
-				workflowName: r['workflowName'],
-				...(typeof r['version'] === 'string' ? {version: r['version']} : {}),
-			};
-		}
-		if (r['kind'] === 'filesystem' && typeof r['path'] === 'string') {
-			return {kind: 'filesystem', path: r['path']};
-		}
-	}
-
-	// Legacy shapes (Task 8 supersedes with explicit migration).
-	if (r['kind'] === 'marketplace' && typeof r['ref'] === 'string') {
-		return {kind: 'marketplace-remote', ref: r['ref']};
-	}
-	if (r['kind'] === 'local' && typeof r['path'] === 'string') {
-		return {kind: 'filesystem', path: r['path']};
-	}
-
-	throw new Error(
-		`Invalid source.json: ${sourceFile} must use a supported {kind, ...} shape`,
-	);
-}
-
 function syncFromSource(
 	workflowDir: string,
 ): WorkflowSourceMetadata | undefined {
-	const source = readStoredWorkflowSource(workflowDir);
+	const source = readWorkflowSourceMetadata(workflowDir);
 	if (!source) return undefined;
 
 	try {
@@ -309,11 +253,7 @@ export function installWorkflow(source: string, name?: string): string {
 	const metadata: WorkflowSourceMetadata = isMarketplace
 		? {kind: 'marketplace-remote', ref: source}
 		: {kind: 'filesystem', path: path.resolve(sourcePath)};
-	fs.writeFileSync(
-		path.join(destDir, 'source.json'),
-		JSON.stringify({v: 2, ...metadata}),
-		'utf-8',
-	);
+	writeWorkflowSourceMetadata(destDir, metadata);
 
 	return workflowName;
 }
@@ -354,17 +294,13 @@ export function installWorkflowFromSource(
 	copyWorkflowFiles(source.workflowPath, destDir);
 
 	const metadata = toStoredMetadata(source);
-	fs.writeFileSync(
-		path.join(destDir, 'source.json'),
-		JSON.stringify({v: 2, ...metadata}),
-		'utf-8',
-	);
+	writeWorkflowSourceMetadata(destDir, metadata);
 	return workflowName;
 }
 
 export function updateWorkflow(name: string): string {
 	const workflowDir = path.join(registryDir(), name);
-	const source = readStoredWorkflowSource(workflowDir);
+	const source = readWorkflowSourceMetadata(workflowDir);
 
 	if (!source) {
 		throw new Error(
