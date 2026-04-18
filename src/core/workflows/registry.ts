@@ -11,6 +11,7 @@ import path from 'node:path';
 import {
 	isMarketplaceRef,
 	listMarketplaceWorkflowsFromRepo,
+	pullMarketplaceRepo,
 	resolveWorkflowInstall,
 	resolveWorkflowManifestPath,
 	type ResolvedWorkflowSource,
@@ -244,6 +245,20 @@ function reResolveFromMetadata(
 	metadata: import('./types').WorkflowSourceMetadata,
 ): ResolvedWorkflowSource {
 	if (metadata.kind === 'marketplace-remote') {
+		const slug = metadata.ref.slice(metadata.ref.indexOf('@') + 1);
+		const slashIdx = slug.indexOf('/');
+		const owner = slug.slice(0, slashIdx);
+		const repo = slug.slice(slashIdx + 1);
+		try {
+			pullMarketplaceRepo(owner, repo);
+		} catch (error) {
+			if (
+				!(error instanceof Error) ||
+				!error.message.includes('is not cached')
+			) {
+				throw error;
+			}
+		}
 		return resolveWorkflowInstall(metadata.ref, []);
 	}
 	if (metadata.kind === 'marketplace-local') {

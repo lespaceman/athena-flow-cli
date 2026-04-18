@@ -17,6 +17,7 @@ import {tasksCommand} from './tasks';
 import setup from './setup';
 import {telemetryCommand} from './telemetry';
 import {workflowCommand} from './workflow';
+import {modelCommand} from './model';
 
 const builtins = [
 	helpCommand,
@@ -29,6 +30,7 @@ const builtins = [
 	setup,
 	telemetryCommand,
 	workflowCommand,
+	modelCommand,
 ];
 
 let registered = false;

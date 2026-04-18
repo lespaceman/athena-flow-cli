@@ -18,6 +18,7 @@ import {
 	requireGitForMarketplace,
 	resolvePluginDirFromManifest,
 	resolvePluginManifestPath,
+	resolvePluginVersionFromDir,
 	resolveWorkflowManifestPath,
 	type MarketplaceEntry,
 	type MarketplaceManifest,
@@ -78,11 +79,17 @@ export function resolveMarketplacePluginTarget(
 
 	const {owner, repo} = parseRef(ref);
 	const repoDir = ensureRepo(owner, repo);
-	return buildMarketplacePluginResolution(
+	const directTarget = buildMarketplacePluginResolution(
 		ref,
 		repoDir,
 		resolvePluginManifestPath(repoDir),
 	);
+	const pluginVersion = resolvePluginVersionFromDir(directTarget.pluginDir);
+	if (!pluginVersion) {
+		return directTarget;
+	}
+
+	return resolveVersionedMarketplacePluginTarget(ref, pluginVersion, repoDir);
 }
 
 export function resolveMarketplacePluginFromRepo(

@@ -29,6 +29,8 @@ function makeContext(
 		clearScreen: vi.fn(),
 		showSessions: vi.fn(),
 		showSetup: vi.fn(),
+		showWorkflowPicker: vi.fn(),
+		showModelPicker: vi.fn(),
 		sessionStats: {
 			metrics: {
 				modelName: null,

@@ -17,6 +17,7 @@ import {asRecord} from './eventTranslator';
 import {
 	buildCodexPluginInstallMessage,
 	ensureCodexWorkflowPluginsInstalled,
+	type CodexInstalledWorkflowPlugin,
 } from './workflowPluginLifecycle';
 import {
 	resolveCodexAgentConfig,
@@ -51,7 +52,17 @@ export type CodexRuntime = Runtime & {
 	): Promise<void>;
 	/** Interrupt the currently running turn. */
 	sendInterrupt(): void;
+	listModels(): Promise<CodexRuntimeModel[]>;
 	_getPendingCount(): number;
+};
+
+export type CodexRuntimeModel = {
+	id: string;
+	model: string;
+	displayName: string;
+	description: string;
+	hidden: boolean;
+	isDefault: boolean;
 };
 
 type PendingApproval = {
@@ -75,6 +86,26 @@ function requireThreadId(value: unknown, method: string): string {
 	}
 
 	throw new Error(`Codex ${method} did not return a thread id`);
+}
+
+function buildTurnInput(
+	prompt: string,
+	plugins?: CodexInstalledWorkflowPlugin[],
+): Array<Record<string, unknown>> {
+	const input: Array<Record<string, unknown>> = [
+		{type: 'text', text: prompt, text_elements: []},
+	];
+	for (const plugin of plugins ?? []) {
+		if (!plugin.pluginName || !plugin.marketplaceName) {
+			continue;
+		}
+		input.push({
+			type: 'mention',
+			name: plugin.pluginName,
+			path: `plugin://${plugin.pluginName}@${plugin.marketplaceName}`,
+		});
+	}
+	return input;
 }
 
 /**
@@ -514,28 +545,34 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 							plugin.pluginName.length > 0 &&
 							plugin.marketplacePath.length > 0,
 					) ?? [];
-				if (shouldConfigureThread && workflowPluginTargets.length > 0) {
+				let preparedWorkflowPluginTargets: CodexInstalledWorkflowPlugin[] =
+					workflowPluginTargets;
+				if (workflowPluginTargets.length > 0) {
 					try {
 						const installedPlugins = await ensureCodexWorkflowPluginsInstalled({
 							manager,
 							projectDir,
 							plugins: workflowPluginTargets,
 						});
-						emitNotification({
-							hookName: M.PLUGINS_ENSURED,
-							title: 'Plugins ensured',
-							message: buildCodexPluginInstallMessage(installedPlugins),
-							notificationType: M.PLUGINS_ENSURED,
-							payload: {
-								plugins: installedPlugins,
-							},
-						});
+						preparedWorkflowPluginTargets = installedPlugins;
+						if (shouldConfigureThread) {
+							emitNotification({
+								hookName: M.PLUGINS_ENSURED,
+								title: 'Plugins ensured',
+								message: buildCodexPluginInstallMessage(installedPlugins),
+								notificationType: M.PLUGINS_ENSURED,
+								payload: {
+									plugins: installedPlugins,
+								},
+							});
+						}
 					} catch (error) {
 						console.error(
 							`[athena:codex] failed to ensure workflow plugins: ${
 								error instanceof Error ? error.message : String(error)
 							}`,
 						);
+						throw error instanceof Error ? error : new Error(String(error));
 					}
 				}
 				// Resolve agent config from plugin agent roots.
@@ -689,7 +726,7 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 				// that we don't currently need.
 				const result = await manager.sendRequest(M.TURN_START, {
 					threadId,
-					input: [{type: 'text', text: prompt, text_elements: []}],
+					input: buildTurnInput(prompt, preparedWorkflowPluginTargets),
 					cwd: projectDir,
 					approvalPolicy,
 					...(options?.model ? {model: options.model} : {}),
@@ -721,6 +758,50 @@ export function createCodexServer(opts: CodexServerOptions): CodexRuntime {
 					clearPendingTurn(new Error('Codex turn interrupt timed out'));
 				}, INTERRUPT_SETTLE_TIMEOUT_MS);
 			}
+		},
+
+		async listModels(): Promise<CodexRuntimeModel[]> {
+			if (!manager || status !== 'running') {
+				throw new Error('Codex runtime not running');
+			}
+
+			const models: CodexRuntimeModel[] = [];
+			let cursor: string | null | undefined = undefined;
+
+			do {
+				const response = asRecord(
+					await manager.sendRequest(M.MODEL_LIST, {
+						limit: 100,
+						includeHidden: false,
+						...(cursor ? {cursor} : {}),
+					}),
+				);
+				const data = Array.isArray(response['data']) ? response['data'] : [];
+				for (const entry of data) {
+					const model = asRecord(entry);
+					if (
+						typeof model['model'] !== 'string' ||
+						typeof model['displayName'] !== 'string' ||
+						typeof model['description'] !== 'string'
+					) {
+						continue;
+					}
+					models.push({
+						id: typeof model['id'] === 'string' ? model['id'] : model['model'],
+						model: model['model'],
+						displayName: model['displayName'],
+						description: model['description'],
+						hidden: Boolean(model['hidden']),
+						isDefault: Boolean(model['isDefault']),
+					});
+				}
+				cursor =
+					typeof response['nextCursor'] === 'string'
+						? response['nextCursor']
+						: null;
+			} while (cursor);
+
+			return models;
 		},
 
 		_getPendingCount() {

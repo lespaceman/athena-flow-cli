@@ -85,6 +85,23 @@ vi.mock('../appServerManager', () => ({
 				return {};
 			}
 
+			if (method === 'plugin/read') {
+				const pluginName = params?.['pluginName'];
+				const installed = this.requests.some(
+					request =>
+						request.method === 'plugin/install' &&
+						request.params?.['pluginName'] === pluginName,
+				);
+				return {
+					plugin: {
+						marketplaceName: 'athena-workflow-marketplace',
+						summary: {
+							installed,
+						},
+					},
+				};
+			}
+
 			if (method === 'plugin/install') {
 				return {};
 			}
@@ -146,6 +163,39 @@ vi.mock('../appServerManager', () => ({
 				return {};
 			}
 
+			if (method === 'model/list') {
+				const cursor =
+					typeof params?.['cursor'] === 'string' ? params['cursor'] : null;
+				if (cursor === 'page-2') {
+					return {
+						data: [
+							{
+								id: 'gpt-5-mini',
+								model: 'gpt-5-mini',
+								displayName: 'GPT-5 Mini',
+								description: 'Smaller fast model',
+								hidden: false,
+								isDefault: false,
+							},
+						],
+						nextCursor: null,
+					};
+				}
+				return {
+					data: [
+						{
+							id: 'gpt-5.4',
+							model: 'gpt-5.4',
+							displayName: 'GPT-5.4',
+							description: 'Latest frontier agentic coding model',
+							hidden: false,
+							isDefault: true,
+						},
+					],
+					nextCursor: 'page-2',
+				};
+			}
+
 			throw new Error(`Unexpected request: ${method}`);
 		}
 	},
@@ -184,6 +234,42 @@ describe('createCodexServer', () => {
 				expect.objectContaining({kind: 'turn.complete'}),
 			]),
 		);
+	});
+
+	it('lists models through the app-server and follows pagination', async () => {
+		const runtime = createCodexServer({
+			projectDir: '/project',
+			instanceId: 1,
+			binaryPath: 'codex',
+		});
+
+		await runtime.start();
+		const models = await runtime.listModels();
+
+		expect(models).toEqual([
+			expect.objectContaining({
+				model: 'gpt-5.4',
+				displayName: 'GPT-5.4',
+				isDefault: true,
+			}),
+			expect.objectContaining({
+				model: 'gpt-5-mini',
+				displayName: 'GPT-5 Mini',
+				isDefault: false,
+			}),
+		]);
+
+		const manager = mockState.current;
+		expect(manager?.requests.filter(r => r.method === M.MODEL_LIST)).toEqual([
+			{
+				method: M.MODEL_LIST,
+				params: {limit: 100, includeHidden: false},
+			},
+			{
+				method: M.MODEL_LIST,
+				params: {limit: 100, includeHidden: false, cursor: 'page-2'},
+			},
+		]);
 	});
 
 	it('hydrates thread startup with native workflow plugin install and mcp config', async () => {
@@ -249,6 +335,11 @@ describe('createCodexServer', () => {
 								text: 'Hello Codex',
 								text_elements: [],
 							},
+							{
+								type: 'mention',
+								name: 'plugin-a',
+								path: 'plugin://plugin-a@athena-workflow-marketplace',
+							},
 						],
 					}),
 				}),
@@ -286,22 +377,124 @@ describe('createCodexServer', () => {
 		expect(manager).not.toBeNull();
 		const methodOrder = manager!.requests.map(request => request.method);
 		expect(methodOrder).toEqual(
-			expect.arrayContaining(['plugin/install', 'thread/start']),
+			expect.arrayContaining(['plugin/read', 'plugin/install', 'thread/start']),
 		);
 		expect(methodOrder.indexOf('plugin/install')).toBeLessThan(
 			methodOrder.indexOf('thread/start'),
 		);
-		expect(methodOrder).not.toContain('plugin/list');
-		expect(methodOrder).not.toContain('plugin/read');
+		expect(methodOrder.indexOf('plugin/read')).toBeLessThan(
+			methodOrder.indexOf('plugin/install'),
+		);
 		expect(methodOrder).not.toContain('skills/list');
 		expect(
 			manager!.requests.find(request => request.method === 'turn/start')
 				?.params?.['input'],
-		).toEqual([{type: 'text', text: 'Hello Codex', text_elements: []}]);
+		).toEqual([
+			{type: 'text', text: 'Hello Codex', text_elements: []},
+			{
+				type: 'mention',
+				name: 'plugin-a',
+				path: 'plugin://plugin-a@athena-workflow-marketplace',
+			},
+		]);
 		expect(
 			manager!.requests.find(request => request.method === 'thread/start')
 				?.params?.['config'],
 		).toEqual({});
+	});
+
+	it('preserves plugin mentions on reuse-current turns after the thread is already configured', async () => {
+		const runtime = createCodexServer({
+			projectDir: '/project',
+			instanceId: 1,
+			binaryPath: 'codex',
+		});
+
+		await runtime.start();
+		await runtime.sendPrompt('Hello Codex', {
+			plugins: [
+				{
+					ref: 'plugin-a@owner/repo',
+					pluginName: 'plugin-a',
+					marketplacePath: '/cache/repo/.agents/plugins/marketplace.json',
+				},
+			],
+			config: {},
+		});
+		await runtime.sendPrompt('Hello again', {
+			continuation: {mode: 'reuse-current'},
+			plugins: [
+				{
+					ref: 'plugin-a@owner/repo',
+					pluginName: 'plugin-a',
+					marketplacePath: '/cache/repo/.agents/plugins/marketplace.json',
+				},
+			],
+		});
+
+		const manager = mockState.current;
+		expect(manager).not.toBeNull();
+		const secondTurnRequest = manager!.requests
+			.filter(request => request.method === 'turn/start')
+			.at(1);
+		expect(secondTurnRequest?.params?.['input']).toEqual([
+			{type: 'text', text: 'Hello again', text_elements: []},
+			{
+				type: 'mention',
+				name: 'plugin-a',
+				path: 'plugin://plugin-a@athena-workflow-marketplace',
+			},
+		]);
+	});
+
+	it('fails prompt startup when required workflow plugins cannot be verified as installed', async () => {
+		const runtime = createCodexServer({
+			projectDir: '/project',
+			instanceId: 1,
+			binaryPath: 'codex',
+		});
+
+		await runtime.start();
+		const manager = mockState.current as
+			| (typeof mockState.current & {
+					sendRequest: (
+						method: string,
+						params?: Record<string, unknown>,
+					) => Promise<unknown>;
+			  })
+			| null;
+		expect(manager).not.toBeNull();
+
+		const originalSendRequest = manager!.sendRequest.bind(manager);
+		manager!.sendRequest = vi.fn(async (method, params) => {
+			if (method === 'plugin/read') {
+				return {
+					plugin: {
+						summary: {
+							installed: false,
+						},
+					},
+				};
+			}
+			return originalSendRequest(method, params);
+		});
+
+		await expect(
+			runtime.sendPrompt('Hello Codex', {
+				plugins: [
+					{
+						ref: 'plugin-a@owner/repo',
+						pluginName: 'plugin-a',
+						marketplacePath: '/cache/repo/.agents/plugins/marketplace.json',
+					},
+				],
+				config: {},
+			}),
+		).rejects.toThrow(/did not report workflow plugin as installed/i);
+
+		expect(
+			manager!.requests.some(request => request.method === 'thread/start'),
+		).toBe(false);
 	});
 
 	it('starts ephemeral Codex threads without extended history persistence', async () => {

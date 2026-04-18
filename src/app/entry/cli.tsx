@@ -234,6 +234,8 @@ const cli = meow(
 			--timeout-ms    Hard timeout for exec run in milliseconds
 			--workflow      Override the active workflow for this run only (no config change)
 			--dry-run       Print resolved bootstrap (workflow, isolation, plugins, harness) and exit (exec mode)
+			--project       Scope workflow command to project config (workflow use)
+			--global        Scope workflow command to global config (workflow use, default)
 			--help          Show command help
 			--version       Show CLI version
 
@@ -325,6 +327,14 @@ const cli = meow(
 				type: 'boolean',
 				default: false,
 			},
+			project: {
+				type: 'boolean',
+				default: false,
+			},
+			global: {
+				type: 'boolean',
+				default: false,
+			},
 		},
 	},
 );
@@ -365,6 +375,8 @@ async function main(): Promise<void> {
 
 	if (command === 'workflow') {
 		const [subcommand = '', ...subcommandArgs] = commandArgs;
+		if (cli.flags.project) subcommandArgs.push('--project');
+		if (cli.flags.global) subcommandArgs.push('--global');
 
 		// Interactive install: renders MCP options wizard if servers have options
 		if (subcommand === 'install' && subcommandArgs[0]) {

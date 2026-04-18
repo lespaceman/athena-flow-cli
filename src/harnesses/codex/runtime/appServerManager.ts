@@ -138,7 +138,7 @@ export class AppServerManager extends EventEmitter<AppServerManagerEvents> {
 			}
 
 			const id = this.nextId++;
-			const msg: JsonRpcRequest = {method, id, ...(params && {params})};
+			const msg: JsonRpcRequest = {method, id, params: params ?? {}};
 
 			const timer = setTimeout(() => {
 				const p = this.pending.get(id);
@@ -155,7 +155,7 @@ export class AppServerManager extends EventEmitter<AppServerManagerEvents> {
 
 	sendNotification(method: string, params?: Record<string, unknown>): void {
 		if (!this.process?.stdin?.writable) return;
-		const msg = {method, ...(params && {params})};
+		const msg = {method, params: params ?? {}};
 		this.process.stdin.write(JSON.stringify(msg) + '\n');
 	}
 

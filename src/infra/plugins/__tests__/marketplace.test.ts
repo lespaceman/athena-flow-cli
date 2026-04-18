@@ -39,6 +39,7 @@ const {
 	listMarketplaceWorkflows,
 	listMarketplaceWorkflowsFromRepo,
 	resolveMarketplacePlugin,
+	resolveMarketplacePluginTarget,
 	resolveMarketplacePluginFromRepo,
 	resolveMarketplaceWorkflow,
 	resolveVersionedMarketplacePluginTarget,
@@ -340,6 +341,68 @@ describe('resolveMarketplacePlugin', () => {
 				'web-testing-toolkit@lespaceman/athena-workflow-marketplace',
 			),
 		).toThrow('remote source type which is not supported');
+	});
+
+	it('prefers npm-backed packaged artifacts for remote unpinned plugins when the marketplace source exposes a version', () => {
+		dirs.add(cacheBase);
+		dirs.add(`${cacheBase}/plugins/web-testing-toolkit`);
+		files[manifestPath] = JSON.stringify({
+			name: 'marketplace',
+			owner: {name: 'Test'},
+			plugins: [
+				{
+					name: 'web-testing-toolkit',
+					source: './plugins/web-testing-toolkit',
+				},
+			],
+		});
+		files[
+			`${cacheBase}/plugins/web-testing-toolkit/.codex-plugin/plugin.json`
+		] = JSON.stringify({version: '1.2.3'});
+		execFileSyncMock.mockImplementation((cmd: string, args: string[]) => {
+			if (
+				cmd === 'npm' &&
+				args[0] === 'pack' &&
+				args[1] === '@athenaflow/plugin-web-testing-toolkit@1.2.3'
+			) {
+				files[
+					'/home/testuser/.config/athena/plugin-packages/.tmp-fixture/plugin.tgz'
+				] = 'tarball';
+				return 'plugin.tgz';
+			}
+			if (cmd === 'tar' && args[0] === 'xzf') {
+				const extractDir = args[3] as string;
+				const packageDir = `${extractDir}/package`;
+				addPackagedPluginArtifacts(packageDir, '1.2.3');
+				return;
+			}
+			return;
+		});
+
+		const result = resolveMarketplacePluginTarget(
+			'web-testing-toolkit@lespaceman/athena-workflow-marketplace',
+		);
+
+		expect(result).toEqual({
+			ref: 'web-testing-toolkit@lespaceman/athena-workflow-marketplace',
+			pluginName: 'web-testing-toolkit',
+			marketplacePath:
+				'/home/testuser/.config/athena/plugin-packages/lespaceman/athena-workflow-marketplace/web-testing-toolkit/1.2.3/dist/1.2.3/.agents/plugins/marketplace.json',
+			pluginDir:
+				'/home/testuser/.config/athena/plugin-packages/lespaceman/athena-workflow-marketplace/web-testing-toolkit/1.2.3/dist/1.2.3/claude/plugin',
+			codexPluginDir:
+				'/home/testuser/.config/athena/plugin-packages/lespaceman/athena-workflow-marketplace/web-testing-toolkit/1.2.3/dist/1.2.3/codex/plugin',
+		});
+		expect(execFileSyncMock).toHaveBeenCalledWith(
+			'npm',
+			[
+				'pack',
+				'@athenaflow/plugin-web-testing-toolkit@1.2.3',
+				'--pack-destination',
+				'/home/testuser/.config/athena/plugin-packages/.tmp-fixture',
+			],
+			{encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe']},
+		);
 	});
 
 	it('throws when plugin source does not start with ./', () => {

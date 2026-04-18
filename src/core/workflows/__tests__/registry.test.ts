@@ -55,6 +55,7 @@ const resolveMarketplaceWorkflowMock = vi.fn(
 );
 const listMarketplaceWorkflowsFromRepoMock = vi.fn(() => []);
 const resolveWorkflowInstallMock = vi.fn();
+const pullMarketplaceRepoMock = vi.fn();
 
 vi.mock('../../../infra/plugins/marketplace', () => ({
 	isMarketplaceRef: (entry: string) =>
@@ -68,6 +69,7 @@ vi.mock('../../../infra/plugins/marketplace', () => ({
 		`${repoDir}/.athena-workflow/marketplace.json`,
 	resolveWorkflowInstall: (...args: unknown[]) =>
 		resolveWorkflowInstallMock(...args),
+	pullMarketplaceRepo: (...args: unknown[]) => pullMarketplaceRepoMock(...args),
 }));
 
 vi.mock('../builtins/index', () => ({
@@ -99,6 +101,7 @@ beforeEach(() => {
 	listMarketplaceWorkflowsFromRepoMock.mockReset();
 	listMarketplaceWorkflowsFromRepoMock.mockReturnValue([]);
 	resolveWorkflowInstallMock.mockReset();
+	pullMarketplaceRepoMock.mockReset();
 	resolveWorkflowInstallMock.mockImplementation((ref: string) => {
 		const atIdx = ref.indexOf('@');
 		const workflowName = atIdx >= 0 ? ref.slice(0, atIdx) : ref;
@@ -632,6 +635,7 @@ describe('updateWorkflow', () => {
 		const name = updateWorkflow('update-me');
 
 		expect(name).toBe('update-me');
+		expect(pullMarketplaceRepoMock).toHaveBeenCalledWith('owner', 'repo');
 		expect(
 			JSON.parse(
 				files[
@@ -650,6 +654,41 @@ describe('updateWorkflow', () => {
 				ref: 'update-me@owner/repo',
 			},
 		});
+	});
+
+	it('still upgrades when the recorded remote marketplace is not cached locally yet', () => {
+		pullMarketplaceRepoMock.mockImplementation(() => {
+			throw new Error(
+				'Marketplace repo owner/repo is not cached. It will be cloned on first use.',
+			);
+		});
+		files['/tmp/resolved-workflow.json'] = JSON.stringify({
+			name: 'update-me',
+			plugins: [],
+			promptTemplate: 'new',
+			workflowFile: 'workflow.md',
+		});
+		files['/tmp/workflow.md'] = '# Workflow';
+		files['/home/testuser/.config/athena/workflows/update-me/workflow.json'] =
+			JSON.stringify({
+				name: 'update-me',
+				plugins: [],
+				promptTemplate: 'old',
+				workflowFile: 'workflow.md',
+			});
+		files['/home/testuser/.config/athena/workflows/update-me/workflow.md'] =
+			'# Old Workflow';
+		files['/home/testuser/.config/athena/workflows/update-me/source.json'] =
+			JSON.stringify({
+				kind: 'marketplace',
+				ref: 'update-me@owner/repo',
+			});
+
+		expect(updateWorkflow('update-me')).toBe('update-me');
+		expect(resolveWorkflowInstallMock).toHaveBeenCalledWith(
+			'update-me@owner/repo',
+			[],
+		);
 	});
 
 	it('re-installs a local workflow from its recorded source path', () => {

@@ -64,6 +64,7 @@ export type UICommandContext = {
 	showSessions: () => void;
 	showSetup: () => void;
 	showWorkflowPicker: () => void;
+	showModelPicker: () => void;
 	sessionStats: SessionStatsSnapshot;
 };
 

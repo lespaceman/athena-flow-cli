@@ -2,7 +2,47 @@ import type {AppServerManager} from './appServerManager';
 import * as M from '../protocol/methods';
 import type {CodexWorkflowPluginRef} from '../../../core/workflows';
 
-export type CodexInstalledWorkflowPlugin = CodexWorkflowPluginRef;
+export type CodexInstalledWorkflowPlugin = CodexWorkflowPluginRef & {
+	marketplaceName?: string;
+};
+
+type PluginReadResponse = {
+	plugin?: {
+		marketplaceName?: string;
+		summary?: {
+			installed?: boolean;
+		};
+	};
+};
+
+function isPluginInstalled(response: unknown): boolean {
+	if (typeof response !== 'object' || response === null) {
+		return false;
+	}
+
+	return (response as PluginReadResponse).plugin?.summary?.installed === true;
+}
+
+async function readWorkflowPluginInstallationState(input: {
+	manager: AppServerManager;
+	plugin: CodexWorkflowPluginRef;
+}): Promise<CodexInstalledWorkflowPlugin | null> {
+	const response = await input.manager.sendRequest(M.PLUGIN_READ, {
+		marketplacePath: input.plugin.marketplacePath,
+		pluginName: input.plugin.pluginName,
+	});
+	if (!isPluginInstalled(response)) {
+		return null;
+	}
+	const marketplaceName =
+		typeof (response as PluginReadResponse).plugin?.marketplaceName === 'string'
+			? (response as PluginReadResponse).plugin?.marketplaceName
+			: undefined;
+	return {
+		...input.plugin,
+		...(marketplaceName ? {marketplaceName} : {}),
+	};
+}
 
 export async function ensureCodexWorkflowPluginsInstalled(input: {
 	manager: AppServerManager;
@@ -15,14 +55,36 @@ export async function ensureCodexWorkflowPluginsInstalled(input: {
 		return [];
 	}
 
+	const installedPlugins: CodexInstalledWorkflowPlugin[] = [];
 	for (const plugin of plugins) {
+		const installedBefore = await readWorkflowPluginInstallationState({
+			manager: input.manager,
+			plugin,
+		});
+		if (installedBefore) {
+			installedPlugins.push(installedBefore);
+			continue;
+		}
+
 		await input.manager.sendRequest(M.PLUGIN_INSTALL, {
 			marketplacePath: plugin.marketplacePath,
 			pluginName: plugin.pluginName,
 		});
+
+		const installedAfter = await readWorkflowPluginInstallationState({
+			manager: input.manager,
+			plugin,
+		});
+		if (installedAfter) {
+			installedPlugins.push(installedAfter);
+		} else {
+			throw new Error(
+				`Codex app-server did not report workflow plugin as installed: ${plugin.pluginName}`,
+			);
+		}
 	}
 
-	return plugins;
+	return installedPlugins;
 }
 
 export function buildCodexPluginInstallMessage(

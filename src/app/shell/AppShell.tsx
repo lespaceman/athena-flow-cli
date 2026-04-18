@@ -14,7 +14,7 @@ import DiagnosticsConsentDialog, {
 	type DiagnosticsConsentDecision,
 } from '../../ui/components/DiagnosticsConsentDialog';
 import ErrorBoundary from '../../ui/components/ErrorBoundary';
-import {HookProvider} from '../providers/RuntimeProvider';
+import {HookProvider, useRuntime} from '../providers/RuntimeProvider';
 import {useHarnessProcess} from '../process/useHarnessProcess';
 import {useHeaderMetrics} from '../../ui/hooks/useHeaderMetrics';
 import {useTerminalTitle} from '../../ui/hooks/useTerminalTitle';
@@ -88,6 +88,7 @@ import type {WorkflowConfig, WorkflowPlan} from '../../core/workflows';
 import type {TurnContinuation} from '../../core/runtime/process';
 import SetupWizard from '../../setup/SetupWizard';
 import WorkflowPicker from '../workflow/WorkflowPicker';
+import ModelPicker from '../modelPreferences/ModelPicker';
 import {hasProjectWorkflow} from '../../infra/plugins/config';
 import {bootstrapRuntimeConfig} from '../bootstrap/bootstrapConfig';
 import {useRuntimeSelectors} from './useRuntimeSelectors';
@@ -241,6 +242,7 @@ function AppContent({
 	onShowSessions,
 	onShowSetup,
 	onWorkflowSelected,
+	onModelSelected,
 	inputHistory,
 	sessionTelemetryMetricsRef,
 	onSessionTelemetrySnapshot,
@@ -263,6 +265,7 @@ function AppContent({
 	onShowSessions: () => void;
 	onShowSetup: () => void;
 	onWorkflowSelected: (workflowName: string) => void;
+	onModelSelected: (model: string) => void;
 	inputHistory: InputHistory;
 	sessionTelemetryMetricsRef: React.MutableRefObject<SessionMetrics>;
 	onSessionTelemetrySnapshot: (metrics: SessionMetrics) => void;
@@ -274,6 +277,7 @@ function AppContent({
 		useState(!hadWorkflowOnMount);
 	const [workflowPickerDismissible, setWorkflowPickerDismissible] =
 		useState(hadWorkflowOnMount);
+	const [modelPickerVisible, setModelPickerVisible] = useState(false);
 	const [uiState, setUiState] = useState(initialSessionUiState);
 	const [toastMessage, setToastMessage] = useState<string | null>(null);
 	const [diagnosticsConsent, setDiagnosticsConsent] = useState<
@@ -291,6 +295,7 @@ function AppContent({
 	const inputMode = uiState.inputMode;
 	const hintsForced = uiState.hintsForced;
 	const previousWorkflowPickerVisibleRef = useRef(workflowPickerVisible);
+	const previousModelPickerVisibleRef = useRef(modelPickerVisible);
 	const showRunOverlay = uiState.showRunOverlay;
 	const searchQuery = uiState.searchQuery;
 	const perfEnabled = isPerfEnabled();
@@ -317,6 +322,7 @@ function AppContent({
 	);
 
 	const theme = useTheme();
+	const runtime = useRuntime();
 	const {
 		feedEvents,
 		feedItems,
@@ -732,11 +738,15 @@ function AppContent({
 	}, []);
 
 	useEffect(() => {
-		if (previousWorkflowPickerVisibleRef.current && !workflowPickerVisible) {
+		if (
+			(previousWorkflowPickerVisibleRef.current && !workflowPickerVisible) ||
+			(previousModelPickerVisibleRef.current && !modelPickerVisible)
+		) {
 			dispatchUi({type: 'set_focus_mode', focusMode: 'input'});
 		}
 		previousWorkflowPickerVisibleRef.current = workflowPickerVisible;
-	}, [dispatchUi, workflowPickerVisible]);
+		previousModelPickerVisibleRef.current = modelPickerVisible;
+	}, [dispatchUi, workflowPickerVisible, modelPickerVisible]);
 
 	const submitPromptOrSlashCommand = useCallback(
 		(value: string) => {
@@ -799,6 +809,9 @@ function AppContent({
 					showWorkflowPicker: () => {
 						setWorkflowPickerDismissible(true);
 						setWorkflowPickerVisible(true);
+					},
+					showModelPicker: () => {
+						setModelPickerVisible(true);
 					},
 					sessionStats: {
 						metrics: {
@@ -1169,7 +1182,11 @@ function AppContent({
 	});
 
 	useGlobalKeyboard({
-		isActive: !dialogActive && !pagerActive && !workflowPickerVisible,
+		isActive:
+			!dialogActive &&
+			!pagerActive &&
+			!workflowPickerVisible &&
+			!modelPickerVisible,
 		isHarnessRunning,
 		focusMode,
 		dialogActive,
@@ -1267,7 +1284,11 @@ function AppContent({
 	});
 
 	usePanelMouseWheel({
-		isActive: !dialogActive && !pagerActive && !workflowPickerVisible,
+		isActive:
+			!dialogActive &&
+			!pagerActive &&
+			!workflowPickerVisible &&
+			!modelPickerVisible,
 		rects: panelMouseRects,
 		onFeedFocus: () => dispatchUi({type: 'set_focus_mode', focusMode: 'feed'}),
 		onMessageFocus: splitMode
@@ -1504,6 +1525,19 @@ function AppContent({
 							onWorkflowSelected(name);
 						}}
 					/>
+				) : modelPickerVisible ? (
+					<ModelPicker
+						projectDir={projectDir}
+						rows={feedHeaderRows + feedContentRows}
+						harness={harness}
+						runtime={runtime}
+						currentModelName={modelName}
+						onClose={() => setModelPickerVisible(false)}
+						onComplete={selectedModel => {
+							setModelPickerVisible(false);
+							onModelSelected(selectedModel);
+						}}
+					/>
 				) : splitMode ? (
 					<Box flexDirection="row">
 						<Box width={messagePanelWidth + 1} flexShrink={0}>
@@ -1572,7 +1606,10 @@ function AppContent({
 					textColor={theme.text}
 					inputPlaceholderColor={inputPlaceholderColor}
 					isInputActive={
-						focusMode === 'input' && !dialogActive && !workflowPickerVisible
+						focusMode === 'input' &&
+						!dialogActive &&
+						!workflowPickerVisible &&
+						!modelPickerVisible
 					}
 					handleInputChange={handleMainInputChange}
 					handleInputSubmit={handleInputSubmit}
@@ -2210,6 +2247,10 @@ export default function App({
 		refreshRuntime();
 	}, [refreshRuntime]);
 
+	const handleModelSelected = useCallback(() => {
+		refreshRuntime();
+	}, [refreshRuntime]);
+
 	if (phase.type === 'setup') {
 		return (
 			<MaybeProfiler
@@ -2279,6 +2320,7 @@ export default function App({
 					onShowSessions={handleShowSessions}
 					onShowSetup={handleShowSetup}
 					onWorkflowSelected={handleWorkflowSelected}
+					onModelSelected={handleModelSelected}
 					inputHistory={inputHistory}
 					sessionTelemetryMetricsRef={sessionTelemetryMetricsRef}
 					onSessionTelemetrySnapshot={metrics => {
