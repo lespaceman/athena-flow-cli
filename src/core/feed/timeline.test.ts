@@ -1321,6 +1321,7 @@ describe('VERBOSE_ONLY_KINDS', () => {
 		expect(VERBOSE_ONLY_KINDS.has('run.start')).toBe(true);
 		expect(VERBOSE_ONLY_KINDS.has('run.end')).toBe(true);
 		expect(VERBOSE_ONLY_KINDS.has('config.change')).toBe(true);
+		expect(VERBOSE_ONLY_KINDS.has('turn.diff')).toBe(true);
 	});
 
 	it('excludes tool and action event kinds', () => {

@@ -280,7 +280,7 @@ describe('translateNotification', () => {
 		expect(result.kind).toBe('tool.post');
 	});
 
-	it('maps item/started (webSearch) to a notification with query details', () => {
+	it('maps item/started (webSearch) to tool.pre with WebSearch tool name', () => {
 		const result = translateNotification({
 			method: 'item/started',
 			params: {
@@ -289,17 +289,19 @@ describe('translateNotification', () => {
 				item: {id: 'ws-1', type: 'webSearch', query: 'cheapest mac'},
 			},
 		});
-		expect(result.kind).toBe('notification');
+		expect(result.kind).toBe('tool.pre');
+		expect(result.toolName).toBe('WebSearch');
+		expect(result.toolUseId).toBe('ws-1');
 		expect(result.data).toEqual(
 			expect.objectContaining({
-				notification_type: 'web.search',
-				phase: 'started',
-				query: 'cheapest mac',
+				tool_name: 'WebSearch',
+				tool_input: {query: 'cheapest mac'},
+				tool_use_id: 'ws-1',
 			}),
 		);
 	});
 
-	it('maps item/completed (webSearch) to a notification with action details', () => {
+	it('maps item/completed (webSearch) to tool.post with query and action', () => {
 		const result = translateNotification({
 			method: 'item/completed',
 			params: {
@@ -314,13 +316,15 @@ describe('translateNotification', () => {
 				},
 			},
 		});
-		expect(result.kind).toBe('notification');
+		expect(result.kind).toBe('tool.post');
+		expect(result.toolName).toBe('WebSearch');
+		expect(result.toolUseId).toBe('ws-1');
 		expect(result.data).toEqual(
 			expect.objectContaining({
-				notification_type: 'web.search',
-				phase: 'completed',
-				query: 'cheapest mac',
-				action_type: 'search',
+				tool_name: 'WebSearch',
+				tool_input: {query: 'cheapest mac'},
+				tool_use_id: 'ws-1',
+				tool_response: {type: 'search', query: 'cheapest mac'},
 			}),
 		);
 	});

@@ -248,22 +248,6 @@ describe('FeedMapper', () => {
 							kind: 'notification',
 							hookName: 'item/completed',
 							data: {
-								message: 'Opened search result https://example.com.',
-								notification_type: 'web.search',
-								phase: 'completed',
-								query: 'codex app server',
-								action_type: 'openPage',
-								url: 'https://example.com',
-							},
-						}),
-					)
-					.at(-1)?.kind,
-				mapper
-					.mapEvent(
-						makeRuntimeEvent('item/completed', {
-							kind: 'notification',
-							hookName: 'item/completed',
-							data: {
 								message: 'Review finished: current changes.',
 								notification_type: 'item.exitedReviewMode.completed',
 								item_id: 'review-1',
@@ -309,11 +293,70 @@ describe('FeedMapper', () => {
 				'terminal.input',
 				'skills.changed',
 				'skills.loaded',
-				'web.search',
 				'review.status',
 				'image.view',
 				'context.compaction',
 			]);
+		});
+
+		it('emits dedicated web.search rows alongside WebSearch tool events', () => {
+			const mapper = createFeedMapper();
+			const started = mapper.mapEvent(
+				makeRuntimeEvent('item/started', {
+					kind: 'tool.pre',
+					hookName: 'item/started',
+					toolName: 'WebSearch',
+					toolUseId: 'ws-1',
+					data: {
+						tool_name: 'WebSearch',
+						tool_input: {query: 'codex app server'},
+						tool_use_id: 'ws-1',
+					},
+				}),
+			);
+			const completed = mapper.mapEvent(
+				makeRuntimeEvent('item/completed', {
+					kind: 'tool.post',
+					hookName: 'item/completed',
+					toolName: 'WebSearch',
+					toolUseId: 'ws-1',
+					data: {
+						tool_name: 'WebSearch',
+						tool_input: {query: 'codex app server'},
+						tool_use_id: 'ws-1',
+						tool_response: {
+							type: 'openPage',
+							url: 'https://example.com',
+						},
+					},
+				}),
+			);
+
+			expect(started.some(event => event.kind === 'tool.pre')).toBe(true);
+			expect(started).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						kind: 'web.search',
+						data: expect.objectContaining({
+							phase: 'started',
+							query: 'codex app server',
+						}),
+					}),
+				]),
+			);
+			expect(completed.some(event => event.kind === 'tool.post')).toBe(true);
+			expect(completed).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						kind: 'web.search',
+						data: expect.objectContaining({
+							phase: 'completed',
+							action_type: 'openPage',
+							url: 'https://example.com',
+						}),
+					}),
+				]),
+			);
 		});
 
 		it('correlates server.request.resolved to the original request event', () => {

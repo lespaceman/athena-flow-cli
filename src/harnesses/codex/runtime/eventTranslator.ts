@@ -266,70 +266,6 @@ function permissionRequestEvent(
 	};
 }
 
-function webSearchNotification(
-	item: Record<string, unknown>,
-	phase: 'started' | 'completed',
-): CodexTranslatedEvent {
-	const query =
-		typeof item['query'] === 'string' ? (item['query'] as string) : undefined;
-	const action = asRecord(item['action']);
-	const actionType =
-		typeof action['type'] === 'string' ? (action['type'] as string) : undefined;
-	const url =
-		typeof action['url'] === 'string' ? (action['url'] as string) : undefined;
-	const pattern =
-		typeof action['pattern'] === 'string'
-			? (action['pattern'] as string)
-			: undefined;
-	const queries = Array.isArray(action['queries'])
-		? (action['queries'] as string[])
-		: undefined;
-
-	let message = query ? `Searching web for "${query}".` : 'Searching the web.';
-	if (phase === 'completed') {
-		switch (actionType) {
-			case 'openPage':
-				message = url
-					? `Opened search result ${url}.`
-					: 'Opened search result.';
-				break;
-			case 'findInPage':
-				message = pattern
-					? `Found "${pattern}" in ${url ?? 'the page'}.`
-					: `Searched within ${url ?? 'the page'}.`;
-				break;
-			case 'search':
-				if (queries && queries.length > 1) {
-					message = `Ran ${queries.length} search queries.`;
-				} else if (query) {
-					message = `Searched web for "${query}".`;
-				}
-				break;
-			default:
-				message = query
-					? `Finished web search for "${query}".`
-					: 'Finished web search.';
-		}
-	}
-
-	return {
-		kind: 'notification',
-		data: {
-			title: phase === 'started' ? 'Web search' : 'Web search complete',
-			message,
-			notification_type: 'web.search',
-			item_id: typeof item['id'] === 'string' ? item['id'] : undefined,
-			phase,
-			query,
-			action_type: actionType,
-			url,
-			pattern,
-			queries,
-		},
-		expectsDecision: false,
-	};
-}
-
 function extractMcpToolNameFromMessage(message: string): string | null {
 	const quotedToolMatch =
 		/(?:run|use)(?: the)? tool ["']([^"']+)["']/i.exec(message) ??
@@ -610,15 +546,13 @@ export function translateNotification(
 			if (itemType === 'collabAgentToolCall') {
 				return translateCollabStarted(item);
 			}
-			if (itemType === 'webSearch') {
-				return webSearchNotification(item, 'started');
-			}
 
 			const toolName = resolveToolName(itemType, item);
 			if (
 				itemType === 'commandExecution' ||
 				itemType === 'fileChange' ||
 				itemType === 'mcpToolCall' ||
+				itemType === 'webSearch' ||
 				itemType === 'dynamicToolCall'
 			) {
 				return {
@@ -655,9 +589,6 @@ export function translateNotification(
 			if (itemType === 'collabAgentToolCall') {
 				return translateCollabCompleted(item);
 			}
-			if (itemType === 'webSearch') {
-				return webSearchNotification(item, 'completed');
-			}
 
 			if (itemType === 'agentMessage') {
 				return {
@@ -681,6 +612,7 @@ export function translateNotification(
 				itemType === 'commandExecution' ||
 				itemType === 'fileChange' ||
 				itemType === 'mcpToolCall' ||
+				itemType === 'webSearch' ||
 				itemType === 'dynamicToolCall'
 			) {
 				const itemStatus = item['status'] as string;

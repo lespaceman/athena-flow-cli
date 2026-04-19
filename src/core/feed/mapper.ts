@@ -201,10 +201,16 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 
 		fe.title = generateTitle(fe);
 
-		// Index for decision correlation
-		eventIdByRequestId.set(runtimeEvent.id, eventId);
-		eventKindByRequestId.set(runtimeEvent.id, kind);
-		resolvedRequestById.set(runtimeEvent.id, {event_id: eventId, kind});
+		// Index only request-bearing events for later decision/resolution correlation.
+		if (
+			runtimeEvent.interaction.expectsDecision ||
+			kind === 'permission.request' ||
+			kind === 'stop.request'
+		) {
+			eventIdByRequestId.set(runtimeEvent.id, eventId);
+			eventKindByRequestId.set(runtimeEvent.id, kind);
+			resolvedRequestById.set(runtimeEvent.id, {event_id: eventId, kind});
+		}
 
 		return fe;
 	}
@@ -873,6 +879,32 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 					toolPreIndex.set(toolUseId, fe.event_id);
 				}
 				results.push(fe);
+				if (toolName === 'WebSearch') {
+					results.push(
+						makeEvent(
+							'web.search',
+							'info',
+							'system',
+							{
+								message: (() => {
+									const query = readString(
+										readObject(d['tool_input'])['query'],
+									);
+									return query
+										? `Searching web for "${query}".`
+										: 'Searching the web.';
+								})(),
+								phase: 'started',
+								query: readString(readObject(d['tool_input'])['query']),
+								item_id: toolUseId,
+							} satisfies import('./types').WebSearchData,
+							event,
+							toolUseId
+								? {parent_event_id: fe.event_id, tool_use_id: toolUseId}
+								: {parent_event_id: fe.event_id},
+						),
+					);
+				}
 
 				if (toolName === 'TodoWrite' && fe.actor_id === 'agent:root') {
 					lastRootTasks = extractTodoItems(readObject(d['tool_input']));
@@ -898,21 +930,69 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 				const parentId = toolUseId ? toolPreIndex.get(toolUseId) : undefined;
 				const toolName =
 					event.toolName ?? readString(d['tool_name']) ?? 'Unknown';
-				results.push(
-					makeEvent(
-						'tool.post',
-						'info',
-						resolveToolActor(),
-						{
-							tool_name: toolName,
-							tool_input: readObject(d['tool_input']),
-							tool_use_id: toolUseId,
-							tool_response: d.tool_response,
-						} satisfies import('./types').ToolPostData,
-						event,
-						toolUseCause(toolUseId, parentId),
-					),
+				const postEvent = makeEvent(
+					'tool.post',
+					'info',
+					resolveToolActor(),
+					{
+						tool_name: toolName,
+						tool_input: readObject(d['tool_input']),
+						tool_use_id: toolUseId,
+						tool_response: d.tool_response,
+					} satisfies import('./types').ToolPostData,
+					event,
+					toolUseCause(toolUseId, parentId),
 				);
+				results.push(postEvent);
+				if (toolName === 'WebSearch') {
+					const response = readObject(d['tool_response']);
+					const actionType = readString(response['type']);
+					const query = readString(readObject(d['tool_input'])['query']);
+					const url = readString(response['url']);
+					const pattern = readString(response['pattern']);
+					const queries = Array.isArray(response['queries'])
+						? (response['queries'] as string[])
+						: undefined;
+					const message =
+						actionType === 'openPage'
+							? url
+								? `Opened search result ${url}.`
+								: 'Opened search result.'
+							: actionType === 'findInPage'
+								? pattern
+									? `Found "${pattern}" in ${url ?? 'the page'}.`
+									: `Searched within ${url ?? 'the page'}.`
+								: actionType === 'search'
+									? queries && queries.length > 1
+										? `Ran ${queries.length} search queries.`
+										: query
+											? `Searched web for "${query}".`
+											: 'Finished web search.'
+									: query
+										? `Finished web search for "${query}".`
+										: 'Finished web search.';
+					results.push(
+						makeEvent(
+							'web.search',
+							'info',
+							'system',
+							{
+								message,
+								phase: 'completed',
+								query,
+								action_type: actionType,
+								url,
+								pattern,
+								queries,
+								item_id: toolUseId,
+							} satisfies import('./types').WebSearchData,
+							event,
+							toolUseId
+								? {parent_event_id: postEvent.event_id, tool_use_id: toolUseId}
+								: {parent_event_id: postEvent.event_id},
+						),
+					);
+				}
 				break;
 			}
 
