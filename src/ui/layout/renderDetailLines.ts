@@ -1,4 +1,5 @@
 import {type FeedEvent} from '../../core/feed/types';
+import {isDefaultRenderKind} from '../../core/feed/defaultRender';
 import {extractToolOutput} from '../tooling/toolExtractors';
 import {
 	parseToolName,
@@ -238,6 +239,7 @@ function extractToolSubject(
 
 /** Compact label for any event type. Tool events use the tool name. */
 function eventLabel(event: FeedEvent): string {
+	if (isDefaultRenderKind(event.kind)) return 'Event';
 	switch (event.kind) {
 		case 'tool.delta':
 		case 'tool.pre':

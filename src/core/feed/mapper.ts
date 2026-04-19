@@ -1,6 +1,8 @@
 // src/feed/mapper.ts
 
 import type {RuntimeEvent, RuntimeDecision} from '../runtime/types';
+import type {RuntimeEventDataMap} from '../runtime/events';
+import type {PermissionSuggestion} from '../../shared/types/permissionSuggestion';
 import type {
 	FeedEvent,
 	FeedEventKind,
@@ -442,10 +444,10 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 		};
 		const readSuggestionArray = (
 			...values: unknown[]
-		): Array<{type: string; tool: string}> | undefined => {
+		): PermissionSuggestion[] | undefined => {
 			for (const value of values) {
 				if (Array.isArray(value)) {
-					return value as Array<{type: string; tool: string}>;
+					return value as PermissionSuggestion[];
 				}
 			}
 			return undefined;
@@ -1158,245 +1160,236 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 				const notificationType = readString(d['notification_type']);
 				const message = readString(d['message']) ?? '';
 				const title = readString(d['title']);
-				if (notificationType === 'codex.error') {
-					results.push(
-						makeEvent(
-							'runtime.error',
-							'error',
-							'system',
-							{
-								message,
-								title,
-								thread_id: readString(d['thread_id']),
-								turn_id: readString(d['turn_id']),
-								error_code: readString(d['error_code']),
-								will_retry: readBoolean(d['will_retry']),
-							} satisfies import('./types').RuntimeErrorData,
-							event,
-						),
-					);
-					break;
-				}
-				if (notificationType === 'thread.status_changed') {
-					results.push(
-						makeEvent(
-							'thread.status',
-							'info',
-							'system',
-							{
-								message,
-								thread_id: readString(d['thread_id']),
-								status_type: readString(d['status_type']),
-								active_flags: Array.isArray(d['active_flags'])
-									? (d['active_flags'] as string[])
-									: undefined,
-							} satisfies import('./types').ThreadStatusData,
-							event,
-						),
-					);
-					break;
-				}
-				if (notificationType === 'turn.diff_updated') {
-					results.push(
-						makeEvent(
-							'turn.diff',
-							'info',
-							'system',
-							{
-								message,
-								thread_id: readString(d['thread_id']),
-								turn_id: readString(d['turn_id']),
-								diff: readString(d['diff']) ?? '',
-							} satisfies import('./types').TurnDiffData,
-							event,
-						),
-					);
-					break;
-				}
-				if (notificationType === 'server_request.resolved') {
-					const requestId =
-						d['request_id'] !== undefined ? String(d['request_id']) : undefined;
-					const resolved = requestId
-						? resolvedRequestById.get(requestId)
-						: undefined;
-					results.push(
-						makeEvent(
-							'server.request.resolved',
-							'info',
-							'system',
-							{
-								message,
-								request_id: requestId,
-								resolved_kind: resolved?.kind,
-							} satisfies import('./types').ServerRequestResolvedData,
-							event,
-							resolved ? {parent_event_id: resolved.event_id} : undefined,
-						),
-					);
-					break;
-				}
-				if (notificationType === 'web.search') {
-					results.push(
-						makeEvent(
-							'web.search',
-							'info',
-							'system',
-							{
-								message,
-								phase:
-									readString(d['phase']) === 'completed'
-										? 'completed'
-										: 'started',
-								query: readString(d['query']),
-								action_type: readString(d['action_type']),
-								url: readString(d['url']),
-								pattern: readString(d['pattern']),
-								queries: Array.isArray(d['queries'])
-									? (d['queries'] as string[])
-									: undefined,
-								item_id: readString(d['item_id']),
-							} satisfies import('./types').WebSearchData,
-							event,
-						),
-					);
-					break;
-				}
-				if (
-					notificationType === 'item.enteredReviewMode.started' ||
-					notificationType === 'item.enteredReviewMode.completed' ||
-					notificationType === 'item.exitedReviewMode.started' ||
-					notificationType === 'item.exitedReviewMode.completed'
-				) {
-					const item = readObject(d['item']);
-					results.push(
+
+				type NotificationData = RuntimeEventDataMap['notification'] &
+					Record<string, unknown>;
+				type NotificationRouteCtx = {
+					notificationType: string;
+					message: string;
+					title: string | undefined;
+				};
+				type NotificationRoute = (
+					data: NotificationData,
+					runtimeEvent: RuntimeEvent,
+					ctx: NotificationRouteCtx,
+				) => FeedEvent[];
+
+				const reviewRoute: NotificationRoute = (data, runtimeEvent, ctx) => {
+					const item = readObject(data['item']);
+					return [
 						makeEvent(
 							'review.status',
 							'info',
 							'system',
 							{
-								message,
-								phase: notificationType.endsWith('.completed')
+								message: ctx.message,
+								phase: ctx.notificationType.endsWith('.completed')
 									? 'completed'
 									: 'started',
 								review: readString(item['review']),
-								item_id: readString(d['item_id']),
+								item_id: readString(data['item_id']),
 							} satisfies import('./types').ReviewStatusData,
-							event,
+							runtimeEvent,
 						),
-					);
-					break;
-				}
-				if (
-					notificationType === 'item.imageView.started' ||
-					notificationType === 'item.imageView.completed'
-				) {
-					const item = readObject(d['item']);
-					results.push(
+					];
+				};
+
+				const imageViewRoute: NotificationRoute = (data, runtimeEvent, ctx) => {
+					const item = readObject(data['item']);
+					return [
 						makeEvent(
 							'image.view',
 							'info',
 							'system',
 							{
-								message,
+								message: ctx.message,
 								path: readString(item['path']),
-								item_id: readString(d['item_id']),
+								item_id: readString(data['item_id']),
 							} satisfies import('./types').ImageViewData,
-							event,
+							runtimeEvent,
 						),
-					);
-					break;
-				}
-				if (
-					notificationType === 'item.contextCompaction.started' ||
-					notificationType === 'item.contextCompaction.completed'
-				) {
-					results.push(
+					];
+				};
+
+				const contextCompactionRoute: NotificationRoute = (
+					data,
+					runtimeEvent,
+					ctx,
+				) => [
+					makeEvent(
+						'context.compaction',
+						'info',
+						'system',
+						{
+							message: ctx.message,
+							phase: ctx.notificationType.endsWith('.completed')
+								? 'completed'
+								: 'started',
+							item_id: readString(data['item_id']),
+						} satisfies import('./types').ContextCompactionData,
+						runtimeEvent,
+					),
+				];
+
+				const NOTIFICATION_ROUTES: Record<string, NotificationRoute> = {
+					'codex.error': (data, runtimeEvent, ctx) => [
 						makeEvent(
-							'context.compaction',
+							'runtime.error',
+							'error',
+							'system',
+							{
+								message: ctx.message,
+								title: ctx.title,
+								thread_id: readString(data['thread_id']),
+								turn_id: readString(data['turn_id']),
+								error_code: readString(data['error_code']),
+								will_retry: readBoolean(data['will_retry']),
+							} satisfies import('./types').RuntimeErrorData,
+							runtimeEvent,
+						),
+					],
+					'thread.status_changed': (data, runtimeEvent, ctx) => [
+						makeEvent(
+							'thread.status',
 							'info',
 							'system',
 							{
-								message,
-								phase: notificationType.endsWith('.completed')
-									? 'completed'
-									: 'started',
-								item_id: readString(d['item_id']),
-							} satisfies import('./types').ContextCompactionData,
-							event,
+								message: ctx.message,
+								thread_id: readString(data['thread_id']),
+								status_type: readString(data['status_type']),
+								active_flags: Array.isArray(data['active_flags'])
+									? (data['active_flags'] as string[])
+									: undefined,
+							} satisfies import('./types').ThreadStatusData,
+							runtimeEvent,
 						),
-					);
-					break;
-				}
-				if (notificationType === 'mcp_tool_call.progress') {
-					results.push(
+					],
+					'turn.diff_updated': (data, runtimeEvent, ctx) => [
+						makeEvent(
+							'turn.diff',
+							'info',
+							'system',
+							{
+								message: ctx.message,
+								thread_id: readString(data['thread_id']),
+								turn_id: readString(data['turn_id']),
+								diff: readString(data['diff']) ?? '',
+							} satisfies import('./types').TurnDiffData,
+							runtimeEvent,
+						),
+					],
+					'server_request.resolved': (data, runtimeEvent, ctx) => {
+						const requestId =
+							data['request_id'] !== undefined
+								? String(data['request_id'])
+								: undefined;
+						const resolved = requestId
+							? resolvedRequestById.get(requestId)
+							: undefined;
+						return [
+							makeEvent(
+								'server.request.resolved',
+								'info',
+								'system',
+								{
+									message: ctx.message,
+									request_id: requestId,
+									resolved_kind: resolved?.kind,
+								} satisfies import('./types').ServerRequestResolvedData,
+								runtimeEvent,
+								resolved ? {parent_event_id: resolved.event_id} : undefined,
+							),
+						];
+					},
+					'item.enteredReviewMode.started': reviewRoute,
+					'item.enteredReviewMode.completed': reviewRoute,
+					'item.exitedReviewMode.started': reviewRoute,
+					'item.exitedReviewMode.completed': reviewRoute,
+					'item.imageView.started': imageViewRoute,
+					'item.imageView.completed': imageViewRoute,
+					'item.contextCompaction.started': contextCompactionRoute,
+					'item.contextCompaction.completed': contextCompactionRoute,
+					'mcp_tool_call.progress': (_data, runtimeEvent, ctx) => [
 						makeEvent(
 							'mcp.progress',
 							'info',
 							'system',
 							{
-								message,
-								title,
+								message: ctx.message,
+								title: ctx.title,
 							} satisfies import('./types').McpProgressData,
-							event,
+							runtimeEvent,
 						),
-					);
-					break;
-				}
-				if (notificationType === 'command_execution.terminal_interaction') {
-					results.push(
+					],
+					'command_execution.terminal_interaction': (
+						_data,
+						runtimeEvent,
+						ctx,
+					) => [
 						makeEvent(
 							'terminal.input',
 							'info',
 							'system',
 							{
-								message,
-								input_preview: message,
+								message: ctx.message,
+								input_preview: ctx.message,
 							} satisfies import('./types').TerminalInputData,
-							event,
+							runtimeEvent,
 						),
-					);
-					break;
-				}
-				if (notificationType === 'skills.changed') {
-					results.push(
+					],
+					'skills.changed': (_data, runtimeEvent, ctx) => [
 						makeEvent(
 							'skills.changed',
 							'info',
 							'system',
 							{
-								message,
+								message: ctx.message,
 							} satisfies import('./types').SkillsChangedData,
-							event,
+							runtimeEvent,
 						),
-					);
-					break;
-				}
-				if (notificationType === 'skills.loaded') {
-					const payload =
-						typeof event.payload === 'object' && event.payload !== null
-							? (event.payload as Record<string, unknown>)
-							: null;
+					],
+					'skills.loaded': (_data, runtimeEvent, ctx) => {
+						const payload =
+							typeof runtimeEvent.payload === 'object' &&
+							runtimeEvent.payload !== null
+								? (runtimeEvent.payload as Record<string, unknown>)
+								: null;
+						return [
+							makeEvent(
+								'skills.loaded',
+								'info',
+								'system',
+								{
+									message: ctx.message,
+									count:
+										typeof payload?.['count'] === 'number'
+											? (payload['count'] as number)
+											: undefined,
+									error_count:
+										typeof payload?.['error_count'] === 'number'
+											? (payload['error_count'] as number)
+											: undefined,
+								} satisfies import('./types').SkillsLoadedData,
+								runtimeEvent,
+							),
+						];
+					},
+				};
+
+				const route = notificationType
+					? NOTIFICATION_ROUTES[notificationType]
+					: undefined;
+				if (route && notificationType) {
 					results.push(
-						makeEvent(
-							'skills.loaded',
-							'info',
-							'system',
-							{
-								message,
-								count:
-									typeof payload?.['count'] === 'number'
-										? (payload['count'] as number)
-										: undefined,
-								error_count:
-									typeof payload?.['error_count'] === 'number'
-										? (payload['error_count'] as number)
-										: undefined,
-							} satisfies import('./types').SkillsLoadedData,
-							event,
-						),
+						...route(d as NotificationData, event, {
+							notificationType,
+							message,
+							title,
+						}),
 					);
 					break;
 				}
+
 				results.push(
 					makeEvent(
 						'notification',

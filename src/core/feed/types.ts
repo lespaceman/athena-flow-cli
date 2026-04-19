@@ -1,5 +1,8 @@
 // src/feed/types.ts
 
+import type {PermissionSuggestion} from '../../shared/types/permissionSuggestion';
+import type {RuntimeEventDataMap} from '../runtime/events';
+
 // ── Base ──────────────────────────────────────────────────
 
 export type FeedEventKind =
@@ -176,7 +179,7 @@ export type PermissionRequestData = {
 	tool_name: string;
 	tool_input: Record<string, unknown>;
 	tool_use_id?: string;
-	permission_suggestions?: Array<{type: string; tool: string}>;
+	permission_suggestions?: PermissionSuggestion[];
 	network_context?: {
 		host?: string;
 		protocol?: string;
@@ -469,3 +472,81 @@ export type FeedEvent =
 			kind: 'elicitation.result';
 			data: ElicitationResultData;
 	  });
+
+// ── Compile-time drift checks ────────────────────────────
+//
+// For every feed kind that the mapper emits 1:1 from a same-named runtime
+// kind, the feed's per-kind data type must be assignable to the runtime
+// map's corresponding shape. This guarantees that any field the feed reads
+// from a runtime event's `data` also exists (by name and compatible type)
+// on the runtime data contract — preventing silent drift between the two
+// maps. If you add or rename a field on one side without mirroring it on
+// the other, the corresponding `AssertFeedExtendsRuntime<…>` row below
+// will fail to typecheck.
+//
+// Feed-only synthesized kinds (run.start, run.end, agent.message,
+// plan.update, reasoning.summary, todo.*, web.search, runtime.error,
+// thread.status, turn.diff, server.request.resolved, review.status,
+// image.view, context.compaction, mcp.progress, terminal.input,
+// skills.changed, skills.loaded, unknown.hook, permission.decision,
+// stop.decision) intentionally have no runtime counterpart and are not
+// listed here.
+type AssertFeedExtendsRuntime<F, K extends keyof RuntimeEventDataMap> = [
+	F,
+] extends [RuntimeEventDataMap[K]]
+	? true
+	: {
+			__error: 'Feed data shape is not assignable to runtime data shape';
+			kind: K;
+			feed: F;
+			runtime: RuntimeEventDataMap[K];
+		};
+
+export type _RuntimeFeedCompatibility = {
+	'session.start': AssertFeedExtendsRuntime<SessionStartData, 'session.start'>;
+	'session.end': AssertFeedExtendsRuntime<SessionEndData, 'session.end'>;
+	'user.prompt': AssertFeedExtendsRuntime<UserPromptData, 'user.prompt'>;
+	'usage.update': AssertFeedExtendsRuntime<UsageUpdateData, 'usage.update'>;
+	'tool.delta': AssertFeedExtendsRuntime<ToolDeltaData, 'tool.delta'>;
+	'tool.pre': AssertFeedExtendsRuntime<ToolPreData, 'tool.pre'>;
+	'tool.post': AssertFeedExtendsRuntime<ToolPostData, 'tool.post'>;
+	'tool.failure': AssertFeedExtendsRuntime<ToolFailureData, 'tool.failure'>;
+	'permission.request': AssertFeedExtendsRuntime<
+		PermissionRequestData,
+		'permission.request'
+	>;
+	'permission.denied': AssertFeedExtendsRuntime<
+		PermissionDeniedData,
+		'permission.denied'
+	>;
+	'stop.request': AssertFeedExtendsRuntime<StopRequestData, 'stop.request'>;
+	'stop.failure': AssertFeedExtendsRuntime<StopFailureData, 'stop.failure'>;
+	'subagent.start': AssertFeedExtendsRuntime<
+		SubagentStartData,
+		'subagent.start'
+	>;
+	'subagent.stop': AssertFeedExtendsRuntime<SubagentStopData, 'subagent.stop'>;
+	notification: AssertFeedExtendsRuntime<NotificationData, 'notification'>;
+	'compact.pre': AssertFeedExtendsRuntime<PreCompactData, 'compact.pre'>;
+	'compact.post': AssertFeedExtendsRuntime<PostCompactData, 'compact.post'>;
+	setup: AssertFeedExtendsRuntime<SetupData, 'setup'>;
+	'teammate.idle': AssertFeedExtendsRuntime<TeammateIdleData, 'teammate.idle'>;
+	'task.created': AssertFeedExtendsRuntime<TaskCreatedData, 'task.created'>;
+	'task.completed': AssertFeedExtendsRuntime<
+		TaskCompletedData,
+		'task.completed'
+	>;
+	'config.change': AssertFeedExtendsRuntime<ConfigChangeData, 'config.change'>;
+	'cwd.changed': AssertFeedExtendsRuntime<CwdChangedData, 'cwd.changed'>;
+	'file.changed': AssertFeedExtendsRuntime<FileChangedData, 'file.changed'>;
+	'elicitation.request': AssertFeedExtendsRuntime<
+		ElicitationRequestData,
+		'elicitation.request'
+	>;
+	'elicitation.result': AssertFeedExtendsRuntime<
+		ElicitationResultData,
+		'elicitation.result'
+	>;
+} & {
+	[K in keyof RuntimeEventDataMap]?: true;
+};

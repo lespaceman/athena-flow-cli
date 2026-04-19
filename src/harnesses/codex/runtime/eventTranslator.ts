@@ -1,5 +1,5 @@
 import type {
-	RuntimeEventData,
+	RuntimeEventDataMap,
 	RuntimeEventKind,
 } from '../../../core/runtime/events';
 import type {
@@ -69,13 +69,21 @@ import type {
 import {getCodexUsageDelta, getCodexUsageTotals} from './tokenUsage';
 import * as M from '../protocol/methods';
 
+/**
+ * Discriminated per-kind shape: `data` is statically tied to `kind` via the
+ * `RuntimeEventDataMap`. Each branch of `translateNotification()` and
+ * `translateServerRequest()` must emit a `data` object that matches the
+ * runtime contract for the declared `kind`; mismatches fail to typecheck.
+ */
 export type CodexTranslatedEvent = {
-	kind: RuntimeEventKind;
-	data: RuntimeEventData;
-	toolName?: string;
-	toolUseId?: string;
-	expectsDecision: boolean;
-};
+	[K in RuntimeEventKind]: {
+		kind: K;
+		data: RuntimeEventDataMap[K];
+		toolName?: string;
+		toolUseId?: string;
+		expectsDecision: boolean;
+	};
+}[RuntimeEventKind];
 
 export function asRecord(v: unknown): Record<string, unknown> {
 	return typeof v === 'object' && v !== null

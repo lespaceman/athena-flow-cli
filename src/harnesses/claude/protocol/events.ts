@@ -46,27 +46,17 @@ export type PermissionMode =
  * A permission suggestion attached to PermissionRequest events.
  * See hooks reference: `permission_suggestions[].type` is one of the
  * documented update kinds; additional fields vary by kind.
+ *
+ * The canonical shape lives in `src/shared/types/permissionSuggestion.ts`
+ * so that layer-neutral `core/` code can reference it without importing
+ * from `harnesses/` (ESLint-enforced layer rule).
  */
-export type PermissionSuggestionDestination =
-	| 'session'
-	| 'localSettings'
-	| 'projectSettings'
-	| 'userSettings';
+export type {
+	PermissionSuggestion,
+	PermissionSuggestionDestination,
+} from '../../../shared/types/permissionSuggestion';
 
-export type PermissionSuggestion = {
-	type:
-		| 'addRules'
-		| 'replaceRules'
-		| 'removeRules'
-		| 'setMode'
-		| 'addDirectories'
-		| 'removeDirectories';
-	destination: PermissionSuggestionDestination;
-	rules?: Array<Record<string, unknown>>;
-	behavior?: 'allow' | 'deny' | 'ask';
-	mode?: string;
-	directories?: string[];
-};
+import type {PermissionSuggestion} from '../../../shared/types/permissionSuggestion';
 
 export type NotificationType =
 	| 'permission_prompt'

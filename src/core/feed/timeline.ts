@@ -8,6 +8,7 @@ import {
 	extractFriendlyServerName,
 	parseToolName,
 } from '../../shared/utils/toolNameParser';
+import {isDefaultRenderKind} from './defaultRender';
 import {summarizeToolResult} from './toolSummary';
 import {type FeedEvent, type FeedEventKind} from './types';
 import {resolveVerb} from './verbMap';
@@ -71,6 +72,7 @@ export type RunSummary = {
 };
 
 export function eventOperation(event: FeedEvent): string {
+	if (isDefaultRenderKind(event.kind)) return 'event';
 	switch (event.kind) {
 		case 'run.start':
 			return 'run.start';
@@ -163,6 +165,7 @@ export function eventOperation(event: FeedEvent): string {
 
 /** Human-readable Title Case label for the EVENT column. */
 export function eventLabel(event: FeedEvent): string {
+	if (isDefaultRenderKind(event.kind)) return 'Event';
 	switch (event.kind) {
 		case 'run.start':
 			return 'Run Start';

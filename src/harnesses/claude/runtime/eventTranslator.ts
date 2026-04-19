@@ -1,5 +1,5 @@
 import type {
-	RuntimeEventData,
+	RuntimeEventDataMap,
 	RuntimeEventKind,
 } from '../../../core/runtime/events';
 import type {HookEventEnvelope} from '../protocol/envelope';
@@ -8,6 +8,7 @@ import {
 	isSubagentStartEvent,
 	isSubagentStopEvent,
 } from '../protocol/events';
+import type {PermissionSuggestion} from '../../../shared/types/permissionSuggestion';
 
 function asRecord(value: unknown): Record<string, unknown> {
 	if (typeof value === 'object' && value !== null) {
@@ -16,14 +17,23 @@ function asRecord(value: unknown): Record<string, unknown> {
 	return {};
 }
 
+/**
+ * Discriminated per-kind shape: `data` is statically tied to `kind` via the
+ * `RuntimeEventDataMap`. This means each `case` in
+ * `translateClaudeEnvelope()` must build a `data` object that matches the
+ * runtime contract for the declared `kind` — the compiler surfaces any
+ * mismatch instead of letting it flow silently into the mapper.
+ */
 export type ClaudeTranslatedEvent = {
-	kind: RuntimeEventKind;
-	data: RuntimeEventData;
-	toolName?: string;
-	toolUseId?: string;
-	agentId?: string;
-	agentType?: string;
-};
+	[K in RuntimeEventKind]: {
+		kind: K;
+		data: RuntimeEventDataMap[K];
+		toolName?: string;
+		toolUseId?: string;
+		agentId?: string;
+		agentType?: string;
+	};
+}[RuntimeEventKind];
 
 export function translateClaudeEnvelope(
 	envelope: HookEventEnvelope,
@@ -128,7 +138,7 @@ export function translateClaudeEnvelope(
 						{},
 					tool_use_id: toolUseId,
 					permission_suggestions: payload['permission_suggestions'] as
-						| Array<{type: string; tool: string}>
+						| PermissionSuggestion[]
 						| undefined,
 				},
 			};
