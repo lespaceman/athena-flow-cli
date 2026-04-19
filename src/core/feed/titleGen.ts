@@ -82,6 +82,16 @@ export function generateTitle(event: FeedEvent, ascii = false): string {
 			return truncate(`Thread status: ${event.data.message}`);
 		case 'turn.diff':
 			return 'Turn diff updated';
+		case 'server.request.resolved':
+			return truncate(event.data.message);
+		case 'web.search':
+			return truncate(event.data.message);
+		case 'review.status':
+			return truncate(event.data.message);
+		case 'image.view':
+			return truncate(event.data.message);
+		case 'context.compaction':
+			return truncate(event.data.message);
 		case 'mcp.progress':
 			return truncate(`MCP progress: ${event.data.message}`);
 		case 'terminal.input':

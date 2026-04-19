@@ -242,6 +242,63 @@ describe('FeedMapper', () => {
 						}),
 					)
 					.at(-1)?.kind,
+				mapper
+					.mapEvent(
+						makeRuntimeEvent('item/completed', {
+							kind: 'notification',
+							hookName: 'item/completed',
+							data: {
+								message: 'Opened search result https://example.com.',
+								notification_type: 'web.search',
+								phase: 'completed',
+								query: 'codex app server',
+								action_type: 'openPage',
+								url: 'https://example.com',
+							},
+						}),
+					)
+					.at(-1)?.kind,
+				mapper
+					.mapEvent(
+						makeRuntimeEvent('item/completed', {
+							kind: 'notification',
+							hookName: 'item/completed',
+							data: {
+								message: 'Review finished: current changes.',
+								notification_type: 'item.exitedReviewMode.completed',
+								item_id: 'review-1',
+								item: {review: 'current changes'},
+							},
+						}),
+					)
+					.at(-1)?.kind,
+				mapper
+					.mapEvent(
+						makeRuntimeEvent('item/completed', {
+							kind: 'notification',
+							hookName: 'item/completed',
+							data: {
+								message: 'Viewed image at /tmp/image.png.',
+								notification_type: 'item.imageView.completed',
+								item_id: 'image-1',
+								item: {path: '/tmp/image.png'},
+							},
+						}),
+					)
+					.at(-1)?.kind,
+				mapper
+					.mapEvent(
+						makeRuntimeEvent('item/completed', {
+							kind: 'notification',
+							hookName: 'item/completed',
+							data: {
+								message: 'Codex compacted conversation history.',
+								notification_type: 'item.contextCompaction.completed',
+								item_id: 'compact-1',
+							},
+						}),
+					)
+					.at(-1)?.kind,
 			];
 
 			expect(kinds).toEqual([
@@ -252,7 +309,49 @@ describe('FeedMapper', () => {
 				'terminal.input',
 				'skills.changed',
 				'skills.loaded',
+				'web.search',
+				'review.status',
+				'image.view',
+				'context.compaction',
 			]);
+		});
+
+		it('correlates server.request.resolved to the original request event', () => {
+			const mapper = createFeedMapper();
+			const perm = mapper
+				.mapEvent(
+					makeRuntimeEvent('item/commandExecution/requestApproval', {
+						id: '42',
+						kind: 'permission.request',
+						hookName: 'item/commandExecution/requestApproval',
+						data: {
+							tool_name: 'Bash',
+							tool_input: {command: 'curl https://api.example.com'},
+						},
+					}),
+				)
+				.find(event => event.kind === 'permission.request');
+
+			const resolved = mapper
+				.mapEvent(
+					makeRuntimeEvent('serverRequest/resolved', {
+						id: '42',
+						kind: 'notification',
+						hookName: 'serverRequest/resolved',
+						data: {
+							message: 'Request #42 resolved.',
+							notification_type: 'server_request.resolved',
+							request_id: '42',
+						},
+					}),
+				)
+				.find(event => event.kind === 'server.request.resolved');
+
+			expect(perm).toBeDefined();
+			expect(resolved).toMatchObject({
+				cause: expect.objectContaining({parent_event_id: perm?.event_id}),
+				data: expect.objectContaining({resolved_kind: 'permission.request'}),
+			});
 		});
 
 		it('reads skills.loaded counts from runtime payload', () => {

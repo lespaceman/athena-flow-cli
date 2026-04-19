@@ -25,6 +25,11 @@ export type FeedEventKind =
 	| 'runtime.error'
 	| 'thread.status'
 	| 'turn.diff'
+	| 'server.request.resolved'
+	| 'web.search'
+	| 'review.status'
+	| 'image.view'
+	| 'context.compaction'
 	| 'mcp.progress'
 	| 'terminal.input'
 	| 'skills.changed'
@@ -164,6 +169,10 @@ export type PermissionRequestData = {
 	tool_input: Record<string, unknown>;
 	tool_use_id?: string;
 	permission_suggestions?: Array<{type: string; tool: string}>;
+	network_context?: {
+		host?: string;
+		protocol?: string;
+	};
 };
 
 export type PermissionDecisionData =
@@ -196,6 +205,11 @@ export type SubagentStartData = {
 	agent_id: string;
 	agent_type: string;
 	description?: string;
+	tool?: string;
+	sender_thread_id?: string;
+	receiver_thread_id?: string;
+	new_thread_id?: string;
+	agent_status?: string;
 };
 export type SubagentStopData = {
 	agent_id: string;
@@ -204,6 +218,12 @@ export type SubagentStopData = {
 	agent_transcript_path?: string;
 	last_assistant_message?: string;
 	description?: string;
+	tool?: string;
+	status?: string;
+	sender_thread_id?: string;
+	receiver_thread_id?: string;
+	new_thread_id?: string;
+	agent_status?: string;
 };
 
 export type NotificationData = {
@@ -230,6 +250,37 @@ export type TurnDiffData = {
 	thread_id?: string;
 	turn_id?: string;
 	diff: string;
+};
+export type ServerRequestResolvedData = {
+	message: string;
+	request_id?: string;
+	resolved_kind?: string;
+};
+export type WebSearchData = {
+	message: string;
+	phase: 'started' | 'completed';
+	query?: string;
+	action_type?: string;
+	url?: string;
+	pattern?: string;
+	queries?: string[];
+	item_id?: string;
+};
+export type ReviewStatusData = {
+	message: string;
+	phase: 'started' | 'completed';
+	review?: string;
+	item_id?: string;
+};
+export type ImageViewData = {
+	message: string;
+	path?: string;
+	item_id?: string;
+};
+export type ContextCompactionData = {
+	message: string;
+	phase: 'started' | 'completed';
+	item_id?: string;
 };
 export type McpProgressData = {
 	message: string;
@@ -332,6 +383,14 @@ export type FeedEvent =
 	| (FeedEventBase & {kind: 'runtime.error'; data: RuntimeErrorData})
 	| (FeedEventBase & {kind: 'thread.status'; data: ThreadStatusData})
 	| (FeedEventBase & {kind: 'turn.diff'; data: TurnDiffData})
+	| (FeedEventBase & {
+			kind: 'server.request.resolved';
+			data: ServerRequestResolvedData;
+	  })
+	| (FeedEventBase & {kind: 'web.search'; data: WebSearchData})
+	| (FeedEventBase & {kind: 'review.status'; data: ReviewStatusData})
+	| (FeedEventBase & {kind: 'image.view'; data: ImageViewData})
+	| (FeedEventBase & {kind: 'context.compaction'; data: ContextCompactionData})
 	| (FeedEventBase & {kind: 'mcp.progress'; data: McpProgressData})
 	| (FeedEventBase & {kind: 'terminal.input'; data: TerminalInputData})
 	| (FeedEventBase & {kind: 'skills.changed'; data: SkillsChangedData})

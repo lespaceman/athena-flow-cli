@@ -49,6 +49,10 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 	const truncatedToolDeltaUseIds = new Set<string>();
 	const eventIdByRequestId = new Map<string, string>(); // runtime id → feed event_id
 	const eventKindByRequestId = new Map<string, string>(); // runtime id → feed kind
+	const resolvedRequestById = new Map<
+		string,
+		{event_id: string; kind: FeedEventKind}
+	>();
 
 	// Bootstrap from stored session
 	if (bootstrap) {
@@ -200,6 +204,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 		// Index for decision correlation
 		eventIdByRequestId.set(runtimeEvent.id, eventId);
 		eventKindByRequestId.set(runtimeEvent.id, kind);
+		resolvedRequestById.set(runtimeEvent.id, {event_id: eventId, kind});
 
 		return fe;
 	}
@@ -248,6 +253,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 		reasoningSummaryByKey.clear();
 		eventIdByRequestId.clear();
 		eventKindByRequestId.clear();
+		resolvedRequestById.clear();
 		resetAgentMessageDeduper();
 		activeSubagentStack.length = 0;
 		currentRun = {
@@ -957,6 +963,22 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 							permission_suggestions: readSuggestionArray(
 								d['permission_suggestions'],
 							),
+							network_context:
+								typeof d['network_context'] === 'object' &&
+								d['network_context'] !== null
+									? {
+											host: readString(
+												(d['network_context'] as Record<string, unknown>)[
+													'host'
+												],
+											),
+											protocol: readString(
+												(d['network_context'] as Record<string, unknown>)[
+													'protocol'
+												],
+											),
+										}
+									: undefined,
 						} satisfies import('./types').PermissionRequestData,
 						event,
 					),
@@ -997,13 +1019,22 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 						{
 							agent_id: agentId ?? '',
 							agent_type: agentType ?? '',
-							description: lastTaskDescription,
+							description:
+								lastTaskDescription ?? readString(d['prompt']) ?? undefined,
+							tool: readString(d['tool']),
+							sender_thread_id: readString(d['sender_thread_id']),
+							receiver_thread_id: readString(d['receiver_thread_id']),
+							new_thread_id: readString(d['new_thread_id']),
+							agent_status: readString(d['agent_status']),
 						} satisfies import('./types').SubagentStartData,
 						event,
 					),
 				);
-				if (agentId && lastTaskDescription) {
-					subagentDescriptions.set(agentId, lastTaskDescription);
+				if (agentId && (lastTaskDescription || readString(d['prompt']))) {
+					subagentDescriptions.set(
+						agentId,
+						lastTaskDescription ?? readString(d['prompt']) ?? '',
+					);
 				}
 				lastTaskDescription = undefined;
 				break;
@@ -1029,6 +1060,12 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 						agent_transcript_path: readString(d['agent_transcript_path']),
 						last_assistant_message: readString(d['last_assistant_message']),
 						description: subagentDescriptions.get(agentId ?? ''),
+						tool: readString(d['tool']),
+						status: readString(d['status']),
+						sender_thread_id: readString(d['sender_thread_id']),
+						receiver_thread_id: readString(d['receiver_thread_id']),
+						new_thread_id: readString(d['new_thread_id']),
+						agent_status: readString(d['agent_status']),
 					} satisfies import('./types').SubagentStopData,
 					event,
 				);
@@ -1091,6 +1128,120 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 								turn_id: readString(d['turn_id']),
 								diff: readString(d['diff']) ?? '',
 							} satisfies import('./types').TurnDiffData,
+							event,
+						),
+					);
+					break;
+				}
+				if (notificationType === 'server_request.resolved') {
+					const requestId =
+						d['request_id'] !== undefined ? String(d['request_id']) : undefined;
+					const resolved = requestId
+						? resolvedRequestById.get(requestId)
+						: undefined;
+					results.push(
+						makeEvent(
+							'server.request.resolved',
+							'info',
+							'system',
+							{
+								message,
+								request_id: requestId,
+								resolved_kind: resolved?.kind,
+							} satisfies import('./types').ServerRequestResolvedData,
+							event,
+							resolved ? {parent_event_id: resolved.event_id} : undefined,
+						),
+					);
+					break;
+				}
+				if (notificationType === 'web.search') {
+					results.push(
+						makeEvent(
+							'web.search',
+							'info',
+							'system',
+							{
+								message,
+								phase:
+									readString(d['phase']) === 'completed'
+										? 'completed'
+										: 'started',
+								query: readString(d['query']),
+								action_type: readString(d['action_type']),
+								url: readString(d['url']),
+								pattern: readString(d['pattern']),
+								queries: Array.isArray(d['queries'])
+									? (d['queries'] as string[])
+									: undefined,
+								item_id: readString(d['item_id']),
+							} satisfies import('./types').WebSearchData,
+							event,
+						),
+					);
+					break;
+				}
+				if (
+					notificationType === 'item.enteredReviewMode.started' ||
+					notificationType === 'item.enteredReviewMode.completed' ||
+					notificationType === 'item.exitedReviewMode.started' ||
+					notificationType === 'item.exitedReviewMode.completed'
+				) {
+					const item = readObject(d['item']);
+					results.push(
+						makeEvent(
+							'review.status',
+							'info',
+							'system',
+							{
+								message,
+								phase: notificationType.endsWith('.completed')
+									? 'completed'
+									: 'started',
+								review: readString(item['review']),
+								item_id: readString(d['item_id']),
+							} satisfies import('./types').ReviewStatusData,
+							event,
+						),
+					);
+					break;
+				}
+				if (
+					notificationType === 'item.imageView.started' ||
+					notificationType === 'item.imageView.completed'
+				) {
+					const item = readObject(d['item']);
+					results.push(
+						makeEvent(
+							'image.view',
+							'info',
+							'system',
+							{
+								message,
+								path: readString(item['path']),
+								item_id: readString(d['item_id']),
+							} satisfies import('./types').ImageViewData,
+							event,
+						),
+					);
+					break;
+				}
+				if (
+					notificationType === 'item.contextCompaction.started' ||
+					notificationType === 'item.contextCompaction.completed'
+				) {
+					results.push(
+						makeEvent(
+							'context.compaction',
+							'info',
+							'system',
+							{
+								message,
+								phase: notificationType.endsWith('.completed')
+									? 'completed'
+									: 'started',
+								item_id: readString(d['item_id']),
+							} satisfies import('./types').ContextCompactionData,
 							event,
 						),
 					);

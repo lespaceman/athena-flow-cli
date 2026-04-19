@@ -685,7 +685,24 @@ describe('eventSummary', () => {
 				},
 			},
 		};
-		expect(eventSummary(ev).text).toBe('completed — 5 tools, 0 failures');
+		expect(eventSummary(ev).text).toBe('completed · 5 tools');
+	});
+
+	it('formats run.end failures only when non-zero', () => {
+		const ev = {
+			...base({kind: 'run.end'}),
+			kind: 'run.end' as const,
+			data: {
+				status: 'failed' as const,
+				counters: {
+					tool_uses: 2,
+					tool_failures: 1,
+					permission_requests: 0,
+					blocks: 0,
+				},
+			},
+		};
+		expect(eventSummary(ev).text).toBe('failed · 2 tools, 1 failure');
 	});
 
 	it('formats compact.pre as trigger only', () => {
@@ -724,6 +741,7 @@ describe('eventSummary — segment roles', () => {
 			data: {stop_hook_active: false},
 		};
 		const result = eventSummary(stopReq);
+		expect(result.text).toBe('Stop hook inactive');
 		expect(result.segments[0]!.role).toBe('target');
 	});
 
@@ -1053,6 +1071,68 @@ describe('eventSummary MCP formatting (clean verb)', () => {
 		};
 		const result = eventSummary(ev);
 		expect(result.text).toBe('Bash rm -rf /');
+	});
+
+	it('formats permission.request with network approval context', () => {
+		const ev = {
+			...base({kind: 'permission.request'}),
+			kind: 'permission.request' as const,
+			data: {
+				tool_name: 'Bash',
+				tool_input: {command: 'curl https://api.example.com'},
+				network_context: {host: 'api.example.com', protocol: 'https'},
+				permission_suggestions: [],
+			},
+		};
+		const result = eventSummary(ev);
+		expect(result.text).toBe(
+			'Bash curl https://api.example.com → https api.example.com',
+		);
+	});
+
+	it('formats web.search, review.status, image.view, and request resolution summaries', () => {
+		expect(
+			eventSummary({
+				...base({kind: 'web.search'}),
+				kind: 'web.search' as const,
+				data: {
+					message: 'Opened search result https://example.com.',
+					phase: 'completed',
+					action_type: 'openPage',
+					url: 'https://example.com',
+				},
+			}).text,
+		).toBe('Opened search result https://example.com.');
+		expect(
+			eventSummary({
+				...base({kind: 'review.status'}),
+				kind: 'review.status' as const,
+				data: {
+					message: 'Review finished: current changes.',
+					phase: 'completed',
+				},
+			}).text,
+		).toBe('Review finished: current changes.');
+		expect(
+			eventSummary({
+				...base({kind: 'image.view'}),
+				kind: 'image.view' as const,
+				data: {
+					message: 'Viewed image at /tmp/image.png.',
+					path: '/tmp/image.png',
+				},
+			}).text,
+		).toBe('Viewed image at /tmp/image.png.');
+		expect(
+			eventSummary({
+				...base({kind: 'server.request.resolved'}),
+				kind: 'server.request.resolved' as const,
+				data: {
+					message: 'Request #42 resolved.',
+					request_id: '42',
+				},
+			}).text,
+		).toBe('Request #42 resolved.');
 	});
 });
 

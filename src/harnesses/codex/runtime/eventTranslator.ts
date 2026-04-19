@@ -145,11 +145,31 @@ function summarizeRateLimits(
 	if (usedPercent !== null) {
 		const rounded = Math.round(usedPercent);
 		return windowDuration !== null
-			? `Rate limits updated for ${name}: ${rounded}% used in the last ${windowDuration} minutes.`
-			: `Rate limits updated for ${name}: ${rounded}% used.`;
+			? `${name}: ${rounded}% used (${windowDuration}m window).`
+			: `${name}: ${rounded}% used.`;
 	}
 
 	return `Rate limits updated for ${name}.`;
+}
+
+function summarizeThreadStatus(
+	status: CodexThreadStatusChangedNotification['status'],
+): string {
+	if (status.type === 'active') {
+		if (status.activeFlags.includes('waitingOnApproval')) {
+			return 'Waiting for approval.';
+		}
+		if (status.activeFlags.length > 0) {
+			return `Active: ${status.activeFlags.join(', ')}.`;
+		}
+		return 'Active.';
+	}
+
+	if (status.type === 'idle') {
+		return 'Idle.';
+	}
+
+	return `${status.type}.`;
 }
 
 function describeItemTitle(
@@ -157,6 +177,8 @@ function describeItemTitle(
 	phase: 'started' | 'completed',
 ): string {
 	switch (itemType) {
+		case 'agentMessage':
+			return 'Assistant response';
 		case 'hookPrompt':
 			return phase === 'started' ? 'Hook prompt' : 'Hook prompt complete';
 		case 'imageView':
@@ -180,6 +202,10 @@ function describeItemMessage(
 	phase: 'started' | 'completed',
 ): string {
 	switch (itemType) {
+		case 'agentMessage':
+			return phase === 'started'
+				? 'Assistant is responding.'
+				: 'Assistant response finished.';
 		case 'imageView':
 			return `Viewed image at ${String(item['path'] ?? 'unknown path')}.`;
 		case 'imageGeneration': {
@@ -224,7 +250,7 @@ function previewText(value: string | null | undefined, max = 80): string {
 function permissionRequestEvent(
 	toolName: string,
 	toolInput: Record<string, unknown>,
-	extra?: {toolUseId?: string},
+	extra?: {toolUseId?: string; networkContext?: Record<string, unknown>},
 ): CodexTranslatedEvent {
 	return {
 		kind: 'permission.request',
@@ -232,10 +258,75 @@ function permissionRequestEvent(
 			tool_name: toolName,
 			tool_input: toolInput,
 			...(extra?.toolUseId ? {tool_use_id: extra.toolUseId} : {}),
+			...(extra?.networkContext ? {network_context: extra.networkContext} : {}),
 		},
 		toolName,
 		toolUseId: extra?.toolUseId,
 		expectsDecision: true,
+	};
+}
+
+function webSearchNotification(
+	item: Record<string, unknown>,
+	phase: 'started' | 'completed',
+): CodexTranslatedEvent {
+	const query =
+		typeof item['query'] === 'string' ? (item['query'] as string) : undefined;
+	const action = asRecord(item['action']);
+	const actionType =
+		typeof action['type'] === 'string' ? (action['type'] as string) : undefined;
+	const url =
+		typeof action['url'] === 'string' ? (action['url'] as string) : undefined;
+	const pattern =
+		typeof action['pattern'] === 'string'
+			? (action['pattern'] as string)
+			: undefined;
+	const queries = Array.isArray(action['queries'])
+		? (action['queries'] as string[])
+		: undefined;
+
+	let message = query ? `Searching web for "${query}".` : 'Searching the web.';
+	if (phase === 'completed') {
+		switch (actionType) {
+			case 'openPage':
+				message = url
+					? `Opened search result ${url}.`
+					: 'Opened search result.';
+				break;
+			case 'findInPage':
+				message = pattern
+					? `Found "${pattern}" in ${url ?? 'the page'}.`
+					: `Searched within ${url ?? 'the page'}.`;
+				break;
+			case 'search':
+				if (queries && queries.length > 1) {
+					message = `Ran ${queries.length} search queries.`;
+				} else if (query) {
+					message = `Searched web for "${query}".`;
+				}
+				break;
+			default:
+				message = query
+					? `Finished web search for "${query}".`
+					: 'Finished web search.';
+		}
+	}
+
+	return {
+		kind: 'notification',
+		data: {
+			title: phase === 'started' ? 'Web search' : 'Web search complete',
+			message,
+			notification_type: 'web.search',
+			item_id: typeof item['id'] === 'string' ? item['id'] : undefined,
+			phase,
+			query,
+			action_type: actionType,
+			url,
+			pattern,
+			queries,
+		},
+		expectsDecision: false,
 	};
 }
 
@@ -519,13 +610,15 @@ export function translateNotification(
 			if (itemType === 'collabAgentToolCall') {
 				return translateCollabStarted(item);
 			}
+			if (itemType === 'webSearch') {
+				return webSearchNotification(item, 'started');
+			}
 
 			const toolName = resolveToolName(itemType, item);
 			if (
 				itemType === 'commandExecution' ||
 				itemType === 'fileChange' ||
 				itemType === 'mcpToolCall' ||
-				itemType === 'webSearch' ||
 				itemType === 'dynamicToolCall'
 			) {
 				return {
@@ -562,6 +655,9 @@ export function translateNotification(
 			if (itemType === 'collabAgentToolCall') {
 				return translateCollabCompleted(item);
 			}
+			if (itemType === 'webSearch') {
+				return webSearchNotification(item, 'completed');
+			}
 
 			if (itemType === 'agentMessage') {
 				return {
@@ -585,7 +681,6 @@ export function translateNotification(
 				itemType === 'commandExecution' ||
 				itemType === 'fileChange' ||
 				itemType === 'mcpToolCall' ||
-				itemType === 'webSearch' ||
 				itemType === 'dynamicToolCall'
 			) {
 				const itemStatus = item['status'] as string;
@@ -672,8 +767,8 @@ export function translateNotification(
 				data: {
 					title: 'MCP server status',
 					message: params.error
-						? `MCP server ${params.name} is ${params.status}: ${params.error}`
-						: `MCP server ${params.name} is ${params.status}.`,
+						? `${params.name}: ${params.status} (${params.error})`
+						: `${params.name}: ${params.status}.`,
 					notification_type: 'mcp_server.startup_status',
 				},
 				expectsDecision: false,
@@ -955,15 +1050,11 @@ export function translateNotification(
 		case M.THREAD_STATUS_CHANGED: {
 			const params = msg.params as CodexThreadStatusChangedNotification;
 			const status = params.status;
-			const flags =
-				status.type === 'active' && status.activeFlags.length > 0
-					? ` [${status.activeFlags.join(', ')}]`
-					: '';
 			return {
 				kind: 'notification',
 				data: {
 					title: 'Thread status',
-					message: `Thread ${params.threadId} → ${status.type}${flags}.`,
+					message: summarizeThreadStatus(status),
 					notification_type: 'thread.status_changed',
 					thread_id: params.threadId,
 					status_type: status.type,
@@ -980,7 +1071,7 @@ export function translateNotification(
 				kind: 'notification',
 				data: {
 					title: 'Turn diff updated',
-					message: `Aggregated diff updated (${params.diff.length} bytes).`,
+					message: `Draft diff updated (${params.diff.length} bytes).`,
 					notification_type: 'turn.diff_updated',
 					thread_id: params.threadId,
 					turn_id: params.turnId,
@@ -1107,7 +1198,7 @@ export function translateNotification(
 				kind: 'notification',
 				data: {
 					title: 'Server request resolved',
-					message: `Pending server request ${String(params.requestId)} resolved.`,
+					message: `Request #${String(params.requestId)} resolved.`,
 					notification_type: 'server_request.resolved',
 					thread_id: params.threadId,
 					request_id: params.requestId,
@@ -1217,12 +1308,32 @@ function translateCollabStarted(
 ): CodexTranslatedEvent {
 	const agentId = resolveCollabAgentId(item);
 	const tool = typeof item['tool'] === 'string' ? item['tool'] : 'spawnAgent';
+	const prompt =
+		typeof item['prompt'] === 'string' ? (item['prompt'] as string) : undefined;
+	const state = asRecord(asRecord(item['agentsStates'])[agentId]);
 	return {
 		kind: 'subagent.start',
 		data: {
 			agent_id: agentId,
 			agent_type: 'codex',
 			tool,
+			prompt,
+			sender_thread_id:
+				typeof item['senderThreadId'] === 'string'
+					? (item['senderThreadId'] as string)
+					: undefined,
+			receiver_thread_id:
+				typeof item['receiverThreadId'] === 'string'
+					? (item['receiverThreadId'] as string)
+					: undefined,
+			new_thread_id:
+				typeof item['newThreadId'] === 'string'
+					? (item['newThreadId'] as string)
+					: undefined,
+			agent_status:
+				typeof state['status'] === 'string'
+					? (state['status'] as string)
+					: undefined,
 		},
 		expectsDecision: false,
 	};
@@ -1235,6 +1346,9 @@ function translateCollabCompleted(
 	const tool = typeof item['tool'] === 'string' ? item['tool'] : 'spawnAgent';
 	const status =
 		typeof item['status'] === 'string' ? item['status'] : 'completed';
+	const prompt =
+		typeof item['prompt'] === 'string' ? (item['prompt'] as string) : undefined;
+	const state = asRecord(asRecord(item['agentsStates'])[agentId]);
 	return {
 		kind: 'subagent.stop',
 		data: {
@@ -1242,6 +1356,23 @@ function translateCollabCompleted(
 			agent_type: 'codex',
 			tool,
 			status,
+			prompt,
+			sender_thread_id:
+				typeof item['senderThreadId'] === 'string'
+					? (item['senderThreadId'] as string)
+					: undefined,
+			receiver_thread_id:
+				typeof item['receiverThreadId'] === 'string'
+					? (item['receiverThreadId'] as string)
+					: undefined,
+			new_thread_id:
+				typeof item['newThreadId'] === 'string'
+					? (item['newThreadId'] as string)
+					: undefined,
+			agent_status:
+				typeof state['status'] === 'string'
+					? (state['status'] as string)
+					: undefined,
 		},
 		expectsDecision: false,
 	};
@@ -1326,13 +1457,26 @@ export function translateServerRequest(
 	switch (msg.method) {
 		case M.CMD_EXEC_REQUEST_APPROVAL: {
 			const params = msg.params as CodexCommandExecutionRequestApprovalParams;
-			return permissionRequestEvent('Bash', {
-				command: params.command,
-				cwd: params.cwd,
-				reason: params.reason,
-				commandActions: params.commandActions,
-				additionalPermissions: params.additionalPermissions,
-			});
+			return permissionRequestEvent(
+				'Bash',
+				{
+					command: params.command,
+					cwd: params.cwd,
+					reason: params.reason,
+					commandActions: params.commandActions,
+					additionalPermissions: params.additionalPermissions,
+				},
+				{
+					networkContext:
+						params.networkApprovalContext &&
+						typeof params.networkApprovalContext === 'object'
+							? {
+									host: params.networkApprovalContext.host,
+									protocol: params.networkApprovalContext.protocol,
+								}
+							: undefined,
+				},
+			);
 		}
 
 		case M.FILE_CHANGE_REQUEST_APPROVAL: {

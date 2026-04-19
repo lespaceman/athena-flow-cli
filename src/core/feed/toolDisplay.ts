@@ -924,7 +924,9 @@ export function resolveEventDisplay(event: FeedEvent): {
 				toolColumn: '',
 				segments: [
 					{
-						text: `stop_hook_active=${event.data.stop_hook_active}`,
+						text: event.data.stop_hook_active
+							? 'Stop hook active'
+							: 'Stop hook inactive',
 						role: 'target',
 					},
 				],
@@ -941,16 +943,22 @@ export function resolveEventDisplay(event: FeedEvent): {
 				],
 			};
 
-		case 'run.end':
+		case 'run.end': {
+			const toolUses = event.data.counters.tool_uses;
+			const failures = event.data.counters.tool_failures;
 			return {
 				toolColumn: '',
 				segments: [
 					{
-						text: `${event.data.status} — ${event.data.counters.tool_uses} tools, ${event.data.counters.tool_failures} failures`,
+						text:
+							failures > 0
+								? `${event.data.status} · ${toolUses} tool${toolUses === 1 ? '' : 's'}, ${failures} failure${failures === 1 ? '' : 's'}`
+								: `${event.data.status} · ${toolUses} tool${toolUses === 1 ? '' : 's'}`,
 						role: 'plain',
 					},
 				],
 			};
+		}
 
 		case 'permission.request':
 			return {
@@ -1001,6 +1009,11 @@ export function resolveEventDisplay(event: FeedEvent): {
 		case 'runtime.error':
 		case 'thread.status':
 		case 'turn.diff':
+		case 'server.request.resolved':
+		case 'web.search':
+		case 'review.status':
+		case 'image.view':
+		case 'context.compaction':
 		case 'mcp.progress':
 		case 'terminal.input':
 		case 'skills.changed':
@@ -1074,6 +1087,11 @@ export function resolveEventToolColumn(event: FeedEvent): string {
 		case 'runtime.error':
 		case 'thread.status':
 		case 'turn.diff':
+		case 'server.request.resolved':
+		case 'web.search':
+		case 'review.status':
+		case 'image.view':
+		case 'context.compaction':
 		case 'mcp.progress':
 		case 'terminal.input':
 		case 'skills.changed':

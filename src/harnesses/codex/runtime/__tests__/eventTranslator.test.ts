@@ -280,7 +280,7 @@ describe('translateNotification', () => {
 		expect(result.kind).toBe('tool.post');
 	});
 
-	it('maps item/started (webSearch) to tool.pre with WebSearch tool name', () => {
+	it('maps item/started (webSearch) to a notification with query details', () => {
 		const result = translateNotification({
 			method: 'item/started',
 			params: {
@@ -289,19 +289,17 @@ describe('translateNotification', () => {
 				item: {id: 'ws-1', type: 'webSearch', query: 'cheapest mac'},
 			},
 		});
-		expect(result.kind).toBe('tool.pre');
-		expect(result.toolName).toBe('WebSearch');
-		expect(result.toolUseId).toBe('ws-1');
+		expect(result.kind).toBe('notification');
 		expect(result.data).toEqual(
 			expect.objectContaining({
-				tool_name: 'WebSearch',
-				tool_input: {query: 'cheapest mac'},
-				tool_use_id: 'ws-1',
+				notification_type: 'web.search',
+				phase: 'started',
+				query: 'cheapest mac',
 			}),
 		);
 	});
 
-	it('maps item/completed (webSearch) to tool.post with query and action', () => {
+	it('maps item/completed (webSearch) to a notification with action details', () => {
 		const result = translateNotification({
 			method: 'item/completed',
 			params: {
@@ -316,15 +314,13 @@ describe('translateNotification', () => {
 				},
 			},
 		});
-		expect(result.kind).toBe('tool.post');
-		expect(result.toolName).toBe('WebSearch');
-		expect(result.toolUseId).toBe('ws-1');
+		expect(result.kind).toBe('notification');
 		expect(result.data).toEqual(
 			expect.objectContaining({
-				tool_name: 'WebSearch',
-				tool_input: {query: 'cheapest mac'},
-				tool_use_id: 'ws-1',
-				tool_response: {type: 'search', query: 'cheapest mac'},
+				notification_type: 'web.search',
+				phase: 'completed',
+				query: 'cheapest mac',
+				action_type: 'search',
 			}),
 		);
 	});
@@ -668,6 +664,7 @@ describe('translateNotification', () => {
 		expect(result.kind).toBe('notification');
 		expect(result.data).toEqual(
 			expect.objectContaining({
+				message: 'Active: turn.',
 				notification_type: 'thread.status_changed',
 				status_type: 'active',
 				active_flags: ['turn'],
@@ -683,6 +680,7 @@ describe('translateNotification', () => {
 		expect(result.kind).toBe('notification');
 		expect(result.data).toEqual(
 			expect.objectContaining({
+				message: 'Draft diff updated (12 bytes).',
 				notification_type: 'turn.diff_updated',
 				diff: '--- a\n+++ b\n',
 			}),
@@ -697,6 +695,7 @@ describe('translateNotification', () => {
 		expect(result.kind).toBe('notification');
 		expect(result.data).toEqual(
 			expect.objectContaining({
+				message: 'Request #42 resolved.',
 				notification_type: 'server_request.resolved',
 				request_id: 42,
 			}),
@@ -739,6 +738,33 @@ describe('translateServerRequest', () => {
 		expect(result.kind).toBe('permission.request');
 		expect(result.expectsDecision).toBe(true);
 		expect(result.toolName).toBe('Bash');
+	});
+
+	it('preserves network approval context on command approvals', () => {
+		const result = translateServerRequest({
+			id: 1,
+			method: 'item/commandExecution/requestApproval',
+			params: {
+				command: 'curl https://api.example.com',
+				cwd: '/tmp',
+				reason: 'Need network access',
+				commandActions: [],
+				additionalPermissions: [],
+				networkApprovalContext: {
+					host: 'api.example.com',
+					protocol: 'https',
+				},
+			},
+		});
+		expect(result.kind).toBe('permission.request');
+		expect(result.data).toEqual(
+			expect.objectContaining({
+				network_context: {
+					host: 'api.example.com',
+					protocol: 'https',
+				},
+			}),
+		);
 	});
 
 	it('maps fileChange approval to permission.request', () => {

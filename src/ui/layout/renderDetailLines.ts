@@ -274,6 +274,16 @@ function eventLabel(event: FeedEvent): string {
 			return 'Thread Status';
 		case 'turn.diff':
 			return 'Turn Diff';
+		case 'server.request.resolved':
+			return 'Request Resolved';
+		case 'web.search':
+			return 'Web Search';
+		case 'review.status':
+			return 'Review';
+		case 'image.view':
+			return 'Image View';
+		case 'context.compaction':
+			return 'Context Compaction';
 		case 'mcp.progress':
 			return event.data.title || 'MCP Progress';
 		case 'terminal.input':
@@ -466,6 +476,11 @@ export function renderDetailLines(
 		}
 
 		case 'thread.status':
+		case 'server.request.resolved':
+		case 'web.search':
+		case 'review.status':
+		case 'image.view':
+		case 'context.compaction':
 		case 'mcp.progress':
 		case 'terminal.input':
 		case 'skills.changed':

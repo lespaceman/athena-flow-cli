@@ -118,6 +118,16 @@ export function eventOperation(event: FeedEvent): string {
 			return 'thread';
 		case 'turn.diff':
 			return 'diff';
+		case 'server.request.resolved':
+			return 'req.done';
+		case 'web.search':
+			return 'web.search';
+		case 'review.status':
+			return 'review';
+		case 'image.view':
+			return 'image';
+		case 'context.compaction':
+			return 'compact';
 		case 'mcp.progress':
 			return 'mcp.prog';
 		case 'terminal.input':
@@ -220,6 +230,16 @@ export function eventLabel(event: FeedEvent): string {
 			return 'Thread';
 		case 'turn.diff':
 			return 'Diff';
+		case 'server.request.resolved':
+			return 'Request';
+		case 'web.search':
+			return 'Web Search';
+		case 'review.status':
+			return 'Review';
+		case 'image.view':
+			return 'Image';
+		case 'context.compaction':
+			return 'Compaction';
 		case 'mcp.progress':
 			return 'MCP Progress';
 		case 'terminal.input':
@@ -279,6 +299,16 @@ export function eventDetail(event: FeedEvent): string {
 			return 'summary';
 		case 'thread.status':
 			return event.data.status_type ?? 'status';
+		case 'server.request.resolved':
+			return event.data.request_id ?? 'request';
+		case 'web.search':
+			return event.data.action_type ?? event.data.phase;
+		case 'review.status':
+			return event.data.phase;
+		case 'image.view':
+			return event.data.path ?? 'image';
+		case 'context.compaction':
+			return event.data.phase;
 		case 'usage.update':
 			return 'tokens';
 		case 'config.change':
@@ -399,8 +429,9 @@ export function eventSummary(event: FeedEvent): SummaryResult {
 		case 'tool.delta':
 		case 'tool.pre':
 		case 'tool.post':
-		case 'permission.request':
 			return formatToolSummary(event.data.tool_name, event.data.tool_input);
+		case 'permission.request':
+			return formatPermissionSummary(event);
 		case 'tool.failure':
 			return formatToolSummary(
 				event.data.tool_name,
@@ -435,6 +466,11 @@ export function eventSummary(event: FeedEvent): SummaryResult {
 		case 'runtime.error':
 		case 'thread.status':
 		case 'turn.diff':
+		case 'server.request.resolved':
+		case 'web.search':
+		case 'review.status':
+		case 'image.view':
+		case 'context.compaction':
 		case 'mcp.progress':
 		case 'terminal.input':
 		case 'skills.changed':
@@ -451,6 +487,23 @@ export function eventSummary(event: FeedEvent): SummaryResult {
 			return {text, segments: [{text, role: 'target'}]};
 		}
 	}
+}
+
+function formatPermissionSummary(
+	event: Extract<FeedEvent, {kind: 'permission.request'}>,
+): SummaryResult {
+	const base = formatToolSummary(event.data.tool_name, event.data.tool_input);
+	const host = event.data.network_context?.host;
+	if (!host) {
+		return base;
+	}
+	const protocol = event.data.network_context?.protocol;
+	const suffix = ` → ${protocol ? `${protocol} ` : ''}${host}`;
+	const text = compactText(`${base.text}${suffix}`, 200);
+	return {
+		text,
+		segments: [...base.segments, {text: suffix, role: 'target'}],
+	};
 }
 
 /** Strip inline markdown syntax for compact single-line display. */
@@ -483,10 +536,7 @@ function eventSummaryText(event: FeedEvent): string {
 				200,
 			);
 		case 'run.end':
-			return compactText(
-				`${event.data.status} — ${event.data.counters.tool_uses} tools, ${event.data.counters.tool_failures} failures`,
-				200,
-			);
+			return compactText(formatRunEndSummary(event), 200);
 		case 'user.prompt':
 			return compactText(event.data.prompt, 200);
 		case 'plan.update': {
@@ -529,7 +579,7 @@ function eventSummaryText(event: FeedEvent): string {
 		}
 		case 'stop.request':
 			return compactText(
-				`stop_hook_active=${event.data.stop_hook_active}`,
+				event.data.stop_hook_active ? 'Stop hook active' : 'Stop hook inactive',
 				200,
 			);
 		case 'stop.decision':
@@ -545,6 +595,16 @@ function eventSummaryText(event: FeedEvent): string {
 		case 'thread.status':
 			return compactText(event.data.message, 200);
 		case 'turn.diff':
+			return compactText(event.data.message, 200);
+		case 'server.request.resolved':
+			return compactText(event.data.message, 200);
+		case 'web.search':
+			return compactText(event.data.message, 200);
+		case 'review.status':
+			return compactText(event.data.message, 200);
+		case 'image.view':
+			return compactText(event.data.message, 200);
+		case 'context.compaction':
 			return compactText(event.data.message, 200);
 		case 'mcp.progress':
 			return compactText(event.data.message, 200);
@@ -604,6 +664,17 @@ function eventSummaryText(event: FeedEvent): string {
 	}
 }
 
+function formatRunEndSummary(
+	event: Extract<FeedEvent, {kind: 'run.end'}>,
+): string {
+	const toolText = `${event.data.counters.tool_uses} tool${event.data.counters.tool_uses === 1 ? '' : 's'}`;
+	const failureCount = event.data.counters.tool_failures;
+	if (failureCount > 0) {
+		return `${event.data.status} · ${toolText}, ${failureCount} failure${failureCount === 1 ? '' : 's'}`;
+	}
+	return `${event.data.status} · ${toolText}`;
+}
+
 export function expansionForEvent(event: FeedEvent): string {
 	switch (event.kind) {
 		case 'tool.pre':
@@ -652,6 +723,11 @@ export function expansionForEvent(event: FeedEvent): string {
 		case 'runtime.error':
 		case 'thread.status':
 		case 'turn.diff':
+		case 'server.request.resolved':
+		case 'web.search':
+		case 'review.status':
+		case 'image.view':
+		case 'context.compaction':
 		case 'mcp.progress':
 		case 'terminal.input':
 		case 'skills.changed':
