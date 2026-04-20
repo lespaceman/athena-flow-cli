@@ -123,5 +123,5 @@ A unit test for `isTransientTurnError` covers each regex branch and confirms non
 ## Risks and mitigations
 
 - **Risk:** Anthropic error message format changes, causing retries to stop firing silently. **Mitigation:** regex list is centralized in one function with its own tests; error-classification tests will flag format drift when exercised against real error corpora. We can also log the raw error when classification decides "not transient" to help catch drift in the field.
-- **Risk:** A genuinely-broken credential causes three full backoff cycles (~65s) of user-visible delay before surfacing the error. **Mitigation:** feed events make retries visible, and the total budget (65s) is bounded. If this proves annoying in practice, we can add a `--no-retry` flag or shorten the first backoff. YAGNI for now.
+- **Risk:** A genuinely-broken credential causes two full backoff cycles (~20s) of user-visible delay before surfacing the error. **Mitigation:** feed events make retries visible, and the total budget (~20s) is bounded. If this proves annoying in practice, we can add a `--no-retry` flag or shorten the first backoff. YAGNI for now.
 - **Risk:** Retry loop masks a real underlying problem that a human should see immediately. **Mitigation:** only narrowly-classified transient errors retry; everything else fails fast as today.
