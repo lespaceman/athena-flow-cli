@@ -40,6 +40,7 @@ import {runExecCommand} from './execCommand';
 import {resolveInteractiveSession} from './interactiveSession';
 import {runWorkflowCommand} from './workflowCommand';
 import {runMarketplaceCommand} from './marketplaceCommand';
+import {runDoctorCommand} from './doctorCommand';
 import {resolveWorkflowInstall} from '../../infra/plugins/marketplace';
 import {
 	installStdoutWriteMonitor,
@@ -78,6 +79,7 @@ const KNOWN_COMMANDS = new Set([
 	'workflow',
 	'marketplace',
 	'telemetry',
+	'doctor',
 ]);
 const VALID_ISOLATION_PRESETS = ['strict', 'minimal', 'permissive'] as const;
 const VALID_HARNESSES = listHarnessAdapters()
@@ -213,6 +215,7 @@ const cli = meow(
 			workflow <sub>        Manage workflows (install, list, search, remove, upgrade, use)
 			marketplace <sub>     Manage marketplace sources (add, remove, list)
 			telemetry [action]    Manage anonymous telemetry (enable/disable/status)
+			doctor                Diagnose Claude headless setup (use with --harness=claude)
 
 		Options
 			--project-dir   Project directory for hook socket (default: cwd)
@@ -335,6 +338,10 @@ const cli = meow(
 				type: 'boolean',
 				default: false,
 			},
+			printApiKey: {
+				type: 'boolean',
+				default: false,
+			},
 		},
 	},
 );
@@ -418,6 +425,19 @@ async function main(): Promise<void> {
 	if (command === 'marketplace') {
 		const [subcommand = '', ...subcommandArgs] = commandArgs;
 		await exitWith(runMarketplaceCommand({subcommand, subcommandArgs}));
+		return;
+	}
+
+	if (command === 'doctor') {
+		const harness =
+			(typeof cli.flags.harness === 'string' && cli.flags.harness) || 'claude';
+		await exitWith(
+			await runDoctorCommand({
+				harness,
+				json: Boolean(cli.flags.json),
+				printApiKey: Boolean(cli.flags.printApiKey),
+			}),
+		);
 		return;
 	}
 
