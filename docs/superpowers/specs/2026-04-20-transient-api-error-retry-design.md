@@ -27,6 +27,8 @@ Out of scope:
 
 `src/core/workflows/workflowRunner.ts`, around lines 213–245. The current failure branch (`if (turnResult.error || exitCode !== 0)`) is replaced by a retry-aware wrapper around `input.startTurn(...)`.
 
+`prepareWorkflowTurn(workflowState, ...)` is called **once per iteration**, outside the retry loop. Retries reuse the same `prepared.prompt` and `prepared.configOverride`. This matters: `prepareWorkflowTurn` mutates `workflowState` (iteration counters, tracker state), and re-preparing per retry would double-advance those counters and desync the workflow state machine.
+
 ### Error classification
 
 New helper, colocated with the runner or in a small module it imports:
@@ -38,7 +40,6 @@ export function isTransientTurnError(result: TurnExecutionResult): boolean;
 Returns `true` when `result.error` or `result.exitCode !== 0` AND the concatenated haystack of `result.error?.message` + `result.lastStderr` matches any of:
 
 - `/API Error: 401\b/u` — transient auth (observed)
-- `/API Error: 403\b/u`
 - `/API Error: 429\b/u` — rate limit
 - `/API Error: 5\d\d\b/u` — server errors
 - `/\b(ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN)\b/u`
@@ -46,6 +47,10 @@ Returns `true` when `result.error` or `result.exitCode !== 0` AND the concatenat
 - `/fetch failed/iu`
 
 Anything else that currently enters the failure branch continues to fail immediately, same as today.
+
+403 Forbidden is intentionally excluded: it typically reflects a permanent policy/permission decision, and retrying would mask real misconfiguration behind a ~20s delay.
+
+When the classifier decides an error is _not_ transient, it logs the raw error message at `warn` level (prefixed `transient-retry: declined to retry:`) so we can catch drift in Anthropic's error-message format in the field without having to add new regexes speculatively.
 
 ### Retry loop
 
@@ -85,16 +90,26 @@ Cumulative token accounting should merge tokens from **every** attempt, not just
 
 ### Feed visibility
 
-Emit a synthetic feed event before each backoff sleep via a new optional `onRetryScheduled` callback on `WorkflowRunnerInput`, wired up by the caller to the feed store. Event shape (new `FeedEvent` variant or reuse of an existing system/info event — TBD during implementation based on existing patterns in `src/core/feed/`):
+Emit a synthetic feed event before each backoff sleep via a new optional `onRetryScheduled` callback on `WorkflowRunnerInput`, wired up by the caller to the feed store.
 
-- Kind: info / system message
-- Text: `Transient API error — retrying in {delay}s (attempt {next}/{max}). Cause: {short cause}`
+Feed event shape: add a new `'run.retry'` variant to `FeedEventKind` in `src/core/feed/types.ts`, alongside `run.start` / `run.end`. Payload fields:
+
+- `attempt: number` (the attempt that just failed)
+- `nextAttempt: number`
+- `maxAttempts: number`
+- `delayMs: number`
+- `cause: string` (short classifier label, e.g. `"API Error: 401"`)
+- `level: 'warn'` on `FeedEventBase`
+
+Rendered text in the UI: `Transient API error — retrying in {delay}s (attempt {next}/{max}). Cause: {cause}`. The mapper/renderer changes live in `src/core/feed/mapper.ts` and the Ink component that handles system-level messages; exact rendering is an implementation detail, but the event kind and payload are pinned here to avoid schema churn during code review.
 
 Keeping the emission as a callback avoids adding feed-layer imports to the runner.
 
 ### Continuation semantics
 
-Retries pass the **same `nextContinuation`** that was used for the failed attempt. We do not switch to `continue`/`resume` mode — we want to re-execute the same turn, not tack onto a half-completed one. This is important because a 401 typically means the request never reached the model, so there is no partial session state to resume from.
+Retries pass the **same `nextContinuation`** that was used for the failed attempt. We do not switch to `continue`/`resume` mode — we want to re-execute the same turn, not tack onto a half-completed one. This is straightforward for 401, where the request never reached the model and no partial session state exists.
+
+5xx is murkier: the server may have begun processing before failing, so retrying a `continue`/`resume` continuation could in principle re-execute partial work. We accept this risk because (a) the observed motivating case is 401, (b) Claude Code's session model treats each turn as transactional from the session file's perspective — a retried turn either succeeds (and supersedes the failed attempt in the transcript) or fails again, and (c) adding special-case continuation rewriting for 5xx adds complexity we don't yet have evidence to justify. If duplicate tool-call observations appear in the field for 5xx retries, revisit by either dropping 5xx from the allowlist or forcing `continuation.mode = 'fresh'` on retry.
 
 ### Final `stopReason` format
 
@@ -115,6 +130,7 @@ Unit tests in `src/core/workflows/workflowRunner.test.ts` (or a new sibling):
 - `startTurn` returns non-transient error (e.g. tool failure message, or 400) → fails immediately, no retries, no feed emissions.
 - Cancel during backoff sleep → runner transitions to `cancelled`, no further `startTurn` calls.
 - Token accounting merges across all attempts (including failed ones).
+- When `isTransientTurnError` returns `false` for a failing turn, the raw error is emitted at `warn` level with the `transient-retry: declined to retry:` prefix (verifiable via a log spy).
 
 Use fake timers (`vi.useFakeTimers()`) to verify exact backoff delays without real waits.
 
