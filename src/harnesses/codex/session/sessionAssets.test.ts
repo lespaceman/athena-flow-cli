@@ -338,4 +338,40 @@ describe('resolveCodexMcpConfig', () => {
 			},
 		]);
 	});
+
+	it('preserves workflow plugin versions for Codex-native installation', () => {
+		const result = resolveCodexWorkflowPlugins({
+			workflow: {
+				name: 'wf',
+				plugins: [],
+				promptTemplate: '{input}',
+			},
+			resolvedPlugins: [
+				{
+					ref: 'plugin-a@owner/repo',
+					pluginName: 'plugin-a',
+					marketplaceName: 'owner/repo',
+					version: '1.2.3',
+					pluginDir: '/cache/repo/plugin-a',
+					claudeArtifactDir: '/cache/repo/plugin-a',
+					codexPluginDir: '/cache/repo/plugin-a',
+					codexMarketplacePath:
+						'/cache/plugin-packages/owner/repo/plugin-a/1.2.3/.agents/plugins/marketplace.json',
+				},
+			],
+			localPlugins: [],
+			agentRoots: [],
+			codexPlugins: [],
+		});
+
+		expect(result).toEqual([
+			{
+				ref: 'plugin-a@owner/repo',
+				pluginName: 'plugin-a',
+				marketplacePath:
+					'/cache/plugin-packages/owner/repo/plugin-a/1.2.3/.agents/plugins/marketplace.json',
+				version: '1.2.3',
+			},
+		]);
+	});
 });

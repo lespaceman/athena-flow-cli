@@ -19,6 +19,7 @@ describe('ensureCodexWorkflowPluginsInstalled', () => {
 			.mockResolvedValueOnce({
 				plugin: {
 					marketplaceName: 'athena-workflow-marketplace',
+					marketplacePath: '/cache/repo/.agents/plugins/marketplace.json',
 					summary: {
 						installed: true,
 					},
@@ -78,6 +79,8 @@ describe('ensureCodexWorkflowPluginsInstalled', () => {
 				.mockResolvedValueOnce({
 					plugin: {
 						marketplaceName: 'athena-workflow-marketplace',
+						marketplacePath:
+							'/Users/nadeem/.config/athena/marketplaces/owner/repo/.agents/plugins/marketplace.json',
 						summary: {
 							installed: true,
 						},
@@ -129,6 +132,7 @@ describe('ensureCodexWorkflowPluginsInstalled', () => {
 		const sendRequest = vi.fn().mockResolvedValue({
 			plugin: {
 				marketplaceName: 'athena-workflow-marketplace',
+				marketplacePath: '/cache/repo/.agents/plugins/marketplace.json',
 				summary: {
 					installed: true,
 				},
@@ -165,6 +169,70 @@ describe('ensureCodexWorkflowPluginsInstalled', () => {
 				pluginName: 'plugin-a',
 				marketplaceName: 'athena-workflow-marketplace',
 				marketplacePath: '/cache/repo/.agents/plugins/marketplace.json',
+			},
+		]);
+	});
+
+	it('reinstalls a pinned workflow plugin when plugin/read resolves to a different marketplace artifact', async () => {
+		const sendRequest = vi
+			.fn()
+			.mockResolvedValueOnce({
+				plugin: {
+					marketplaceName: 'athena-workflow-marketplace',
+					marketplacePath:
+						'/Users/nadeem/.codex/plugins/cache/owner/repo/plugin-a/1.0.11/.agents/plugins/marketplace.json',
+					summary: {
+						installed: true,
+					},
+				},
+			})
+			.mockResolvedValueOnce({})
+			.mockResolvedValueOnce({
+				plugin: {
+					marketplaceName: 'athena-workflow-marketplace',
+					marketplacePath:
+						'/Users/nadeem/.config/athena/plugin-packages/owner/repo/plugin-a/1.0.12/dist/1.0.12/.agents/plugins/marketplace.json',
+					summary: {
+						installed: true,
+					},
+				},
+			});
+		const manager = {
+			sendRequest,
+		};
+
+		const result = await ensureCodexWorkflowPluginsInstalled({
+			manager: manager as never,
+			projectDir: '/workspace/project',
+			plugins: [
+				{
+					ref: 'plugin-a@owner/repo',
+					pluginName: 'plugin-a',
+					marketplacePath:
+						'/Users/nadeem/.config/athena/plugin-packages/owner/repo/plugin-a/1.0.12/dist/1.0.12/.agents/plugins/marketplace.json',
+					version: '1.0.12',
+				},
+			],
+		});
+
+		expect(sendRequest).toHaveBeenNthCalledWith(1, 'plugin/read', {
+			marketplacePath:
+				'/Users/nadeem/.config/athena/plugin-packages/owner/repo/plugin-a/1.0.12/dist/1.0.12/.agents/plugins/marketplace.json',
+			pluginName: 'plugin-a',
+		});
+		expect(sendRequest).toHaveBeenNthCalledWith(2, 'plugin/install', {
+			marketplacePath:
+				'/Users/nadeem/.config/athena/plugin-packages/owner/repo/plugin-a/1.0.12/dist/1.0.12/.agents/plugins/marketplace.json',
+			pluginName: 'plugin-a',
+		});
+		expect(result).toEqual([
+			{
+				ref: 'plugin-a@owner/repo',
+				pluginName: 'plugin-a',
+				marketplaceName: 'athena-workflow-marketplace',
+				marketplacePath:
+					'/Users/nadeem/.config/athena/plugin-packages/owner/repo/plugin-a/1.0.12/dist/1.0.12/.agents/plugins/marketplace.json',
+				version: '1.0.12',
 			},
 		]);
 	});

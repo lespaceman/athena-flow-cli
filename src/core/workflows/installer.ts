@@ -107,6 +107,7 @@ export function resolveWorkflowPlugins(
 			ref: p.ref,
 			pluginName: p.pluginName,
 			marketplacePath: p.codexMarketplacePath,
+			...(p.version !== undefined && {version: p.version}),
 		})),
 	};
 }

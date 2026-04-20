@@ -158,12 +158,14 @@ export function resolveCodexWorkflowPlugins(
 	ref: string;
 	pluginName: string;
 	marketplacePath: string;
+	version?: string;
 }> {
 	return (
 		workflowPlan?.resolvedPlugins.map(plugin => ({
 			ref: plugin.ref,
 			pluginName: plugin.pluginName,
 			marketplacePath: plugin.codexMarketplacePath,
+			...(plugin.version !== undefined && {version: plugin.version}),
 		})) ??
 		workflowPlan?.codexPlugins ??
 		[]

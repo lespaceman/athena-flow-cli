@@ -9,6 +9,7 @@ export type CodexInstalledWorkflowPlugin = CodexWorkflowPluginRef & {
 type PluginReadResponse = {
 	plugin?: {
 		marketplaceName?: string;
+		marketplacePath?: string;
 		summary?: {
 			installed?: boolean;
 		};
@@ -38,6 +39,16 @@ async function readWorkflowPluginInstallationState(input: {
 		typeof (response as PluginReadResponse).plugin?.marketplaceName === 'string'
 			? (response as PluginReadResponse).plugin?.marketplaceName
 			: undefined;
+	const installedMarketplacePath =
+		typeof (response as PluginReadResponse).plugin?.marketplacePath === 'string'
+			? (response as PluginReadResponse).plugin?.marketplacePath
+			: undefined;
+	const matchesExpectedArtifact =
+		installedMarketplacePath === undefined ||
+		installedMarketplacePath === input.plugin.marketplacePath;
+	if (!matchesExpectedArtifact) {
+		return null;
+	}
 	return {
 		...input.plugin,
 		...(marketplaceName ? {marketplaceName} : {}),

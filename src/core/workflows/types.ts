@@ -114,6 +114,7 @@ export type CodexWorkflowPluginRef = {
 	ref: string;
 	pluginName: string;
 	marketplacePath: string;
+	version?: string;
 };
 
 /**

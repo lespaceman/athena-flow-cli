@@ -157,6 +157,33 @@ describe('resolveWorkflowPlugins', () => {
 		// Single pass — resolver called once, not twice.
 		expect(resolveMarketplacePluginTargetMock).toHaveBeenCalledTimes(1);
 	});
+
+	it('preserves pinned versions for Codex-native plugin installs', () => {
+		resolveMarketplacePluginTargetMock.mockReturnValue({
+			ref: 'plugin-a@owner/repo',
+			pluginName: 'plugin-a',
+			marketplacePath:
+				'/cache/plugin-packages/owner/repo/plugin-a/1.2.3/.agents/plugins/marketplace.json',
+			pluginDir: '/resolved/plugin-a',
+			codexPluginDir: '/resolved/plugin-a',
+		});
+
+		const result = resolveWorkflowPlugins({
+			name: 'test-workflow',
+			plugins: [{ref: 'plugin-a@owner/repo', version: '1.2.3'}],
+			promptTemplate: '{input}',
+		});
+
+		expect(result.codexPlugins).toEqual([
+			{
+				ref: 'plugin-a@owner/repo',
+				pluginName: 'plugin-a',
+				marketplacePath:
+					'/cache/plugin-packages/owner/repo/plugin-a/1.2.3/.agents/plugins/marketplace.json',
+				version: '1.2.3',
+			},
+		]);
+	});
 });
 
 describe('refreshPinnedWorkflowPlugins', () => {
