@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.29](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.28...cli-v0.3.29) (2026-04-20)
+
+
+### Bug Fixes
+
+* **setup:** verify claude with strict auth settings ([c8d1e41](https://github.com/lespaceman/athena-flow-cli/commit/c8d1e412c201c6c078de0eba647c18524ade7130))
+
 ## [0.3.28](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.27...cli-v0.3.28) (2026-04-20)
 
 
