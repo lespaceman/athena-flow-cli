@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.26](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.25...cli-v0.3.26) (2026-04-20)
+
+
+### Features
+
+* **doctor:** discover API keys from /login storage and managed-settings drop-ins ([e4bc469](https://github.com/lespaceman/athena-flow-cli/commit/e4bc469dd6c3bfe97c5a80e2aac62f738312967f))
+
 ## [0.3.25](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.24...cli-v0.3.25) (2026-04-20)
 
 
