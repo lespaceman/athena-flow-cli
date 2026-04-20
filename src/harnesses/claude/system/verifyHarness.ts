@@ -3,7 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {detectClaudeVersion} from './detectVersion';
 import {resolveClaudeBinary} from './resolveBinary';
-import {resolveHookForwarderCommand} from '../hooks/generateHookSettings';
+import {
+	generateHookSettings,
+	resolveHookForwarderCommand,
+} from '../hooks/generateHookSettings';
+import {resolveRuntimeAuthOverlay} from '../auth/runtimeAuth';
 
 import type {
 	HarnessVerificationCheck,
@@ -65,12 +69,35 @@ function parseClaudeAuthStatusOutput(output: string): ClaudeAuthStatus | null {
 	}
 }
 
-export function runClaudeSmokePrompt(claudeBinary: string): {
+export type RunClaudeSmokePromptOptions = {
+	cwd?: string;
+	resolveRuntimeAuthOverlayFn?: typeof resolveRuntimeAuthOverlay;
+	generateHookSettingsFn?: typeof generateHookSettings;
+	execFileSyncFn?: typeof execFileSync;
+};
+
+export function runClaudeSmokePrompt(
+	claudeBinary: string,
+	options: RunClaudeSmokePromptOptions = {},
+): {
 	ok: boolean;
 	message: string;
 } {
+	const resolveRuntimeAuthOverlayFn =
+		options.resolveRuntimeAuthOverlayFn ?? resolveRuntimeAuthOverlay;
+	const generateHookSettingsFn =
+		options.generateHookSettingsFn ?? generateHookSettings;
+	const execFileSyncFn = options.execFileSyncFn ?? execFileSync;
+	const authOverlay = resolveRuntimeAuthOverlayFn({
+		cwd: options.cwd ?? process.cwd(),
+	});
+	const {settingsPath, cleanup} = generateHookSettingsFn(
+		undefined,
+		authOverlay,
+	);
+
 	try {
-		const output = execFileSync(
+		const output = execFileSyncFn(
 			claudeBinary,
 			[
 				'-p',
@@ -82,6 +109,10 @@ export function runClaudeSmokePrompt(claudeBinary: string): {
 				'--max-turns',
 				'1',
 				'--no-session-persistence',
+				'--setting-sources',
+				'',
+				'--settings',
+				settingsPath,
 			],
 			{
 				timeout: 30000,
@@ -106,6 +137,8 @@ export function runClaudeSmokePrompt(claudeBinary: string): {
 			ok: false,
 			message: `Smoke prompt failed: ${formatExecFailure(error)}`,
 		};
+	} finally {
+		cleanup();
 	}
 }
 
@@ -251,7 +284,9 @@ export function verifyClaudeHarness(
 	}
 
 	if (claudeBinary && version && authStatus?.ok) {
-		const smokePrompt = runSmokePromptFn(claudeBinary);
+		const smokePrompt = runSmokePromptFn(claudeBinary, {
+			cwd: process.cwd(),
+		});
 		checks.push({
 			label: 'Smoke prompt',
 			status: smokePrompt.ok ? 'pass' : 'fail',

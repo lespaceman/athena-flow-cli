@@ -1,5 +1,6 @@
-import {describe, it, expect} from 'vitest';
+import {describe, it, expect, vi} from 'vitest';
 import {
+	runClaudeSmokePrompt,
 	verifyClaudeHarness,
 	type VerifyClaudeHarnessOptions,
 } from './verifyHarness';
@@ -29,6 +30,79 @@ function runVerify(options: Partial<VerifyClaudeHarnessOptions> = {}) {
 }
 
 describe('verifyClaudeHarness', () => {
+	it('runs the smoke prompt through Athena strict settings with runtime auth overlay', () => {
+		const cleanup = vi.fn();
+		const resolveRuntimeAuthOverlayFn = vi.fn(() => ({
+			apiKeyHelper: 'printf %s token',
+		}));
+		const generateHookSettingsFn = vi.fn(() => ({
+			settingsPath: '/tmp/athena-hooks.json',
+			cleanup,
+		}));
+		const execFileSyncFn = vi.fn(() => 'ATHENA_SETUP_OK');
+
+		const result = runClaudeSmokePrompt('/usr/local/bin/claude', {
+			cwd: '/repo/project',
+			resolveRuntimeAuthOverlayFn,
+			generateHookSettingsFn,
+			execFileSyncFn,
+		});
+
+		expect(result).toEqual({
+			ok: true,
+			message: 'Claude replied: ATHENA_SETUP_OK',
+		});
+		expect(resolveRuntimeAuthOverlayFn).toHaveBeenCalledWith({
+			cwd: '/repo/project',
+		});
+		expect(generateHookSettingsFn).toHaveBeenCalledWith(undefined, {
+			apiKeyHelper: 'printf %s token',
+		});
+		expect(execFileSyncFn).toHaveBeenCalledWith(
+			'/usr/local/bin/claude',
+			[
+				'-p',
+				'Reply with exactly: ATHENA_SETUP_OK',
+				'--output-format',
+				'text',
+				'--tools',
+				'',
+				'--max-turns',
+				'1',
+				'--no-session-persistence',
+				'--setting-sources',
+				'',
+				'--settings',
+				'/tmp/athena-hooks.json',
+			],
+			{
+				timeout: 30000,
+				encoding: 'utf-8',
+				stdio: ['ignore', 'pipe', 'pipe'],
+			},
+		);
+		expect(cleanup).toHaveBeenCalledTimes(1);
+	});
+
+	it('cleans up generated strict settings when the smoke prompt fails', () => {
+		const cleanup = vi.fn();
+		const execFileSyncFn = vi.fn(() => {
+			throw new Error('boom');
+		});
+
+		const result = runClaudeSmokePrompt('/usr/local/bin/claude', {
+			generateHookSettingsFn: () => ({
+				settingsPath: '/tmp/athena-hooks.json',
+				cleanup,
+			}),
+			execFileSyncFn,
+		});
+
+		expect(result.ok).toBe(false);
+		expect(result.message).toContain('Smoke prompt failed: boom');
+		expect(cleanup).toHaveBeenCalledTimes(1);
+	});
+
 	it('returns passing checks when claude and hook forwarder are available', () => {
 		const result = runVerify();
 
