@@ -26,6 +26,8 @@ type Props = {
 	 * Required when using the incremental backend.
 	 */
 	feedStartRow?: number;
+	/** 1-based terminal column where the feed region starts. */
+	feedStartCol?: number;
 	/** Override the feed rendering backend (defaults to env-var resolution). */
 	backend?: FeedSurfaceBackend;
 	/** Workflow metadata for empty-state onboarding */
@@ -59,6 +61,7 @@ function FeedGridImpl({
 	innerWidth,
 	cols,
 	feedStartRow,
+	feedStartCol,
 	backend: backendProp,
 	onboarding,
 }: Props) {
@@ -222,13 +225,20 @@ function FeedGridImpl({
 					surface={surface}
 					backend={backend}
 					feedStartRow={feedStartRow}
+					feedStartCol={feedStartCol}
 				/>
 			</>
 		);
 	}
 
 	// ── ink-full backend: normal rendering ──────────────────────────
-	return <FeedSurfaceView surface={surface} backend={backend} />;
+	return (
+		<FeedSurfaceView
+			surface={surface}
+			backend={backend}
+			feedStartCol={feedStartCol}
+		/>
+	);
 }
 
 export const FeedGrid = React.memo(FeedGridImpl);

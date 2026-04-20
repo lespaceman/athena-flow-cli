@@ -17,9 +17,6 @@ function cursorTo(row: number, col: number): string {
 	return `\x1b[${row};${col}H`;
 }
 
-/** Clear the entire current line. */
-const CLEAR_LINE = '\x1b[2K';
-
 /** Save cursor position (DEC private). */
 const SAVE_CURSOR = '\x1b7';
 
@@ -53,6 +50,8 @@ export function paintFeedSurface(
 	prevLines: readonly string[],
 	nextLines: readonly string[],
 	feedStartRow: number,
+	feedStartCol: number,
+	lineWidth: number,
 	stdout: StdoutLike,
 ): PaintResult {
 	const diff = diffFeedSurface(prevLines, nextLines);
@@ -66,17 +65,22 @@ export function paintFeedSurface(
 
 	// Build a single write buffer so we hit stdout.write() only once.
 	let buf = SAVE_CURSOR;
+	const clearRegion = ' '.repeat(Math.max(0, lineWidth));
 
 	// Write changed lines (content that differs or is newly exposed).
 	for (const idx of changedIndexes) {
 		const row = feedStartRow + idx; // 1-based terminal row
-		buf += cursorTo(row, 1) + CLEAR_LINE + (nextLines[idx] ?? '');
+		buf +=
+			cursorTo(row, feedStartCol) +
+			clearRegion +
+			cursorTo(row, feedStartCol) +
+			(nextLines[idx] ?? '');
 	}
 
 	// Clear lines that no longer exist (viewport shrank or content reduced).
 	for (const idx of clearedIndexes) {
 		const row = feedStartRow + idx;
-		buf += cursorTo(row, 1) + CLEAR_LINE;
+		buf += cursorTo(row, feedStartCol) + clearRegion;
 	}
 
 	buf += RESTORE_CURSOR;

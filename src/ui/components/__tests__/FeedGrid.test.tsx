@@ -98,15 +98,42 @@ function extractPaintedLines(
 ): Map<number, string> {
 	const result = new Map<number, string>();
 	const ESC = String.fromCharCode(0x1b);
-	const regex = new RegExp(`${ESC}\\[(\\d+);1H${ESC}\\[2K([^${ESC}]*)`, 'g');
+	const regex = new RegExp(
+		`${ESC}\\[(\\d+);(\\d+)H +(?:${ESC}\\[(\\d+);(\\d+)H([^${ESC}]*))?`,
+		'g',
+	);
 	let match: RegExpExecArray | null;
 	while ((match = regex.exec(buf)) !== null) {
 		const row = parseInt(match[1]!, 10);
-		const content = match[2]!;
+		const content = match[5] ?? '';
 		const lineIdx = row - feedStartRow;
 		result.set(lineIdx, content);
 	}
 	return result;
+}
+
+function deriveLineWidth(
+	prevLines: readonly string[],
+	nextLines: readonly string[],
+): number {
+	const sample = nextLines[0] ?? prevLines[0] ?? '';
+	return stripAnsi(sample).length;
+}
+
+function paint(
+	prevLines: readonly string[],
+	nextLines: readonly string[],
+	feedStartRow: number,
+	stdout: StdoutLike,
+) {
+	return paintFeedSurface(
+		prevLines,
+		nextLines,
+		feedStartRow,
+		1,
+		deriveLineWidth(prevLines, nextLines),
+		stdout,
+	);
 }
 
 /**
@@ -118,7 +145,7 @@ function simulateIncrementalRender(
 	feedStartRow: number,
 ): string[] {
 	const stdout = mockStdout();
-	paintFeedSurface([], surface.allLines, feedStartRow, stdout);
+	paint([], surface.allLines, feedStartRow, stdout);
 
 	const painted = extractPaintedLines(stdout.written.join(''), feedStartRow);
 	const result: string[] = [];
@@ -461,7 +488,7 @@ describe('Parity: resize transitions', () => {
 
 		// Simulate incremental transition: large -> small
 		const stdout = mockStdout();
-		const result = paintFeedSurface(
+		const result = paint(
 			largeSurface.allLines,
 			smallSurface.allLines,
 			1,
@@ -502,7 +529,7 @@ describe('Parity: resize transitions', () => {
 
 		// Simulate incremental transition: small -> large
 		const stdout = mockStdout();
-		const result = paintFeedSurface(
+		const result = paint(
 			smallSurface.allLines,
 			largeSurface.allLines,
 			1,
@@ -551,12 +578,7 @@ describe('Parity: resize transitions', () => {
 
 		// Incremental paint from shrunk -> restored should produce correct output
 		const stdout = mockStdout();
-		paintFeedSurface(
-			shrunkSurface.allLines,
-			restoredSurface.allLines,
-			1,
-			stdout,
-		);
+		paint(shrunkSurface.allLines, restoredSurface.allLines, 1, stdout);
 		const painted = extractPaintedLines(stdout.written.join(''), 1);
 
 		// Every painted line should match the restored surface
@@ -596,7 +618,7 @@ describe('Parity: resize transitions', () => {
 
 		// Width change should trigger repaint of all lines
 		const stdout = mockStdout();
-		const result = paintFeedSurface(
+		const result = paint(
 			wideSurface.allLines,
 			narrowSurface.allLines,
 			1,
@@ -699,12 +721,7 @@ describe('Parity: incremental update correctness', () => {
 		);
 
 		const stdout = mockStdout();
-		const result = paintFeedSurface(
-			prevSurface.allLines,
-			nextSurface.allLines,
-			1,
-			stdout,
-		);
+		const result = paint(prevSurface.allLines, nextSurface.allLines, 1, stdout);
 
 		// Only the old-focused and new-focused rows should change
 		expect(result.linesChanged).toBe(2);
@@ -741,12 +758,7 @@ describe('Parity: incremental update correctness', () => {
 		);
 
 		const stdout = mockStdout();
-		const result = paintFeedSurface(
-			prevSurface.allLines,
-			nextSurface.allLines,
-			1,
-			stdout,
-		);
+		const result = paint(prevSurface.allLines, nextSurface.allLines, 1, stdout);
 
 		// Header and divider should be unchanged (they don't depend on viewport start)
 		// Only body lines should change
@@ -781,12 +793,7 @@ describe('Parity: incremental update correctness', () => {
 		);
 
 		const stdout = mockStdout();
-		const result = paintFeedSurface(
-			prevSurface.allLines,
-			nextSurface.allLines,
-			1,
-			stdout,
-		);
+		const result = paint(prevSurface.allLines, nextSurface.allLines, 1, stdout);
 
 		// Only the newly matched row should change
 		expect(result.linesChanged).toBe(1);

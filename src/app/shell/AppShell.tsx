@@ -1007,6 +1007,7 @@ function AppContent({
 	//   +  actualRunOverlayRows
 	// feedStartRow is 1-based for ANSI cursor addressing.
 	const feedStartRow = 3 + actualTodoRows + actualRunOverlayRows + 1;
+	const feedStartCol = splitMode ? messagePanelWidth + 2 : 1;
 
 	// FeedGrid subtracts 1 from feedContentRows for the header divider line.
 	// The navigation viewport must match the actual visible data rows.
@@ -1565,6 +1566,7 @@ function AppContent({
 								innerWidth={feedPanelWidth}
 								cols={feedCols}
 								feedStartRow={feedStartRow}
+								feedStartCol={feedStartCol}
 								backend={feedBackend}
 								onboarding={feedOnboarding}
 							/>
@@ -1584,6 +1586,7 @@ function AppContent({
 						innerWidth={innerWidth}
 						cols={feedCols}
 						feedStartRow={feedStartRow}
+						feedStartCol={feedStartCol}
 						backend={feedBackend}
 						onboarding={feedOnboarding}
 					/>

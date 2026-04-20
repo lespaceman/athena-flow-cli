@@ -24,6 +24,7 @@ export type FeedSurface = {
 	allLines: string[];
 	visibleContentRows: number;
 	startIndex: number;
+	lineWidth: number;
 	lineToEntry: LineToEntryMap;
 };
 
@@ -192,6 +193,7 @@ export function buildFeedSurface(params: BuildFeedSurfaceParams): FeedSurface {
 	const headerLines: string[] = [];
 	const bodyLines: string[] = [];
 	const lineToEntry: LineToEntryMap = new Map();
+	const lineWidth = innerWidth + 2;
 
 	// Header row
 	if (feedHeaderRows > 0) {
@@ -210,6 +212,7 @@ export function buildFeedSurface(params: BuildFeedSurfaceParams): FeedSurface {
 			allLines: [...headerLines],
 			visibleContentRows,
 			startIndex: feedViewportStart,
+			lineWidth,
 			lineToEntry,
 		};
 	}
@@ -230,6 +233,7 @@ export function buildFeedSurface(params: BuildFeedSurfaceParams): FeedSurface {
 			allLines: [...headerLines, ...bodyLines],
 			visibleContentRows,
 			startIndex: feedViewportStart,
+			lineWidth,
 			lineToEntry,
 		};
 	}
@@ -309,6 +313,7 @@ export function buildFeedSurface(params: BuildFeedSurfaceParams): FeedSurface {
 		allLines: [...headerLines, ...bodyLines],
 		visibleContentRows,
 		startIndex: feedViewportStart,
+		lineWidth,
 		lineToEntry,
 	};
 }

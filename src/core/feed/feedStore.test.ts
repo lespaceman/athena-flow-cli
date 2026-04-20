@@ -156,7 +156,7 @@ describe('FeedStore', () => {
 		expect(listener).not.toHaveBeenCalled();
 	});
 
-	it('pushEvents caps at MAX_EVENTS (200)', () => {
+	it('retains full event history instead of trimming old entries', () => {
 		const store = new FeedStore();
 
 		const events: FeedEvent[] = [];
@@ -171,10 +171,9 @@ describe('FeedStore', () => {
 		store.pushEvents(events);
 
 		const snapshot = store.getSnapshot();
-		expect(snapshot).toHaveLength(200);
-		// Should keep the last 200 (indices 50-249)
-		expect(snapshot[0]!.event_id).toBe('evt-50');
-		expect(snapshot[199]!.event_id).toBe('evt-249');
+		expect(snapshot).toHaveLength(250);
+		expect(snapshot[0]!.event_id).toBe('evt-0');
+		expect(snapshot[249]!.event_id).toBe('evt-249');
 	});
 
 	it('getSnapshot returns same reference between calls without pushEvents', () => {

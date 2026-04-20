@@ -2,17 +2,17 @@ import type {FeedEvent} from './types';
 import type {MapperBootstrap} from './bootstrap';
 import {buildPostByToolUseId} from './items';
 
-const MAX_EVENTS = 200;
-
 type FeedStoreOptions = {
 	bootstrap?: MapperBootstrap;
 };
 
+const EMPTY_EVENTS = Object.freeze([]) as ReadonlyArray<FeedEvent>;
+
 export class FeedStore {
-	private events: FeedEvent[];
+	private events: ReadonlyArray<FeedEvent>;
 	private listeners = new Set<() => void>();
 	private version = 0;
-	private snapshot: FeedEvent[] | null = null;
+	private snapshot: ReadonlyArray<FeedEvent>;
 
 	// Derived index maintained incrementally
 	private postByToolUseIdMap: Map<string, FeedEvent>;
@@ -21,10 +21,13 @@ export class FeedStore {
 	constructor(opts: FeedStoreOptions = {}) {
 		// Bootstrap from stored session data
 		const bootstrapEvents = opts.bootstrap?.feedEvents ?? [];
-		this.events = [...bootstrapEvents];
+		this.events = Object.freeze([
+			...bootstrapEvents,
+		]) as ReadonlyArray<FeedEvent>;
+		this.snapshot = this.events;
 
 		// Seed postByToolUseId from historical events (critical for session restore)
-		this.postByToolUseIdMap = buildPostByToolUseId(this.events);
+		this.postByToolUseIdMap = buildPostByToolUseId(bootstrapEvents);
 	}
 
 	/**
@@ -34,17 +37,35 @@ export class FeedStore {
 	pushEvents(newEvents: FeedEvent[]): void {
 		if (newEvents.length === 0) return;
 
+		const nextEvents = [...this.events];
+		let nextPostByToolUseIdMap = this.postByToolUseIdMap;
+		let nextReasoningByKey = this.reasoningByKey;
+
+		const ensurePostByToolUseIdMap = (): Map<string, FeedEvent> => {
+			if (nextPostByToolUseIdMap === this.postByToolUseIdMap) {
+				nextPostByToolUseIdMap = new Map(this.postByToolUseIdMap);
+			}
+			return nextPostByToolUseIdMap;
+		};
+
+		const ensureReasoningByKey = (): Map<string, FeedEvent> => {
+			if (nextReasoningByKey === this.reasoningByKey) {
+				nextReasoningByKey = new Map(this.reasoningByKey);
+			}
+			return nextReasoningByKey;
+		};
+
 		for (const event of newEvents) {
 			// Handle tool.delta: update existing event in-place instead of appending
-			// This prevents high-frequency deltas from evicting important events
+			// This prevents high-frequency deltas from bloating the event history
 			if (event.kind === 'tool.delta' && event.data.tool_use_id) {
-				const existing = this.postByToolUseIdMap.get(event.data.tool_use_id);
+				const existing = nextPostByToolUseIdMap.get(event.data.tool_use_id);
 				if (existing && existing.kind === 'tool.delta') {
 					// Update in-place — find index and replace
-					const idx = this.events.indexOf(existing);
+					const idx = nextEvents.indexOf(existing);
 					if (idx !== -1) {
-						this.events[idx] = event;
-						this.postByToolUseIdMap.set(event.data.tool_use_id, event);
+						nextEvents[idx] = event;
+						ensurePostByToolUseIdMap().set(event.data.tool_use_id, event);
 						continue;
 					}
 				}
@@ -52,18 +73,18 @@ export class FeedStore {
 
 			if (event.kind === 'reasoning.summary') {
 				const reasoningKey = `${event.data.item_id ?? ''}:${event.data.summary_index ?? event.data.content_index ?? 0}`;
-				const existing = this.reasoningByKey.get(reasoningKey);
+				const existing = nextReasoningByKey.get(reasoningKey);
 				if (existing && existing.kind === 'reasoning.summary') {
-					const idx = this.events.indexOf(existing);
+					const idx = nextEvents.indexOf(existing);
 					if (idx !== -1) {
-						this.events[idx] = event;
-						this.reasoningByKey.set(reasoningKey, event);
+						nextEvents[idx] = event;
+						ensureReasoningByKey().set(reasoningKey, event);
 						continue;
 					}
 				}
 			}
 
-			this.events.push(event);
+			nextEvents.push(event);
 
 			// Update postByToolUseId incrementally
 			if (
@@ -72,22 +93,20 @@ export class FeedStore {
 					event.kind === 'tool.failure') &&
 				event.data.tool_use_id
 			) {
-				this.postByToolUseIdMap.set(event.data.tool_use_id, event);
+				ensurePostByToolUseIdMap().set(event.data.tool_use_id, event);
 			}
 			if (event.kind === 'reasoning.summary') {
 				const reasoningKey = `${event.data.item_id ?? ''}:${event.data.summary_index ?? event.data.content_index ?? 0}`;
-				this.reasoningByKey.set(reasoningKey, event);
+				ensureReasoningByKey().set(reasoningKey, event);
 			}
 		}
 
-		// Apply MAX_EVENTS cap
-		if (this.events.length > MAX_EVENTS) {
-			this.events = this.events.slice(-MAX_EVENTS);
-		}
-
 		// Bump version, invalidate snapshot, notify
+		this.events = Object.freeze(nextEvents) as ReadonlyArray<FeedEvent>;
+		this.snapshot = this.events;
+		this.postByToolUseIdMap = nextPostByToolUseIdMap;
+		this.reasoningByKey = nextReasoningByKey;
 		this.version++;
-		this.snapshot = null;
 		this.notify();
 	}
 
@@ -101,12 +120,9 @@ export class FeedStore {
 	};
 
 	getSnapshot = (): FeedEvent[] => {
-		// CRITICAL: must return same reference between render and commit phases.
-		// Only rebuild when version changes (snapshot is null).
-		if (this.snapshot === null) {
-			this.snapshot = Object.freeze([...this.events]) as FeedEvent[];
-		}
-		return this.snapshot;
+		// CRITICAL: must return the same immutable reference between render and
+		// commit phases for a given store version.
+		return this.snapshot as FeedEvent[];
 	};
 
 	// ── Derived data ──────────────────────────────────────
@@ -118,20 +134,20 @@ export class FeedStore {
 	// ── Lifecycle ─────────────────────────────────────────
 
 	reset(): void {
-		this.events = [];
+		this.events = EMPTY_EVENTS;
+		this.snapshot = EMPTY_EVENTS;
 		this.postByToolUseIdMap = new Map();
 		this.reasoningByKey = new Map();
 		this.version++;
-		this.snapshot = null;
 		this.notify();
 	}
 
 	clear(): void {
-		this.events = [];
+		this.events = EMPTY_EVENTS;
+		this.snapshot = EMPTY_EVENTS;
 		this.postByToolUseIdMap = new Map();
 		this.reasoningByKey = new Map();
 		this.version++;
-		this.snapshot = null;
 		this.notify();
 	}
 

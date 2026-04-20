@@ -53,6 +53,11 @@ type Props = {
 	 */
 	feedStartRow?: number;
 	/**
+	 * 1-based terminal column where the feed rectangle starts.
+	 * Required when backend is 'incremental'.
+	 */
+	feedStartCol?: number;
+	/**
 	 * Writable stream for the incremental painter. Defaults to process.stdout.
 	 */
 	stdout?: {write(data: string): boolean};
@@ -68,6 +73,7 @@ function FeedSurfaceImpl({
 	surface,
 	backend: backendProp,
 	feedStartRow,
+	feedStartCol,
 	stdout,
 }: Props) {
 	const backend = resolveFeedBackend(backendProp);
@@ -78,6 +84,7 @@ function FeedSurfaceImpl({
 			<IncrementalFeedSurface
 				surface={surface}
 				feedStartRow={feedStartRow ?? 1}
+				feedStartCol={feedStartCol ?? 1}
 				stdout={stdout}
 			/>
 		);

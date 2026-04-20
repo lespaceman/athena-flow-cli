@@ -22,6 +22,8 @@ type Props = {
 	 * The painter uses this to position the cursor for each line write.
 	 */
 	feedStartRow: number;
+	/** The 1-based terminal column where the feed rectangle starts. */
+	feedStartCol: number;
 	/**
 	 * Writable stream to paint to. Defaults to `process.stdout`.
 	 * Exposed as a prop for testability.
@@ -34,13 +36,20 @@ type Props = {
 function IncrementalFeedSurfaceImpl({
 	surface,
 	feedStartRow,
+	feedStartCol,
 	stdout = process.stdout,
 }: Props) {
 	const prevLinesRef = React.useRef<readonly string[]>([]);
 	const prevFeedStartRowRef = React.useRef(feedStartRow);
+	const prevFeedStartColRef = React.useRef(feedStartCol);
+	const prevLineWidthRef = React.useRef(surface.lineWidth);
 	const feedStartRowRef = React.useRef(feedStartRow);
+	const feedStartColRef = React.useRef(feedStartCol);
+	const lineWidthRef = React.useRef(surface.lineWidth);
 	const stdoutRef = React.useRef(stdout);
 	feedStartRowRef.current = feedStartRow;
+	feedStartColRef.current = feedStartCol;
+	lineWidthRef.current = surface.lineWidth;
 	stdoutRef.current = stdout;
 
 	// Use useEffect so painting happens after React commit, matching
@@ -49,17 +58,38 @@ function IncrementalFeedSurfaceImpl({
 		const prevLines = prevLinesRef.current;
 		const nextLines = surface.allLines;
 		const prevStartRow = prevFeedStartRowRef.current;
+		const prevStartCol = prevFeedStartColRef.current;
+		const prevLineWidth = prevLineWidthRef.current;
+		const regionChanged =
+			prevStartRow !== feedStartRow ||
+			prevStartCol !== feedStartCol ||
+			prevLineWidth !== surface.lineWidth;
 
-		// When the feed region moves vertically (e.g. todo panel toggled,
-		// run overlay shown/hidden), clear all lines at the OLD position
-		// first, then repaint everything at the NEW position. Without this,
-		// unchanged lines would remain ghosted at the previous location.
-		if (prevStartRow !== feedStartRow && prevLines.length > 0) {
-			paintFeedSurface(prevLines, [], prevStartRow, stdout);
+		// When the feed region moves or resizes, clear all lines at the OLD
+		// position first, then repaint everything at the NEW position. Without
+		// this, unchanged lines can remain ghosted outside the new rectangle.
+		if (regionChanged && prevLines.length > 0) {
+			paintFeedSurface(
+				prevLines,
+				[],
+				prevStartRow,
+				prevStartCol,
+				prevLineWidth,
+				stdout,
+			);
 			// Force full repaint at the new position by treating prev as empty.
-			const result = paintFeedSurface([], nextLines, feedStartRow, stdout);
+			const result = paintFeedSurface(
+				[],
+				nextLines,
+				feedStartRow,
+				feedStartCol,
+				surface.lineWidth,
+				stdout,
+			);
 			prevLinesRef.current = nextLines;
 			prevFeedStartRowRef.current = feedStartRow;
+			prevFeedStartColRef.current = feedStartCol;
+			prevLineWidthRef.current = surface.lineWidth;
 
 			logFeedSurfaceRender({
 				backend: 'incremental',
@@ -71,10 +101,19 @@ function IncrementalFeedSurfaceImpl({
 			return;
 		}
 
-		const result = paintFeedSurface(prevLines, nextLines, feedStartRow, stdout);
+		const result = paintFeedSurface(
+			prevLines,
+			nextLines,
+			feedStartRow,
+			feedStartCol,
+			surface.lineWidth,
+			stdout,
+		);
 
 		prevLinesRef.current = nextLines;
 		prevFeedStartRowRef.current = feedStartRow;
+		prevFeedStartColRef.current = feedStartCol;
+		prevLineWidthRef.current = surface.lineWidth;
 
 		logFeedSurfaceRender({
 			backend: 'incremental',
@@ -83,7 +122,7 @@ function IncrementalFeedSurfaceImpl({
 			linesChanged: result.linesChanged,
 			linesCleared: result.linesCleared,
 		});
-	}, [surface, feedStartRow, stdout]);
+	}, [surface, feedStartRow, feedStartCol, stdout]);
 
 	// Clear painted lines on unmount to avoid stale terminal artifacts.
 	// Uses refs so cleanup always has the latest feedStartRow/stdout.
@@ -94,6 +133,8 @@ function IncrementalFeedSurfaceImpl({
 					prevLinesRef.current,
 					[],
 					feedStartRowRef.current,
+					feedStartColRef.current,
+					lineWidthRef.current,
 					stdoutRef.current,
 				);
 			}
