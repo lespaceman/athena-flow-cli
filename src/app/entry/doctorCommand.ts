@@ -1,8 +1,9 @@
 /**
  * `athena doctor --harness=claude` orchestrator.
  *
- * Surveys the local Claude environment, then runs five `claude -p` probes
- * with different flag combinations and prints a pass/fail matrix.
+ * Surveys the local Claude environment, then streams a probe matrix that
+ * sweeps `--bare × --setting-sources × auth source` combinations and prints
+ * a pass/fail/skip table with a recommended path at the bottom.
  */
 
 import process from 'node:process';
@@ -17,6 +18,7 @@ import {
 	buildProbeConfigs,
 	classifyFailure,
 	credentialHelperKey,
+	formatProbeCommand,
 	lookupAllCredentials,
 	lookupCredential,
 	makeSkippedProbe,
@@ -165,7 +167,10 @@ function probeHeader(probe: ProbeConfig): string {
 	return `  ${id} ${label}`;
 }
 
-function printProbe(result: ProbeResult): void {
+function printProbe(
+	result: ProbeResult,
+	options: {previousClassificationTitle?: string} = {},
+): void {
 	const duration =
 		result.durationMs > 0
 			? c.dim(` ${(result.durationMs / 1000).toFixed(1)}s`)
@@ -180,7 +185,6 @@ function printProbe(result: ProbeResult): void {
 		`  ${id} ${label} ${statusBadge(result.status)}${duration}${exit}`,
 	);
 
-	// Always show the actual command being probed so the label isn't ambiguous.
 	if (result.status !== 'na') {
 		console.log(c.dim(`${INDENT}$ ${result.command}`));
 	}
@@ -191,14 +195,22 @@ function printProbe(result: ProbeResult): void {
 	}
 
 	const failure = classifyFailure(result);
-	if (failure) {
-		console.log(`${INDENT}${c.red('→')} ${failure.title}`);
-		if (failure.hint) {
-			console.log(`${INDENT}  ${c.dim(failure.hint)}`);
-		}
-		if (failure.rawLine && failure.rawLine !== failure.title) {
-			console.log(`${INDENT}  ${c.dim(failure.rawLine)}`);
-		}
+	if (!failure) return;
+
+	// First failure in a group prints title + hint + raw line. Subsequent
+	// failures with the same classification show only "↳ same as above" so
+	// the matrix stays scannable.
+	const isRepeat = options.previousClassificationTitle === failure.title;
+	console.log(`${INDENT}${c.red('→')} ${failure.title}`);
+	if (isRepeat) {
+		console.log(`${INDENT}  ${c.dim('(same as above)')}`);
+		return;
+	}
+	if (failure.hint) {
+		console.log(`${INDENT}  ${c.dim(failure.hint)}`);
+	}
+	if (failure.rawLine && failure.rawLine !== failure.title) {
+		console.log(`${INDENT}  ${c.dim(failure.rawLine)}`);
 	}
 }
 
@@ -233,14 +245,15 @@ function summarize(results: ProbeResult[]): {
 function recommendation(results: ProbeResult[]): string | null {
 	const passing = results.filter(r => r.status === 'pass');
 	if (passing.length === 0) return null;
-	return passing[0]!.label;
+	const top = passing[0]!;
+	return `[${top.id.trim()}] ${top.label}`;
 }
 
 function handlePrintApiKey(): number {
 	const credential = lookupCredential();
 	if (!credential) {
 		console.error(
-			'No Claude credential found. Tried: ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, CLAUDE_CODE_OAUTH_TOKEN, macOS keychain "Claude Code-credentials", and ~/.claude/.credentials.json.',
+			'No Claude credential found. Tried: ANTHROPIC_API_KEY env, ANTHROPIC_AUTH_TOKEN env, macOS keychain "ANTHROPIC_API_KEY", .env / .env.local / ~/.env, settings apiKeyHelper, CLAUDE_CODE_OAUTH_TOKEN env, macOS keychain "Claude Code-credentials", and ~/.claude/.credentials.json.',
 		);
 		return 1;
 	}
@@ -311,6 +324,21 @@ export async function runDoctorCommand(
 	};
 	const probes = buildProbeConfigs(buildOpts);
 
+	// Path aliases: replace long temp paths with $hooks / $helper.<n> so the
+	// per-probe command lines stay scannable. The alias table is printed once.
+	const aliases = new Map<string, string>();
+	aliases.set('hooks', strictSettings.settingsPath);
+	let helperIndex = 0;
+	for (const helperPath of helperSettingsByCredential.values()) {
+		helperIndex += 1;
+		aliases.set(
+			helperSettingsByCredential.size === 1 ? 'helper' : `helper${helperIndex}`,
+			helperPath,
+		);
+	}
+	const formatCommandFn = (probe: ProbeConfig): string =>
+		formatProbeCommand(probe, env.claudeBinary!, aliases);
+
 	const NON_ANTHROPIC_PROVIDERS = new Set(['bedrock', 'vertex', 'foundry']);
 	const isAnthropicProvider = !NON_ANTHROPIC_PROVIDERS.has(
 		(env.auth?.apiProvider ?? '').toLowerCase(),
@@ -318,10 +346,32 @@ export async function runDoctorCommand(
 
 	if (!options.json) {
 		printEnvironment(env);
+		if (aliases.size > 0) {
+			console.log(c.dim('  paths'));
+			for (const [name, fullPath] of aliases) {
+				console.log(`    ${c.dim(`$${name}`.padEnd(8))}${fullPath}`);
+			}
+			console.log('');
+		}
 	}
 
 	const results: ProbeResult[] = [];
 	let currentGroup = '';
+	const lastClassificationByGroup = new Map<string, string>();
+
+	const recordAndPrint = (result: ProbeResult) => {
+		results.push(result);
+		if (options.json) return;
+		const previous = lastClassificationByGroup.get(result.groupLabel);
+		printProbe(result, {previousClassificationTitle: previous});
+		const failure = classifyFailure(result);
+		if (failure) {
+			lastClassificationByGroup.set(result.groupLabel, failure.title);
+		} else {
+			lastClassificationByGroup.delete(result.groupLabel);
+		}
+	};
+
 	for (const probe of probes) {
 		if (!options.json && probe.groupLabel !== currentGroup) {
 			if (currentGroup !== '') console.log('');
@@ -332,37 +382,40 @@ export async function runDoctorCommand(
 		const needsCredential =
 			probe.group === 'credential' || probe.group === 'helper';
 		if (needsCredential && !isAnthropicProvider) {
-			const result = makeSkippedProbe(
-				probe,
-				`Not applicable: apiProvider=${env.auth?.apiProvider}`,
-				'na',
-				env.claudeBinary,
+			recordAndPrint(
+				makeSkippedProbe(
+					probe,
+					`Not applicable: apiProvider=${env.auth?.apiProvider}`,
+					'na',
+					env.claudeBinary,
+					formatCommandFn,
+				),
 			);
-			results.push(result);
-			if (!options.json) printProbe(result);
 			continue;
 		}
 
 		const skipReason = probeSkipReason(probe, buildOpts);
 		if (skipReason) {
-			const result = makeSkippedProbe(
-				probe,
-				skipReason,
-				'skip',
-				env.claudeBinary,
+			recordAndPrint(
+				makeSkippedProbe(
+					probe,
+					skipReason,
+					'skip',
+					env.claudeBinary,
+					formatCommandFn,
+				),
 			);
-			results.push(result);
-			if (!options.json) printProbe(result);
 			continue;
 		}
 
 		if (!options.json) printRunningLine(probe);
-		const result = await runProbe({claudeBinary: env.claudeBinary, probe});
-		if (!options.json) {
-			clearRunningLine();
-			printProbe(result);
-		}
-		results.push(result);
+		const result = await runProbe({
+			claudeBinary: env.claudeBinary,
+			probe,
+			formatCommandFn,
+		});
+		if (!options.json) clearRunningLine();
+		recordAndPrint(result);
 	}
 
 	for (const fn of cleanups) {

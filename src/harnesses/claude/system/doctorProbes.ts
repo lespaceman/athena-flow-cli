@@ -1,10 +1,11 @@
 /**
  * Probe runner and helpers for `athena doctor --harness=claude`.
  *
- * Each probe shells out to `claude -p` with a different flag combination,
- * captures stdout/stderr (including `--debug api,hooks` output), and reports
- * pass/fail/skip. Helpers here also resolve `ANTHROPIC_API_KEY` from the
- * environment or the macOS keychain for probes 4 and 5.
+ * Each probe shells out to `claude -p` with a different flag combination
+ * (see `buildProbeConfigs`), captures stdout/stderr including
+ * `--debug api,hooks` output, and reports pass/fail/skip. Credential lookup
+ * (`lookupAllCredentials`) walks every documented credential location so the
+ * doctor can exercise each available auth method in its own probe group.
  */
 
 import {spawn, spawnSync} from 'node:child_process';
@@ -29,6 +30,8 @@ export type ProbeConfig = {
 	args: string[];
 	env?: Record<string, string>;
 	tempPaths?: string[];
+	/** When set on credential/helper probes, the kind of credential being injected. */
+	credentialKind?: CredentialKind;
 };
 
 export type ProbeResult = {
@@ -452,11 +455,14 @@ function shellQuoteArg(value: string): string {
 /**
  * Formats the probe's invocation as a shell command line, eliding the long
  * smoke prompt so the output stays scannable. Env-var injections are rendered
- * as `KEY=<value>` prefixes (with the value masked for credentials).
+ * as `KEY=<value>` prefixes (with the value masked for credentials). The
+ * binary is rendered as its basename and any path matching an entry in
+ * `aliases` is rendered as `$alias`.
  */
 export function formatProbeCommand(
 	probe: ProbeConfig,
 	claudeBinary: string,
+	aliases?: ReadonlyMap<string, string>,
 ): string {
 	const parts: string[] = [];
 	if (probe.env) {
@@ -464,10 +470,18 @@ export function formatProbeCommand(
 			parts.push(`${key}=${shellQuoteArg(maskCredentialValue(value))}`);
 		}
 	}
-	parts.push(shellQuoteArg(claudeBinary));
-	const args = probe.args.map(arg =>
-		arg === DOCTOR_PROMPT ? '<prompt>' : shellQuoteArg(arg),
-	);
+	parts.push(path.basename(claudeBinary));
+	const aliasFor = (arg: string): string | null => {
+		if (!aliases) return null;
+		for (const [name, fullPath] of aliases) {
+			if (arg === fullPath) return `$${name}`;
+		}
+		return null;
+	};
+	const args = probe.args.map(arg => {
+		if (arg === DOCTOR_PROMPT) return '<prompt>';
+		return aliasFor(arg) ?? shellQuoteArg(arg);
+	});
 	parts.push(...args);
 	return parts.join(' ');
 }
@@ -564,6 +578,8 @@ export type RunProbeOptions = {
 	probe: ProbeConfig;
 	timeoutMs?: number;
 	now?: () => number;
+	/** Optional renderer for the probe's command line; defaults to formatProbeCommand. */
+	formatCommandFn?: (probe: ProbeConfig) => string;
 	/** Fires whenever the probe emits stdout data; useful for live streaming. */
 	onStdoutChunk?: (chunk: string) => void;
 	/** Fires whenever the probe emits stderr data; useful for live streaming. */
@@ -575,9 +591,13 @@ export async function runProbe({
 	probe,
 	timeoutMs = DOCTOR_TIMEOUT_MS,
 	now = Date.now,
+	formatCommandFn,
 	onStdoutChunk,
 	onStderrChunk,
 }: RunProbeOptions): Promise<ProbeResult> {
+	const formatCommand =
+		formatCommandFn ??
+		((p: ProbeConfig) => formatProbeCommand(p, claudeBinary));
 	const start = now();
 
 	return new Promise<ProbeResult>(resolve => {
@@ -622,7 +642,7 @@ export async function runProbe({
 				group: probe.group,
 				groupLabel: probe.groupLabel,
 				label: probe.label,
-				command: formatProbeCommand(probe, claudeBinary),
+				command: formatCommand(probe),
 				status,
 				exitCode,
 				durationMs,
@@ -644,13 +664,17 @@ export function makeSkippedProbe(
 	reason: string,
 	status: ProbeStatus = 'skip',
 	claudeBinary = 'claude',
+	formatCommandFn?: (probe: ProbeConfig) => string,
 ): ProbeResult {
+	const command = formatCommandFn
+		? formatCommandFn(probe)
+		: formatProbeCommand(probe, claudeBinary);
 	return {
 		id: probe.id,
 		group: probe.group,
 		groupLabel: probe.groupLabel,
 		label: probe.label,
-		command: formatProbeCommand(probe, claudeBinary),
+		command,
 		status,
 		exitCode: null,
 		durationMs: 0,
@@ -700,23 +724,41 @@ function comboShortId(combo: FlagCombo): string {
 }
 
 function baseArgs(combo: FlagCombo, extraSettings?: string): string[] {
+	// Use --output-format stream-json to match Athena's production spawn
+	// (src/harnesses/claude/process/spawn.ts:151). The sentinel string still
+	// appears verbatim inside the NDJSON, so the simple stdout.includes() check
+	// in runProbe works without a JSON parser.
 	const args: string[] = [];
 	if (combo.bare) args.push('--bare');
-	args.push('-p', DOCTOR_PROMPT, '--output-format', 'text', '--max-turns', '1');
+	args.push(
+		'-p',
+		DOCTOR_PROMPT,
+		'--output-format',
+		'stream-json',
+		'--verbose',
+		'--include-partial-messages',
+		'--max-turns',
+		'1',
+	);
 	if (combo.emptySources) args.push('--setting-sources', '');
 	if (extraSettings) args.push('--settings', extraSettings);
 	args.push('--debug', 'api,hooks');
 	return args;
 }
 
-function envVarForCredential(credential: CredentialLookup): string {
-	// --bare reads ANTHROPIC_API_KEY (X-Api-Key) and ANTHROPIC_AUTH_TOKEN
-	// (Authorization: Bearer); it does NOT read CLAUDE_CODE_OAUTH_TOKEN.
-	// Subscription OAuth tokens (sk-ant-oat01-…) work as bearer tokens, so
-	// route any non-API-key credential through ANTHROPIC_AUTH_TOKEN.
-	return credential.kind === 'apiKey'
-		? 'ANTHROPIC_API_KEY'
-		: 'ANTHROPIC_AUTH_TOKEN';
+/**
+ * Per the Anthropic auth docs, ANTHROPIC_API_KEY carries Console API keys
+ * (X-Api-Key header) and ANTHROPIC_AUTH_TOKEN carries proxy/gateway bearer
+ * tokens (Authorization: Bearer). Subscription OAuth tokens (sk-ant-oat…)
+ * are NOT a valid value for either — they must go through `apiKeyHelper`
+ * or `claude /login`. Returns null for OAuth credentials so the C-group
+ * SKIPs them with an explanatory reason instead of producing a misleading
+ * 401 by injecting an invalid value.
+ */
+function envVarForCredential(credential: CredentialLookup): string | null {
+	if (credential.kind === 'apiKey') return 'ANTHROPIC_API_KEY';
+	if (credential.kind === 'authToken') return 'ANTHROPIC_AUTH_TOKEN';
+	return null;
 }
 
 export function buildProbeConfigs(opts: BuildProbesOptions): ProbeConfig[] {
@@ -790,16 +832,20 @@ export function buildProbeConfigs(opts: BuildProbesOptions): ProbeConfig[] {
 		credentials.forEach((credential, credentialIndex) => {
 			const credentialTag = `${credentialIndex + 1}`; // C1, C2 …
 			const envVar = envVarForCredential(credential);
-			const credentialGroupLabel = `Credential via env: ${envVar} from ${credential.source} (${credential.kind})`;
+			const credentialGroupLabel = envVar
+				? `Credential via env: ${envVar} from ${credential.source} (${credential.kind})`
+				: `Credential via env: ${credential.source} (${credential.kind} — not env-injectable)`;
 			for (const combo of FLAG_COMBOS) {
-				probes.push({
+				const probe: ProbeConfig = {
 					id: `C${credentialTag}-${comboShortId(combo)}`,
 					group: 'credential',
 					groupLabel: credentialGroupLabel,
 					label: comboLabel(combo),
 					args: baseArgs(combo),
-					env: {[envVar]: credential.value},
-				});
+					credentialKind: credential.kind,
+				};
+				if (envVar) probe.env = {[envVar]: credential.value};
+				probes.push(probe);
 			}
 
 			const helperKey = `${credential.source}|${credential.value}`;
@@ -814,6 +860,7 @@ export function buildProbeConfigs(opts: BuildProbesOptions): ProbeConfig[] {
 					groupLabel: helperGroupLabel,
 					label: comboLabel(combo),
 					args: helperPath ? baseArgs(combo, helperPath) : baseArgs(combo),
+					credentialKind: credential.kind,
 				};
 				if (helperPath) probe.tempPaths = [helperPath];
 				probes.push(probe);
@@ -840,6 +887,13 @@ export function probeSkipReason(
 			opts.credentialMissingReason ??
 			'No credential resolved (would have injected an empty token)'
 		);
+	}
+	// Subscription OAuth tokens (sk-ant-oat…) are not valid values for
+	// ANTHROPIC_API_KEY (X-Api-Key) or ANTHROPIC_AUTH_TOKEN (Bearer). Skip the
+	// env-injection group rather than producing a misleading 401 with a value
+	// the API was never going to accept on those headers.
+	if (probe.group === 'credential' && probe.credentialKind === 'oauthToken') {
+		return 'No API key available. Set ANTHROPIC_API_KEY=sk-ant-api… or pass --api-key=… to run this group (OAuth tokens cannot be injected as env vars per Anthropic auth docs)';
 	}
 	if (probe.group === 'helper' && !hasCredentials) {
 		return (

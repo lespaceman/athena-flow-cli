@@ -437,7 +437,7 @@ describe('buildProbeConfigs', () => {
 		}
 	});
 
-	it('routes OAuth tokens through ANTHROPIC_AUTH_TOKEN in credential probes', () => {
+	it('does NOT inject OAuth tokens into env vars (per Anthropic auth docs)', () => {
 		const probes = buildProbeConfigs({
 			strictSettingsPath: '/tmp/s.json',
 			credentials: [
@@ -451,8 +451,8 @@ describe('buildProbeConfigs', () => {
 		const credProbes = probes.filter(p => p.group === 'credential');
 		expect(credProbes).toHaveLength(4);
 		for (const probe of credProbes) {
-			expect(probe.env?.ANTHROPIC_AUTH_TOKEN).toBe('sk-ant-oat01-x');
-			expect(probe.env?.ANTHROPIC_API_KEY).toBeUndefined();
+			expect(probe.env).toBeUndefined();
+			expect(probe.credentialKind).toBe('oauthToken');
 		}
 	});
 
@@ -490,8 +490,9 @@ describe('buildProbeConfigs', () => {
 		expect(d2).toHaveLength(4);
 		// API key probes use ANTHROPIC_API_KEY
 		expect(c1[0]!.env?.ANTHROPIC_API_KEY).toBe('sk-ant-api03-key');
-		// OAuth probes use ANTHROPIC_AUTH_TOKEN
-		expect(c2[0]!.env?.ANTHROPIC_AUTH_TOKEN).toBe('sk-ant-oat01-x');
+		// OAuth credentials cannot be env-injected
+		expect(c2[0]!.env).toBeUndefined();
+		expect(c2[0]!.credentialKind).toBe('oauthToken');
 		// D1 references the API-key helper, D2 references the OAuth helper
 		expect(d1[0]!.args).toContain('/tmp/h-key.json');
 		expect(d2[0]!.args).toContain('/tmp/h-oat.json');
@@ -561,6 +562,21 @@ describe('probeSkipReason', () => {
 		);
 	});
 
+	it('skips credential probes for OAuth-kind credentials per Anthropic auth docs', () => {
+		const opts = {
+			strictSettingsPath: '/tmp/s.json',
+			credentials: [
+				{
+					source: 'keychain:Claude Code-credentials' as const,
+					kind: 'oauthToken' as const,
+					value: 'sk-ant-oat01-x',
+				},
+			],
+		};
+		const probe = buildProbeConfigs(opts).find(p => p.group === 'credential')!;
+		expect(probeSkipReason(probe, opts)).toMatch(/No API key available/u);
+	});
+
 	it('returns null for credential and helper probes when all inputs are present', () => {
 		const opts = {
 			strictSettingsPath: '/tmp/s.json',
@@ -599,7 +615,20 @@ describe('formatProbeCommand', () => {
 		expect(cmd).not.toContain('sk-ant-api03-1234567890abcdef');
 		expect(cmd).toContain('--bare');
 		expect(cmd).toContain('<prompt>');
-		expect(cmd).toContain('/usr/local/bin/claude');
+		// Binary is rendered as basename, not the full path.
+		expect(cmd).toContain(' claude ');
+		expect(cmd).not.toContain('/usr/local/bin/claude');
+	});
+
+	it('substitutes alias map entries with $aliasName', () => {
+		const probes = buildProbeConfigs({
+			strictSettingsPath: '/tmp/very-long-path/hooks.json',
+		});
+		const a1 = probes.find(p => p.id === 'A1')!;
+		const aliases = new Map([['hooks', '/tmp/very-long-path/hooks.json']]);
+		const cmd = formatProbeCommand(a1, '/usr/bin/claude', aliases);
+		expect(cmd).toContain('$hooks');
+		expect(cmd).not.toContain('/tmp/very-long-path/hooks.json');
 	});
 
 	it('shell-quotes paths with spaces or unusual characters', () => {
