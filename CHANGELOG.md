@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.25](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.24...cli-v0.3.25) (2026-04-20)
+
+
+### Features
+
+* **doctor:** add `athena doctor --harness=claude` for headless auth diagnosis ([afe9e05](https://github.com/lespaceman/athena-flow-cli/commit/afe9e0519e1aa362ff86f585749d8cf8f7fcf5d5))
+* **doctor:** probe each available credential separately and search more sources ([f8b4656](https://github.com/lespaceman/athena-flow-cli/commit/f8b46563f5147b5b9208d448efdcf2b93141cd4d))
+* **doctor:** show full command per probe and classify failures semantically ([38248c8](https://github.com/lespaceman/athena-flow-cli/commit/38248c8e0c469e82064274deb91321b10fb071ef))
+
+
+### Bug Fixes
+
+* **doctor:** isolate probe environments and parse stream-json error blobs ([c1e8127](https://github.com/lespaceman/athena-flow-cli/commit/c1e812771bfb583261b2b120e34ad90ca9ae4e5f))
+
 ## [0.3.24](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.23...cli-v0.3.24) (2026-04-19)
 
 
