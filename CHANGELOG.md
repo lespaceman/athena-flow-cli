@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.28](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.27...cli-v0.3.28) (2026-04-20)
+
+
+### Bug Fixes
+
+* **claude:** align strict auth handling with doctor ([4870787](https://github.com/lespaceman/athena-flow-cli/commit/487078740cd68a9f4fd02425f9ca8a3ed057c14c))
+
 ## [0.3.27](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.26...cli-v0.3.27) (2026-04-20)
 
 
