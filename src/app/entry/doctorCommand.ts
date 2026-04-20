@@ -66,10 +66,10 @@ function fmtBytes(bytes: number | undefined): string {
 	return `${(kb / 1024).toFixed(1)} MB`;
 }
 
-function fmtScope(scope: SettingsScopeInfo): string {
+function fmtScope(scope: SettingsScopeInfo): string[] {
 	const name = scope.scope.padEnd(8);
 	if (!scope.present) {
-		return `${name}${c.dim('absent')}`;
+		return [`${name}${c.dim('absent')}`];
 	}
 	const size = fmtBytes(scope.sizeBytes);
 	const date = scope.mtime ? scope.mtime.slice(0, 10) : '';
@@ -77,7 +77,16 @@ function fmtScope(scope: SettingsScopeInfo): string {
 	const errSuffix = scope.parseError
 		? c.red(` (parse error: ${scope.parseError})`)
 		: '';
-	return `${name}${scope.path} ${c.dim(`(${meta})`)}${errSuffix}`;
+	const lines = [`${name}${scope.path} ${c.dim(`(${meta})`)}${errSuffix}`];
+	if (scope.topLevelKeys && scope.topLevelKeys.length > 0) {
+		lines.push(`        ${c.dim(`keys: ${scope.topLevelKeys.join(', ')}`)}`);
+	}
+	if (scope.envBlockKeys && scope.envBlockKeys.length > 0) {
+		// Highlight env block — this is an auth surface that bypasses shell rc.
+		const envSummary = scope.envBlockKeys.join(', ');
+		lines.push(`        ${c.yellow(`env block: ${envSummary}`)}`);
+	}
+	return lines;
 }
 
 function fmtAuth(env: DoctorEnvironment): string {
@@ -147,7 +156,9 @@ function printEnvironment(env: DoctorEnvironment): void {
 	);
 	console.log(c.dim('  settings'));
 	for (const scope of env.settings) {
-		console.log(`    ${fmtScope(scope)}`);
+		for (const line of fmtScope(scope)) {
+			console.log(`    ${line}`);
+		}
 	}
 	if (env.providerEnvVars.length > 0) {
 		console.log(

@@ -337,6 +337,78 @@ describe('lookupAllCredentials', () => {
 		});
 	});
 
+	it('discovers ANTHROPIC_API_KEY from a settings.json env block (per settings.md)', () => {
+		const settingsJson = JSON.stringify({
+			env: {ANTHROPIC_API_KEY: 'sk-ant-api03-from-settings-env'},
+		});
+		const all = lookupAllCredentials({
+			env: {},
+			platform: 'linux',
+			homeDir: '/home/user',
+			cwd: '/repo',
+			readFileFn: p =>
+				p === '/home/user/.claude/settings.json'
+					? settingsJson
+					: (() => {
+							throw new Error('ENOENT');
+						})(),
+			runHelperFn: () => null,
+		});
+		expect(all).toContainEqual({
+			source: 'settings:env:ANTHROPIC_API_KEY',
+			kind: 'apiKey',
+			value: 'sk-ant-api03-from-settings-env',
+		});
+	});
+
+	it('discovers credentials injected by launchctl setenv on macOS', () => {
+		const all = lookupAllCredentials({
+			env: {},
+			platform: 'darwin',
+			homeDir: '/Users/u',
+			cwd: '/repo',
+			keychainLookupFn: () => null,
+			readFileFn: () => {
+				throw new Error('ENOENT');
+			},
+			runHelperFn: () => null,
+			launchctlGetenvFn: name =>
+				name === 'ANTHROPIC_API_KEY' ? 'sk-ant-api03-from-launchctl' : null,
+			readManagedPlistFn: () => null,
+		});
+		expect(all).toContainEqual({
+			source: 'launchctl:ANTHROPIC_API_KEY',
+			kind: 'apiKey',
+			value: 'sk-ant-api03-from-launchctl',
+		});
+	});
+
+	it('discovers an API key from the macOS managed-preferences plist', () => {
+		// Realistic key shape — extractApiKeyFromParsed requires ≥40 trailing chars.
+		const apiKey = `sk-ant-api03-${'A'.repeat(80)}`;
+		const plistJson = JSON.stringify({
+			env: {ANTHROPIC_API_KEY: apiKey},
+		});
+		const all = lookupAllCredentials({
+			env: {},
+			platform: 'darwin',
+			homeDir: '/Users/u',
+			cwd: '/repo',
+			keychainLookupFn: () => null,
+			readFileFn: () => {
+				throw new Error('ENOENT');
+			},
+			runHelperFn: () => null,
+			launchctlGetenvFn: () => null,
+			readManagedPlistFn: () => plistJson,
+		});
+		expect(all).toContainEqual({
+			source: 'managed-plist:com.anthropic.claudecode',
+			kind: 'apiKey',
+			value: apiKey,
+		});
+	});
+
 	it('deduplicates identical (source, value) entries', () => {
 		const all = lookupAllCredentials({
 			env: {
@@ -514,12 +586,20 @@ describe('buildProbeConfigs', () => {
 describe('probeSkipReason', () => {
 	const buildOpts = {strictSettingsPath: '/tmp/s.json'};
 
-	it('returns null for athena and inherited probes (always runnable)', () => {
+	it('returns null for athena and non-bare inherited probes (always runnable)', () => {
 		const probes = buildProbeConfigs(buildOpts);
 		const a1 = probes.find(p => p.id === 'A1')!;
 		const bbe = probes.find(p => p.id === 'B-be')!;
 		expect(probeSkipReason(a1, buildOpts)).toBeNull();
 		expect(probeSkipReason(bbe, buildOpts)).toBeNull();
+	});
+
+	it('skips inherited --bare probes (no env credential injected, --bare bypasses OAuth)', () => {
+		const probes = buildProbeConfigs(buildOpts);
+		const bBe = probes.find(p => p.id === 'B-Be')!;
+		const bBE = probes.find(p => p.id === 'B-BE')!;
+		expect(probeSkipReason(bBe, buildOpts)).toMatch(/--bare skips OAuth/u);
+		expect(probeSkipReason(bBE, buildOpts)).toMatch(/--bare skips OAuth/u);
 	});
 
 	it('returns the credentialMissingReason for credential probes when no credentials are resolved', () => {
@@ -582,6 +662,11 @@ describe('probeSkipReason', () => {
 		};
 		const probes = buildProbeConfigs(opts);
 		for (const probe of probes) {
+			// Inherited --bare probes are always skipped (structural impossibility).
+			if (probe.group === 'inherited' && probe.args.includes('--bare')) {
+				expect(probeSkipReason(probe, opts)).toMatch(/--bare skips OAuth/u);
+				continue;
+			}
 			expect(probeSkipReason(probe, opts)).toBeNull();
 		}
 	});

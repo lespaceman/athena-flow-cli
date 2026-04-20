@@ -21,8 +21,6 @@ const SK_ANT_PREFIX = 'sk-ant-';
 const SK_ANT_API_PREFIX = 'sk-ant-api';
 const SK_ANT_OAT_PREFIX = 'sk-ant-oat';
 const SK_ANT_ORT_PREFIX = 'sk-ant-ort';
-/** Cap large global config reads (~/.claude.json can hit MBs of history). */
-const CLAUDE_JSON_MAX_BYTES = 1024 * 1024;
 
 export type ProbeStatus = 'pass' | 'fail' | 'skip' | 'na';
 
@@ -74,9 +72,15 @@ export type CredentialSource =
 	| 'env:ANTHROPIC_API_KEY'
 	| 'env:ANTHROPIC_AUTH_TOKEN'
 	| 'env:CLAUDE_CODE_OAUTH_TOKEN'
+	| 'env:CLAUDE_CODE_OAUTH_REFRESH_TOKEN'
 	| 'flag:--api-key'
 	| 'keychain:ANTHROPIC_API_KEY'
 	| 'settings:apiKeyHelper'
+	| 'settings:env:ANTHROPIC_API_KEY'
+	| 'settings:env:ANTHROPIC_AUTH_TOKEN'
+	| 'launchctl:ANTHROPIC_API_KEY'
+	| 'launchctl:ANTHROPIC_AUTH_TOKEN'
+	| 'managed-plist:com.anthropic.claudecode'
 	| 'dotenv:.env'
 	| 'dotenv:.env.local'
 	| 'dotenv:~/.env'
@@ -95,11 +99,15 @@ export type CredentialLookup = {
 export const CREDENTIAL_SOURCES_TRIED = [
 	'ANTHROPIC_API_KEY env',
 	'ANTHROPIC_AUTH_TOKEN env',
-	'macOS keychain "ANTHROPIC_API_KEY"',
-	'.env / .env.local / ~/.env',
-	'settings apiKeyHelper',
 	'CLAUDE_CODE_OAUTH_TOKEN env',
+	'CLAUDE_CODE_OAUTH_REFRESH_TOKEN env',
+	'launchctl getenv ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN (macOS)',
+	'macOS keychain "ANTHROPIC_API_KEY"',
 	'macOS keychain "Claude Code-credentials"',
+	'macOS managed-preferences plist (com.anthropic.claudecode)',
+	'settings.json env block (managed/user/project/local)',
+	'settings.json apiKeyHelper',
+	'.env / .env.local / ~/.env',
 	'~/.claude/.credentials.json',
 	'~/.claude.json',
 ] as const;
@@ -113,6 +121,8 @@ export type LookupCredentialOptions = {
 	readFileFn?: (filePath: string) => string;
 	statFn?: (filePath: string) => fs.Stats;
 	runHelperFn?: (command: string) => string | null;
+	launchctlGetenvFn?: (name: string) => string | null;
+	readManagedPlistFn?: () => string | null;
 	/** Explicitly-provided API key (e.g. from --api-key flag). */
 	apiKeyOverride?: string;
 	/**
@@ -183,22 +193,68 @@ function defaultRunHelper(command: string): string | null {
 	}
 }
 
-function readApiKeyHelperFromSettings(
+/** Reads `launchctl getenv <name>` — captures vars set by `launchctl setenv`
+ * or LaunchAgent/LaunchDaemon plists, which the user's interactive shell rc
+ * files won't show. macOS only. */
+function defaultLaunchctlGetenv(name: string): string | null {
+	try {
+		const result = spawnSync('launchctl', ['getenv', name], {
+			encoding: 'utf-8',
+			timeout: 3000,
+			stdio: ['ignore', 'pipe', 'ignore'],
+		});
+		if (result.status !== 0) return null;
+		const value = result.stdout.trim();
+		return value.length > 0 ? value : null;
+	} catch {
+		return null;
+	}
+}
+
+/** Reads the macOS managed-preferences plist `com.anthropic.claudecode` and
+ * converts to JSON. MDM-deployed config profiles land here; may carry an `env`
+ * block with auth creds. Returns null when the domain isn't defined. */
+function defaultReadManagedPlist(): string | null {
+	try {
+		const result = spawnSync(
+			'/bin/sh',
+			[
+				'-c',
+				'defaults export com.anthropic.claudecode - | plutil -convert json -o - -',
+			],
+			{encoding: 'utf-8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore']},
+		);
+		if (result.status !== 0) return null;
+		const value = result.stdout.trim();
+		// Empty/missing domain emits "{}" — treat as "no plist".
+		return value.length > 0 && value !== '{}' ? value : null;
+	} catch {
+		return null;
+	}
+}
+
+type SettingsScan = {
+	apiKeyHelper: string | null;
+	envApiKey: string | null;
+	envAuthToken: string | null;
+};
+
+function scanSettingsFiles(
 	homeDir: string,
 	cwd: string,
 	env: NodeJS.ProcessEnv,
 	platform: NodeJS.Platform,
 	readFileFn: (filePath: string) => string,
-): string | null {
+): SettingsScan {
 	const candidates: string[] = [];
 	if (platform === 'darwin') {
 		candidates.push(
 			'/Library/Application Support/ClaudeCode/managed-settings.json',
 		);
 	} else if (platform === 'win32') {
-		const programData = env['PROGRAMDATA'] ?? 'C:\\ProgramData';
+		const programFiles = env['PROGRAMFILES'] ?? 'C:\\Program Files';
 		candidates.push(
-			path.join(programData, 'ClaudeCode', 'managed-settings.json'),
+			path.join(programFiles, 'ClaudeCode', 'managed-settings.json'),
 		);
 	} else {
 		candidates.push('/etc/claude-code/managed-settings.json');
@@ -208,21 +264,46 @@ function readApiKeyHelperFromSettings(
 	candidates.push(path.join(cwd, '.claude', 'settings.json'));
 	candidates.push(path.join(cwd, '.claude', 'settings.local.json'));
 
+	const scan: SettingsScan = {
+		apiKeyHelper: null,
+		envApiKey: null,
+		envAuthToken: null,
+	};
 	for (const file of candidates) {
+		let parsed: {apiKeyHelper?: unknown; env?: unknown};
 		try {
-			const raw = readFileFn(file);
-			const parsed = JSON.parse(raw) as {apiKeyHelper?: unknown};
-			if (
-				typeof parsed.apiKeyHelper === 'string' &&
-				parsed.apiKeyHelper.length > 0
-			) {
-				return parsed.apiKeyHelper;
-			}
+			parsed = JSON.parse(readFileFn(file)) as typeof parsed;
 		} catch {
-			// File missing, unreadable, or malformed — skip.
+			continue;
+		}
+		if (
+			!scan.apiKeyHelper &&
+			typeof parsed.apiKeyHelper === 'string' &&
+			parsed.apiKeyHelper.length > 0
+		) {
+			scan.apiKeyHelper = parsed.apiKeyHelper;
+		}
+		if (parsed.env && typeof parsed.env === 'object') {
+			const envBlock = parsed.env as Record<string, unknown>;
+			const apiKey = envBlock['ANTHROPIC_API_KEY'];
+			if (
+				!scan.envApiKey &&
+				typeof apiKey === 'string' &&
+				apiKey.startsWith(SK_ANT_PREFIX)
+			) {
+				scan.envApiKey = apiKey;
+			}
+			const authToken = envBlock['ANTHROPIC_AUTH_TOKEN'];
+			if (
+				!scan.envAuthToken &&
+				typeof authToken === 'string' &&
+				authToken.length > 0
+			) {
+				scan.envAuthToken = authToken;
+			}
 		}
 	}
-	return null;
+	return scan;
 }
 
 function classifyToken(value: string): CredentialKind {
@@ -360,6 +441,42 @@ export function lookupAllCredentials(
 				value: keychainKey,
 			});
 		}
+
+		// launchctl-injected env vars (set via `launchctl setenv` or
+		// LaunchAgent/LaunchDaemon plists) are inherited by `claude` but never
+		// appear in interactive shell rc files.
+		const launchctlGetenv = options.launchctlGetenvFn ?? defaultLaunchctlGetenv;
+		const launchKey = launchctlGetenv('ANTHROPIC_API_KEY');
+		if (launchKey && launchKey.startsWith(SK_ANT_PREFIX)) {
+			push({
+				source: 'launchctl:ANTHROPIC_API_KEY',
+				kind: 'apiKey',
+				value: launchKey,
+			});
+		}
+		const launchToken = launchctlGetenv('ANTHROPIC_AUTH_TOKEN');
+		if (launchToken && launchToken.length > 0) {
+			push({
+				source: 'launchctl:ANTHROPIC_AUTH_TOKEN',
+				kind: 'authToken',
+				value: launchToken,
+			});
+		}
+
+		// MDM managed-preferences plist (com.anthropic.claudecode) — may carry an
+		// `env` block delivered by config profile; recursive walk picks up the key.
+		const readPlist = options.readManagedPlistFn ?? defaultReadManagedPlist;
+		const plistJson = readPlist();
+		if (plistJson) {
+			const apiKeyFromPlist = extractApiKeyFromParsed(safeJsonParse(plistJson));
+			if (apiKeyFromPlist) {
+				push({
+					source: 'managed-plist:com.anthropic.claudecode',
+					kind: 'apiKey',
+					value: apiKeyFromPlist,
+				});
+			}
+		}
 	}
 
 	const dotenvCandidates: Array<{
@@ -385,10 +502,32 @@ export function lookupAllCredentials(
 		}
 	}
 
+	const settingsScan = scanSettingsFiles(
+		homeDir,
+		cwd,
+		env,
+		platform,
+		readFileFn,
+	);
+	if (settingsScan.envApiKey) {
+		push({
+			source: 'settings:env:ANTHROPIC_API_KEY',
+			kind: 'apiKey',
+			value: settingsScan.envApiKey,
+		});
+	}
+	if (settingsScan.envAuthToken) {
+		push({
+			source: 'settings:env:ANTHROPIC_AUTH_TOKEN',
+			kind: 'authToken',
+			value: settingsScan.envAuthToken,
+		});
+	}
+
 	const helperCommand =
 		options.apiKeyHelperCommand !== undefined
 			? options.apiKeyHelperCommand
-			: readApiKeyHelperFromSettings(homeDir, cwd, env, platform, readFileFn);
+			: settingsScan.apiKeyHelper;
 	if (helperCommand) {
 		const runHelper = options.runHelperFn ?? defaultRunHelper;
 		const helperOutput = runHelper(helperCommand);
@@ -407,6 +546,15 @@ export function lookupAllCredentials(
 			source: 'env:CLAUDE_CODE_OAUTH_TOKEN',
 			kind: 'oauthToken',
 			value: oauthEnv,
+		});
+	}
+
+	const refreshEnv = env['CLAUDE_CODE_OAUTH_REFRESH_TOKEN'];
+	if (typeof refreshEnv === 'string' && refreshEnv.length > 0) {
+		push({
+			source: 'env:CLAUDE_CODE_OAUTH_REFRESH_TOKEN',
+			kind: 'oauthToken',
+			value: refreshEnv,
 		});
 	}
 
@@ -443,22 +591,17 @@ export function lookupAllCredentials(
 		}
 	}
 
-	// Global config can carry the API key (`claude /login`), but it also stores
-	// conversation history — guard against multi-MB reads with a stat-cap.
+	// $CLAUDE_CONFIG_DIR/.claude.json (or ~/.claude.json) — global config can
+	// carry the API key configured via `claude /login`. Substring prescan
+	// short-circuits when the file has no candidate, so even multi-MB files
+	// with conversation history return quickly.
 	const configHome = env['CLAUDE_CONFIG_DIR'] ?? homeDir;
-	const globalConfigPath = path.join(configHome, '.claude.json');
 	try {
-		const stat =
-			options.statFn?.(globalConfigPath) ?? fs.statSync(globalConfigPath);
-		if (stat.size <= CLAUDE_JSON_MAX_BYTES) {
-			const raw = readFileFn(globalConfigPath);
-			// Cheap substring prescan — skip the recursive walk if no candidate
-			// exists in the file at all.
-			if (raw.includes(SK_ANT_API_PREFIX)) {
-				const apiKey = extractApiKeyFromParsed(safeJsonParse(raw));
-				if (apiKey) {
-					push({source: 'file:~/.claude.json', kind: 'apiKey', value: apiKey});
-				}
+		const raw = readFileFn(path.join(configHome, '.claude.json'));
+		if (raw.includes(SK_ANT_API_PREFIX)) {
+			const apiKey = extractApiKeyFromParsed(safeJsonParse(raw));
+			if (apiKey) {
+				push({source: 'file:~/.claude.json', kind: 'apiKey', value: apiKey});
 			}
 		}
 	} catch {
@@ -694,6 +837,8 @@ export const SCRUBBED_AUTH_ENV_VARS = [
 	'CLAUDE_CODE_USE_VERTEX',
 	'CLAUDE_CODE_USE_FOUNDRY',
 	'CLAUDE_CODE_OAUTH_TOKEN',
+	'CLAUDE_CODE_OAUTH_REFRESH_TOKEN',
+	'CLAUDE_CODE_OAUTH_SCOPES',
 	'CLAUDE_CODE_API_KEY_HELPER_TTL_MS',
 ] as const;
 
@@ -994,6 +1139,13 @@ export function probeSkipReason(
 	probe: ProbeConfig,
 	opts: BuildProbesOptions,
 ): string | null {
+	// Inherited B-group probes don't inject env credentials and the doctor
+	// scrubs ambient ANTHROPIC_*/CLAUDE_CODE_* vars from every spawn — so any
+	// `--bare` variant has zero possible auth source (--bare also bypasses
+	// OAuth/keychain). Guaranteed failure; mark N/A.
+	if (probe.group === 'inherited' && probe.args.includes('--bare')) {
+		return '--bare skips OAuth/keychain and this group injects no env credential — no auth source possible';
+	}
 	const hasCredentials = (opts.credentials?.length ?? 0) > 0;
 	if (probe.group === 'credential' && !hasCredentials) {
 		return (

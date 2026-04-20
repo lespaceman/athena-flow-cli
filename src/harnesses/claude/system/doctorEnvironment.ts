@@ -32,6 +32,13 @@ export type SettingsScopeInfo = {
 	managedKeys?: string[];
 	forceLoginMethod?: string;
 	forceLoginOrgUUID?: string | string[];
+	/** Top-level JSON keys present in the file. Surfaces auth-shaped fields
+	 * (`env`, `apiKeyHelper`, `awsCredentialExport`, etc.) the user may not
+	 * realize they have configured. */
+	topLevelKeys?: string[];
+	/** Names of env vars defined in the settings `env` block — Claude Code
+	 * applies these to every session, so they're a real auth surface. */
+	envBlockKeys?: string[];
 };
 
 export type AuthSummary = {
@@ -180,8 +187,14 @@ function inspectSettingsFile(
 		return info;
 	}
 
+	info.topLevelKeys = Object.keys(parsed).sort();
+
 	if (typeof parsed['apiKeyHelper'] === 'string') {
 		info.apiKeyHelper = parsed['apiKeyHelper'];
+	}
+
+	if (parsed['env'] && typeof parsed['env'] === 'object') {
+		info.envBlockKeys = Object.keys(parsed['env'] as object).sort();
 	}
 
 	if (typeof parsed['forceLoginMethod'] === 'string') {
