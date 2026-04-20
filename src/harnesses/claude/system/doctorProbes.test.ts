@@ -9,7 +9,6 @@ import {
 	DOCTOR_EXPECTED,
 	formatProbeCommand,
 	lookupAllCredentials,
-	lookupAnthropicApiKey,
 	lookupCredential,
 	makeSkippedProbe,
 	probeSkipReason,
@@ -353,16 +352,6 @@ describe('lookupAllCredentials', () => {
 		// Both entries kept because they have different sources, but each unique.
 		const keys = new Set(all.map(c => `${c.source}|${c.value}`));
 		expect(keys.size).toBe(all.length);
-	});
-});
-
-describe('lookupAnthropicApiKey (legacy alias)', () => {
-	it('delegates to lookupCredential', () => {
-		const result = lookupAnthropicApiKey({
-			env: {ANTHROPIC_API_KEY: 'sk-ant-x'},
-			platform: 'darwin',
-		});
-		expect(result?.source).toBe('env:ANTHROPIC_API_KEY');
 	});
 });
 

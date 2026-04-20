@@ -17,6 +17,12 @@ export const DOCTOR_PROMPT = 'Reply with exactly: ATHENA_DOCTOR_OK';
 export const DOCTOR_EXPECTED = 'ATHENA_DOCTOR_OK';
 const DOCTOR_TIMEOUT_MS = 30000;
 const TAIL_LINES = 40;
+const SK_ANT_PREFIX = 'sk-ant-';
+const SK_ANT_API_PREFIX = 'sk-ant-api';
+const SK_ANT_OAT_PREFIX = 'sk-ant-oat';
+const SK_ANT_ORT_PREFIX = 'sk-ant-ort';
+/** Cap large global config reads (~/.claude.json can hit MBs of history). */
+const CLAUDE_JSON_MAX_BYTES = 1024 * 1024;
 
 export type ProbeStatus = 'pass' | 'fail' | 'skip' | 'na';
 
@@ -29,7 +35,6 @@ export type ProbeConfig = {
 	label: string;
 	args: string[];
 	env?: Record<string, string>;
-	tempPaths?: string[];
 	/** When set on credential/helper probes, the kind of credential being injected. */
 	credentialKind?: CredentialKind;
 };
@@ -76,7 +81,8 @@ export type CredentialSource =
 	| 'dotenv:.env.local'
 	| 'dotenv:~/.env'
 	| 'keychain:Claude Code-credentials'
-	| 'file:.credentials.json';
+	| 'file:.credentials.json'
+	| 'file:~/.claude.json';
 
 export type CredentialLookup = {
 	source: CredentialSource;
@@ -84,8 +90,19 @@ export type CredentialLookup = {
 	value: string;
 };
 
-/** Back-compat alias for the renamed type. */
-export type KeyLookupResult = CredentialLookup;
+/** Human-readable list of every place we look for a credential. Single source
+ * of truth for "tried: …" diagnostic messages. */
+export const CREDENTIAL_SOURCES_TRIED = [
+	'ANTHROPIC_API_KEY env',
+	'ANTHROPIC_AUTH_TOKEN env',
+	'macOS keychain "ANTHROPIC_API_KEY"',
+	'.env / .env.local / ~/.env',
+	'settings apiKeyHelper',
+	'CLAUDE_CODE_OAUTH_TOKEN env',
+	'macOS keychain "Claude Code-credentials"',
+	'~/.claude/.credentials.json',
+	'~/.claude.json',
+] as const;
 
 export type LookupCredentialOptions = {
 	platform?: NodeJS.Platform;
@@ -94,9 +111,15 @@ export type LookupCredentialOptions = {
 	cwd?: string;
 	keychainLookupFn?: (service: string) => string | null;
 	readFileFn?: (filePath: string) => string;
+	statFn?: (filePath: string) => fs.Stats;
 	runHelperFn?: (command: string) => string | null;
 	/** Explicitly-provided API key (e.g. from --api-key flag). */
 	apiKeyOverride?: string;
+	/**
+	 * Pre-resolved apiKeyHelper command from `collectEnvironment`, so we don't
+	 * re-walk the four settings files just to find it.
+	 */
+	apiKeyHelperCommand?: string | null;
 };
 
 function parseDotenvForApiKey(content: string): string | null {
@@ -114,7 +137,7 @@ function parseDotenvForApiKey(content: string): string | null {
 		) {
 			value = value.slice(1, -1);
 		}
-		if (value.startsWith('sk-ant-')) return value;
+		if (value.startsWith(SK_ANT_PREFIX)) return value;
 	}
 	return null;
 }
@@ -203,25 +226,59 @@ function readApiKeyHelperFromSettings(
 }
 
 function classifyToken(value: string): CredentialKind {
-	// Console API keys start with sk-ant-api…; OAuth access tokens start with
-	// sk-ant-oat…; long-lived OAuth tokens with sk-ant-ort…. Anything else that
-	// the helper produces is treated as a bearer token (safest default for
-	// proxies/gateways that mint custom tokens).
-	if (value.startsWith('sk-ant-api')) return 'apiKey';
-	if (value.startsWith('sk-ant-oat') || value.startsWith('sk-ant-ort')) {
+	// Console API keys: sk-ant-api… · OAuth access tokens: sk-ant-oat… ·
+	// long-lived OAuth: sk-ant-ort…. Helper-produced opaque values (proxy/
+	// gateway tokens) fall through to authToken so they're sent as Bearer.
+	if (value.startsWith(SK_ANT_API_PREFIX)) return 'apiKey';
+	if (
+		value.startsWith(SK_ANT_OAT_PREFIX) ||
+		value.startsWith(SK_ANT_ORT_PREFIX)
+	) {
 		return 'oauthToken';
 	}
 	return 'authToken';
 }
 
-function extractOauthAccessToken(rawJson: string): string | null {
+/** Anthropic Console keys are `sk-ant-api{2-3 digits}-{base64-ish chars}` and
+ * always >40 chars. Stricter than `startsWith(SK_ANT_API_PREFIX)` to avoid
+ * matching truncated/example strings sitting in conversation history. */
+const API_KEY_REGEX = /^sk-ant-api\d{2,}-[A-Za-z0-9_-]{40,}$/u;
+
+/** Walks a parsed credential blob for an API-key-shaped string. Field names
+ * differ across Claude Code versions (apiKey/primaryApiKey/customApiKey.*),
+ * so we don't pin a path. */
+function extractApiKeyFromParsed(parsed: unknown): string | null {
+	const stack: unknown[] = [parsed];
+	while (stack.length > 0) {
+		const node = stack.pop();
+		if (typeof node === 'string') {
+			if (API_KEY_REGEX.test(node)) return node;
+			continue;
+		}
+		if (Array.isArray(node)) {
+			stack.push(...node);
+			continue;
+		}
+		if (node && typeof node === 'object') {
+			stack.push(...Object.values(node));
+		}
+	}
+	return null;
+}
+
+function extractOauthAccessTokenFromParsed(parsed: unknown): string | null {
+	if (!parsed || typeof parsed !== 'object') return null;
+	const obj = parsed as {
+		claudeAiOauth?: {accessToken?: string};
+		accessToken?: string;
+	};
+	const token = obj.claudeAiOauth?.accessToken ?? obj.accessToken;
+	return typeof token === 'string' && token.length > 0 ? token : null;
+}
+
+function safeJsonParse(raw: string): unknown {
 	try {
-		const parsed = JSON.parse(rawJson) as {
-			claudeAiOauth?: {accessToken?: string};
-			accessToken?: string;
-		};
-		const token = parsed.claudeAiOauth?.accessToken ?? parsed.accessToken;
-		return typeof token === 'string' && token.length > 0 ? token : null;
+		return JSON.parse(raw);
 	} catch {
 		return null;
 	}
@@ -242,13 +299,6 @@ export function lookupCredential(
 	const authToken = all.find(c => c.kind === 'authToken');
 	if (authToken) return authToken;
 	return all[0]!;
-}
-
-/** @deprecated Use {@link lookupCredential}. Retained for tests/back-compat. */
-export function lookupAnthropicApiKey(
-	options: LookupCredentialOptions = {},
-): CredentialLookup | null {
-	return lookupCredential(options);
 }
 
 /**
@@ -277,7 +327,7 @@ export function lookupAllCredentials(
 
 	if (
 		typeof options.apiKeyOverride === 'string' &&
-		options.apiKeyOverride.startsWith('sk-ant-')
+		options.apiKeyOverride.startsWith(SK_ANT_PREFIX)
 	) {
 		push({
 			source: 'flag:--api-key',
@@ -287,7 +337,7 @@ export function lookupAllCredentials(
 	}
 
 	const apiKey = env['ANTHROPIC_API_KEY'];
-	if (typeof apiKey === 'string' && apiKey.startsWith('sk-ant-')) {
+	if (typeof apiKey === 'string' && apiKey.startsWith(SK_ANT_PREFIX)) {
 		push({source: 'env:ANTHROPIC_API_KEY', kind: 'apiKey', value: apiKey});
 	}
 
@@ -303,7 +353,7 @@ export function lookupAllCredentials(
 	if (platform === 'darwin') {
 		const lookup = options.keychainLookupFn ?? defaultKeychainLookup;
 		const keychainKey = lookup('ANTHROPIC_API_KEY');
-		if (keychainKey && keychainKey.startsWith('sk-ant-')) {
+		if (keychainKey && keychainKey.startsWith(SK_ANT_PREFIX)) {
 			push({
 				source: 'keychain:ANTHROPIC_API_KEY',
 				kind: 'apiKey',
@@ -335,13 +385,10 @@ export function lookupAllCredentials(
 		}
 	}
 
-	const helperCommand = readApiKeyHelperFromSettings(
-		homeDir,
-		cwd,
-		env,
-		platform,
-		readFileFn,
-	);
+	const helperCommand =
+		options.apiKeyHelperCommand !== undefined
+			? options.apiKeyHelperCommand
+			: readApiKeyHelperFromSettings(homeDir, cwd, env, platform, readFileFn);
 	if (helperCommand) {
 		const runHelper = options.runHelperFn ?? defaultRunHelper;
 		const helperOutput = runHelper(helperCommand);
@@ -363,37 +410,59 @@ export function lookupAllCredentials(
 		});
 	}
 
+	const pushBlobCredentials = (
+		source: Extract<
+			CredentialSource,
+			'keychain:Claude Code-credentials' | 'file:.credentials.json'
+		>,
+		raw: string,
+	): void => {
+		const parsed = safeJsonParse(raw);
+		const apiKey = extractApiKeyFromParsed(parsed);
+		if (apiKey) push({source, kind: 'apiKey', value: apiKey});
+		const token = extractOauthAccessTokenFromParsed(parsed);
+		if (token) push({source, kind: 'oauthToken', value: token});
+	};
+
 	if (platform === 'darwin') {
 		const lookup = options.keychainLookupFn ?? defaultKeychainLookup;
 		const raw = lookup('Claude Code-credentials');
-		if (raw) {
-			const token = extractOauthAccessToken(raw);
-			if (token) {
-				push({
-					source: 'keychain:Claude Code-credentials',
-					kind: 'oauthToken',
-					value: token,
-				});
-			}
-		}
+		if (raw) pushBlobCredentials('keychain:Claude Code-credentials', raw);
 	} else {
 		const credentialsPath = path.join(
 			env['CLAUDE_CONFIG_DIR'] ?? path.join(homeDir, '.claude'),
 			'.credentials.json',
 		);
 		try {
-			const raw = readFileFn(credentialsPath);
-			const token = extractOauthAccessToken(raw);
-			if (token) {
-				push({
-					source: 'file:.credentials.json',
-					kind: 'oauthToken',
-					value: token,
-				});
-			}
+			pushBlobCredentials(
+				'file:.credentials.json',
+				readFileFn(credentialsPath),
+			);
 		} catch {
 			// File missing or unreadable
 		}
+	}
+
+	// Global config can carry the API key (`claude /login`), but it also stores
+	// conversation history — guard against multi-MB reads with a stat-cap.
+	const configHome = env['CLAUDE_CONFIG_DIR'] ?? homeDir;
+	const globalConfigPath = path.join(configHome, '.claude.json');
+	try {
+		const stat =
+			options.statFn?.(globalConfigPath) ?? fs.statSync(globalConfigPath);
+		if (stat.size <= CLAUDE_JSON_MAX_BYTES) {
+			const raw = readFileFn(globalConfigPath);
+			// Cheap substring prescan — skip the recursive walk if no candidate
+			// exists in the file at all.
+			if (raw.includes(SK_ANT_API_PREFIX)) {
+				const apiKey = extractApiKeyFromParsed(safeJsonParse(raw));
+				if (apiKey) {
+					push({source: 'file:~/.claude.json', kind: 'apiKey', value: apiKey});
+				}
+			}
+		}
+	} catch {
+		// Missing or unreadable; skip.
 	}
 
 	return found;
@@ -417,9 +486,8 @@ function shellQuoteSingle(value: string): string {
 export function buildApiKeyHelperSettings(
 	value: string,
 	tempDir: string = os.tmpdir(),
-	tag = 'doctor',
 ): ApiKeyHelperSettings {
-	const filename = `athena-${tag}-helper-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`;
+	const filename = `athena-doctor-helper-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`;
 	const settingsPath = path.join(tempDir, filename);
 	const settings = {
 		apiKeyHelper: `printf %s ${shellQuoteSingle(value)}`,
@@ -606,10 +674,6 @@ export type RunProbeOptions = {
 	now?: () => number;
 	/** Optional renderer for the probe's command line; defaults to formatProbeCommand. */
 	formatCommandFn?: (probe: ProbeConfig) => string;
-	/** Fires whenever the probe emits stdout data; useful for live streaming. */
-	onStdoutChunk?: (chunk: string) => void;
-	/** Fires whenever the probe emits stderr data; useful for live streaming. */
-	onStderrChunk?: (chunk: string) => void;
 };
 
 /**
@@ -647,8 +711,6 @@ export async function runProbe({
 	timeoutMs = DOCTOR_TIMEOUT_MS,
 	now = Date.now,
 	formatCommandFn,
-	onStdoutChunk,
-	onStderrChunk,
 }: RunProbeOptions): Promise<ProbeResult> {
 	const formatCommand =
 		formatCommandFn ??
@@ -677,11 +739,9 @@ export async function runProbe({
 
 		child.stdout.on('data', (chunk: string) => {
 			stdout += chunk;
-			if (onStdoutChunk) onStdoutChunk(chunk);
 		});
 		child.stderr.on('data', (chunk: string) => {
 			stderr += chunk;
-			if (onStderrChunk) onStderrChunk(chunk);
 		});
 
 		const finish = (exitCode: number | null) => {
@@ -743,7 +803,6 @@ export function makeSkippedProbe(
 
 export type BuildProbesOptions = {
 	strictSettingsPath: string;
-	helperSettingsPath?: string;
 	/** All credentials available; each gets its own C and D probe group. */
 	credentials?: CredentialLookup[];
 	/** Per-credential helper settings file path (keyed by `${source}|${value}`). */
@@ -905,22 +964,19 @@ export function buildProbeConfigs(opts: BuildProbesOptions): ProbeConfig[] {
 				probes.push(probe);
 			}
 
-			const helperKey = `${credential.source}|${credential.value}`;
-			const helperPath =
-				opts.helperSettingsByCredential?.get(helperKey) ??
-				opts.helperSettingsPath;
+			const helperPath = opts.helperSettingsByCredential?.get(
+				credentialHelperKey(credential),
+			);
 			const helperGroupLabel = `apiKeyHelper script (prints ${credential.kind} from ${credential.source})`;
 			for (const combo of FLAG_COMBOS) {
-				const probe: ProbeConfig = {
+				probes.push({
 					id: `D${credentialTag}-${comboShortId(combo)}`,
 					group: 'helper',
 					groupLabel: helperGroupLabel,
 					label: comboLabel(combo),
 					args: helperPath ? baseArgs(combo, helperPath) : baseArgs(combo),
 					credentialKind: credential.kind,
-				};
-				if (helperPath) probe.tempPaths = [helperPath];
-				probes.push(probe);
+				});
 			}
 		});
 	}
@@ -960,7 +1016,6 @@ export function probeSkipReason(
 	}
 	if (
 		probe.group === 'helper' &&
-		!opts.helperSettingsPath &&
 		!(
 			opts.helperSettingsByCredential &&
 			opts.helperSettingsByCredential.size > 0

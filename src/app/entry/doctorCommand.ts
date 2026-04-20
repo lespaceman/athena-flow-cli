@@ -7,7 +7,10 @@
  */
 
 import process from 'node:process';
-import {generateHookSettings} from '../../harnesses/claude/hooks/generateHookSettings';
+import {
+	generateHookSettings,
+	registerCleanupOnExit,
+} from '../../harnesses/claude/hooks/generateHookSettings';
 import {
 	collectEnvironment,
 	type DoctorEnvironment,
@@ -18,12 +21,14 @@ import {
 	buildProbeConfigs,
 	classifyFailure,
 	credentialHelperKey,
+	CREDENTIAL_SOURCES_TRIED,
 	formatProbeCommand,
 	lookupAllCredentials,
 	lookupCredential,
 	makeSkippedProbe,
 	probeSkipReason,
 	runProbe,
+	type FailureClassification,
 	type ProbeConfig,
 	type ProbeResult,
 } from '../../harnesses/claude/system/doctorProbes';
@@ -37,6 +42,7 @@ export type DoctorCommandOptions = {
 
 const SUPPORTED_HARNESS = 'claude';
 const LABEL_WIDTH = 36;
+const NON_ANTHROPIC_PROVIDERS = new Set(['bedrock', 'vertex', 'foundry']);
 
 const useColor = process.stdout.isTTY && !process.env['NO_COLOR'];
 const c = {
@@ -176,6 +182,7 @@ function probeHeader(probe: ProbeConfig): string {
 
 function printProbe(
 	result: ProbeResult,
+	failure: FailureClassification | null,
 	options: {previousClassificationTitle?: string} = {},
 ): void {
 	const duration =
@@ -201,12 +208,10 @@ function printProbe(
 		return;
 	}
 
-	const failure = classifyFailure(result);
 	if (!failure) return;
 
-	// First failure in a group prints title + hint + raw line. Subsequent
-	// failures with the same classification show only "↳ same as above" so
-	// the matrix stays scannable.
+	// Subsequent failures with the same classification show only "(same as
+	// above)" so the matrix stays scannable.
 	const isRepeat = options.previousClassificationTitle === failure.title;
 	console.log(`${INDENT}${c.red('→')} ${failure.title}`);
 	if (isRepeat) {
@@ -260,7 +265,7 @@ function handlePrintApiKey(): number {
 	const credential = lookupCredential();
 	if (!credential) {
 		console.error(
-			'No Claude credential found. Tried: ANTHROPIC_API_KEY env, ANTHROPIC_AUTH_TOKEN env, macOS keychain "ANTHROPIC_API_KEY", .env / .env.local / ~/.env, settings apiKeyHelper, CLAUDE_CODE_OAUTH_TOKEN env, macOS keychain "Claude Code-credentials", and ~/.claude/.credentials.json.',
+			`No Claude credential found. Tried: ${CREDENTIAL_SOURCES_TRIED.join(', ')}.`,
 		);
 		return 1;
 	}
@@ -301,26 +306,38 @@ export async function runDoctorCommand(
 		return 1;
 	}
 
+	const isAnthropicProvider = !NON_ANTHROPIC_PROVIDERS.has(
+		(env.auth?.apiProvider ?? '').toLowerCase(),
+	);
+
 	const cleanups: Array<() => void> = [];
 	const strictSettings = generateHookSettings();
 	cleanups.push(strictSettings.cleanup);
+	registerCleanupOnExit(strictSettings.cleanup);
 
-	const credentials = lookupAllCredentials({apiKeyOverride: options.apiKey});
+	const credentials = lookupAllCredentials({
+		apiKeyOverride: options.apiKey,
+		apiKeyHelperCommand: env.apiKeyHelperCommand,
+	});
 	const credentialMissingReason =
 		credentials.length > 0
 			? undefined
-			: 'No credential resolved (tried: --api-key, ANTHROPIC_API_KEY env, ANTHROPIC_AUTH_TOKEN env, macOS keychain "ANTHROPIC_API_KEY", .env files, settings apiKeyHelper, CLAUDE_CODE_OAUTH_TOKEN env, macOS keychain "Claude Code-credentials", ~/.claude/.credentials.json)';
+			: `No credential resolved (tried: --api-key, ${CREDENTIAL_SOURCES_TRIED.join(', ')})`;
 
 	// One helper settings file per credential so each D-group probes that exact
-	// credential value, not whatever lookupCredential resolves at probe time.
+	// credential value. Skipped for non-Anthropic providers (Bedrock/Vertex/
+	// Foundry) since C/D groups are marked N/A and never executed.
 	const helperSettingsByCredential = new Map<string, string>();
-	for (const credential of credentials) {
-		const helper = buildApiKeyHelperSettings(credential.value);
-		cleanups.push(helper.cleanup);
-		helperSettingsByCredential.set(
-			credentialHelperKey(credential),
-			helper.settingsPath,
-		);
+	if (isAnthropicProvider) {
+		for (const credential of credentials) {
+			const helper = buildApiKeyHelperSettings(credential.value);
+			cleanups.push(helper.cleanup);
+			registerCleanupOnExit(helper.cleanup);
+			helperSettingsByCredential.set(
+				credentialHelperKey(credential),
+				helper.settingsPath,
+			);
+		}
 	}
 
 	const buildOpts = {
@@ -346,11 +363,6 @@ export async function runDoctorCommand(
 	const formatCommandFn = (probe: ProbeConfig): string =>
 		formatProbeCommand(probe, env.claudeBinary!, aliases);
 
-	const NON_ANTHROPIC_PROVIDERS = new Set(['bedrock', 'vertex', 'foundry']);
-	const isAnthropicProvider = !NON_ANTHROPIC_PROVIDERS.has(
-		(env.auth?.apiProvider ?? '').toLowerCase(),
-	);
-
 	if (!options.json) {
 		printEnvironment(env);
 		if (aliases.size > 0) {
@@ -374,8 +386,8 @@ export async function runDoctorCommand(
 		results.push(result);
 		if (options.json) return;
 		const previous = lastClassificationByGroup.get(result.groupLabel);
-		printProbe(result, {previousClassificationTitle: previous});
 		const failure = classifyFailure(result);
+		printProbe(result, failure, {previousClassificationTitle: previous});
 		if (failure) {
 			lastClassificationByGroup.set(result.groupLabel, failure.title);
 		} else {

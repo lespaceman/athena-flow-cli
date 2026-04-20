@@ -103,18 +103,51 @@ export type CollectEnvironmentOptions = {
 	statFn?: (filePath: string) => fs.Stats;
 };
 
-function managedSettingsPath(
+function managedSettingsDir(
 	platform: NodeJS.Platform,
 	env: NodeJS.ProcessEnv,
 ): string {
 	if (platform === 'darwin') {
-		return '/Library/Application Support/ClaudeCode/managed-settings.json';
+		return '/Library/Application Support/ClaudeCode';
 	}
 	if (platform === 'win32') {
-		const programData = env['PROGRAMDATA'] ?? 'C:\\ProgramData';
-		return path.join(programData, 'ClaudeCode', 'managed-settings.json');
+		// Per settings.md, v2.1.75+ uses Program Files (the legacy ProgramData
+		// path was removed).
+		const programFiles = env['PROGRAMFILES'] ?? 'C:\\Program Files';
+		return path.join(programFiles, 'ClaudeCode');
 	}
-	return '/etc/claude-code/managed-settings.json';
+	return '/etc/claude-code';
+}
+
+function managedSettingsPath(
+	platform: NodeJS.Platform,
+	env: NodeJS.ProcessEnv,
+): string {
+	return path.join(managedSettingsDir(platform, env), 'managed-settings.json');
+}
+
+/**
+ * Returns paths to drop-in managed-settings JSON files (per settings.md, the
+ * `managed-settings.d/` directory alongside the primary file is loaded too).
+ * Returns an empty array if the directory doesn't exist or can't be read.
+ */
+function managedSettingsDropIns(
+	platform: NodeJS.Platform,
+	env: NodeJS.ProcessEnv,
+): string[] {
+	const dir = path.join(
+		managedSettingsDir(platform, env),
+		'managed-settings.d',
+	);
+	try {
+		return fs
+			.readdirSync(dir)
+			.filter(name => name.endsWith('.json'))
+			.sort()
+			.map(name => path.join(dir, name));
+	} catch {
+		return [];
+	}
 }
 
 function inspectSettingsFile(
@@ -191,10 +224,6 @@ function readEnforcement(scopes: SettingsScopeInfo[]): {
 	return out;
 }
 
-function parseAuthMessage(rawMessage: string, ok: boolean): AuthSummary {
-	return {loggedIn: ok, rawMessage};
-}
-
 function tryRichAuth(claudeBinary: string): AuthSummary | null {
 	try {
 		const output = execFileSync(claudeBinary, ['auth', 'status'], {
@@ -254,7 +283,7 @@ export function collectEnvironment(
 			auth = rich;
 		} else {
 			const fallback = runAuthStatus(claudeBinary);
-			auth = parseAuthMessage(fallback.message, fallback.ok);
+			auth = {loggedIn: fallback.ok, rawMessage: fallback.message};
 		}
 	}
 
@@ -264,6 +293,9 @@ export function collectEnvironment(
 			managedSettingsPath(platform, env),
 			statFn,
 			readFileFn,
+		),
+		...managedSettingsDropIns(platform, env).map(file =>
+			inspectSettingsFile('managed', file, statFn, readFileFn),
 		),
 		inspectSettingsFile(
 			'user',
@@ -326,7 +358,7 @@ export function collectEnvironment(
 		apiKeyHelperCommand,
 		managedPolicyKeys,
 		enforcement,
-		providerEnvVars: [...providerEnvVars],
+		providerEnvVars,
 		globalConfigPresent,
 		hookForwarder,
 	};
