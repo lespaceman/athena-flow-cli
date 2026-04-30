@@ -47,6 +47,7 @@ describe('LineReader', () => {
 describe('parseMethodMessage', () => {
 	it('accepts a valid permission.request', () => {
 		const result = parseMethodMessage({
+			session_id: 'session-1',
 			method: 'permission.request',
 			params: {
 				channel_request_id: 'abcde',
@@ -58,13 +59,31 @@ describe('parseMethodMessage', () => {
 		expect(result.ok).toBe(true);
 	});
 
+	it('rejects method messages without session_id', () => {
+		const result = parseMethodMessage({
+			method: 'permission.request',
+			params: {
+				channel_request_id: 'abcde',
+				tool_name: 'Bash',
+				description: 'list files',
+				input_preview: '{"command":"ls"}',
+			},
+		});
+		expect(result.ok).toBe(false);
+	});
+
 	it('rejects unknown method', () => {
-		const result = parseMethodMessage({method: 'wat', params: {}});
+		const result = parseMethodMessage({
+			session_id: 'session-1',
+			method: 'wat',
+			params: {},
+		});
 		expect(result.ok).toBe(false);
 	});
 
 	it('rejects bad channel_request_id', () => {
 		const result = parseMethodMessage({
+			session_id: 'session-1',
 			method: 'permission.request',
 			params: {
 				channel_request_id: 'BADID', // uppercase
@@ -78,6 +97,7 @@ describe('parseMethodMessage', () => {
 
 	it('accepts a valid permission.cancel', () => {
 		const result = parseMethodMessage({
+			session_id: 'session-1',
 			method: 'permission.cancel',
 			params: {channel_request_id: 'abcde', reason: 'resolved_locally'},
 		});
@@ -86,6 +106,7 @@ describe('parseMethodMessage', () => {
 
 	it('accepts a valid question.request', () => {
 		const result = parseMethodMessage({
+			session_id: 'session-1',
 			method: 'question.request',
 			params: {
 				channel_request_id: 'abcde',
@@ -106,6 +127,7 @@ describe('parseMethodMessage', () => {
 
 	it('accepts a valid question.cancel', () => {
 		const result = parseMethodMessage({
+			session_id: 'session-1',
 			method: 'question.cancel',
 			params: {channel_request_id: 'abcde', reason: 'resolved_locally'},
 		});
@@ -114,6 +136,7 @@ describe('parseMethodMessage', () => {
 
 	it('rejects unknown cancel reason', () => {
 		const result = parseMethodMessage({
+			session_id: 'session-1',
 			method: 'permission.cancel',
 			params: {channel_request_id: 'abcde', reason: 'whatever'},
 		});
@@ -124,14 +147,24 @@ describe('parseMethodMessage', () => {
 describe('parseEventMessage', () => {
 	it('accepts a valid permission.verdict', () => {
 		const result = parseEventMessage({
+			session_id: 'session-1',
 			event: 'permission.verdict',
 			params: {channel_request_id: 'abcde', behavior: 'allow'},
 		});
 		expect(result.ok).toBe(true);
 	});
 
+	it('rejects event messages without session_id', () => {
+		const result = parseEventMessage({
+			event: 'permission.verdict',
+			params: {channel_request_id: 'abcde', behavior: 'allow'},
+		});
+		expect(result.ok).toBe(false);
+	});
+
 	it('accepts a valid question.answer', () => {
 		const result = parseEventMessage({
+			session_id: 'session-1',
 			event: 'question.answer',
 			params: {
 				channel_request_id: 'abcde',
@@ -143,6 +176,7 @@ describe('parseEventMessage', () => {
 
 	it('rejects question.answer with non-string answers', () => {
 		const result = parseEventMessage({
+			session_id: 'session-1',
 			event: 'question.answer',
 			params: {
 				channel_request_id: 'abcde',
@@ -154,6 +188,7 @@ describe('parseEventMessage', () => {
 
 	it('rejects bad behavior', () => {
 		const result = parseEventMessage({
+			session_id: 'session-1',
 			event: 'permission.verdict',
 			params: {channel_request_id: 'abcde', behavior: 'maybe'},
 		});
@@ -162,6 +197,7 @@ describe('parseEventMessage', () => {
 
 	it('accepts log with valid level', () => {
 		const result = parseEventMessage({
+			session_id: 'session-1',
 			event: 'log',
 			params: {level: 'warn', message: 'x'},
 		});
@@ -170,6 +206,7 @@ describe('parseEventMessage', () => {
 
 	it('rejects log with invalid level', () => {
 		const result = parseEventMessage({
+			session_id: 'session-1',
 			event: 'log',
 			params: {level: 'fatal', message: 'x'},
 		});
@@ -178,6 +215,7 @@ describe('parseEventMessage', () => {
 
 	it('accepts chat.message with sender_id meta', () => {
 		const result = parseEventMessage({
+			session_id: 'session-1',
 			event: 'chat.message',
 			params: {content: 'hi', meta: {sender_id: '12345'}},
 		});
@@ -186,6 +224,7 @@ describe('parseEventMessage', () => {
 
 	it('rejects chat.message missing sender_id', () => {
 		const result = parseEventMessage({
+			session_id: 'session-1',
 			event: 'chat.message',
 			params: {content: 'hi', meta: {}},
 		});
@@ -194,6 +233,7 @@ describe('parseEventMessage', () => {
 
 	it('rejects chat.message with empty sender_id', () => {
 		const result = parseEventMessage({
+			session_id: 'session-1',
 			event: 'chat.message',
 			params: {content: 'hi', meta: {sender_id: ''}},
 		});
@@ -201,7 +241,11 @@ describe('parseEventMessage', () => {
 	});
 
 	it('rejects unknown event', () => {
-		const result = parseEventMessage({event: 'unknown', params: {}});
+		const result = parseEventMessage({
+			session_id: 'session-1',
+			event: 'unknown',
+			params: {},
+		});
 		expect(result.ok).toBe(false);
 	});
 });

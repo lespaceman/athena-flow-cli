@@ -10,6 +10,7 @@
 
 import process from 'node:process';
 import {encodeLine, LineReader, parseMethodMessage} from '../protocol';
+import {CHANNEL_BROADCAST_SESSION_ID} from '../types';
 import type {
 	ChannelEventMessage,
 	ChannelMethodMessage,
@@ -42,6 +43,8 @@ import {
 
 type PendingPermission = {
 	kind: 'permission';
+	sessionId: string;
+	channelRequestId: string;
 	chatId: number | string;
 	messageId: number;
 	headline: string;
@@ -49,6 +52,8 @@ type PendingPermission = {
 
 type PendingQuestion = {
 	kind: 'question';
+	sessionId: string;
+	channelRequestId: string;
 	chatId: number | string;
 	messageId: number;
 	headline: string;
@@ -77,12 +82,16 @@ function send(event: ChannelEventMessage): void {
 	process.stdout.write(encodeLine(event));
 }
 
-function log(level: ChannelLogLevel, message: string): void {
-	send({event: 'log', params: {level, message}});
+function keyFor(sessionId: string, channelRequestId: string): string {
+	return `${sessionId}:${channelRequestId}`;
 }
 
-function sendError(message: string, fatal = false): void {
-	send({event: 'error', params: {message, fatal}});
+function log(sessionId: string, level: ChannelLogLevel, message: string): void {
+	send({session_id: sessionId, event: 'log', params: {level, message}});
+}
+
+function sendError(sessionId: string, message: string, fatal = false): void {
+	send({session_id: sessionId, event: 'error', params: {message, fatal}});
 }
 
 // ── Rendering helpers (MarkdownV2) ───────────────────────────────────
@@ -230,12 +239,17 @@ const HELP_TEXT = [
 
 async function startBot(
 	state: RuntimeState,
+	sessionId: string,
 	options: Record<string, unknown>,
 ): Promise<void> {
 	const token =
 		typeof options['bot_token'] === 'string' ? options['bot_token'] : '';
 	if (!token) {
-		sendError('telegram channel: bot_token missing in sidecar config', true);
+		sendError(
+			sessionId,
+			'telegram channel: bot_token missing in sidecar config',
+			true,
+		);
 		process.exit(1);
 	}
 	const defaultChat = options['default_chat_id'];
@@ -243,15 +257,22 @@ async function startBot(
 		state.defaultChatId = defaultChat;
 	} else {
 		sendError(
+			sessionId,
 			'telegram channel: default_chat_id missing or invalid in sidecar config',
 			true,
 		);
 		process.exit(1);
 	}
 
-	state.bot = new TelegramBot({token}, log);
+	state.bot = new TelegramBot({token}, (level, message) =>
+		log(sessionId, level, message),
+	);
 	void state.bot.setMyCommands(BOT_COMMANDS);
-	send({event: 'ready', params: {name: NAME, version: VERSION}});
+	send({
+		session_id: sessionId,
+		event: 'ready',
+		params: {name: NAME, version: VERSION},
+	});
 
 	for await (const update of state.bot.poll()) {
 		if (update.callback_query) {
@@ -278,6 +299,28 @@ function findPendingQuestion(
 	return only;
 }
 
+function findPendingByRequestId(
+	state: RuntimeState,
+	channelRequestId: string,
+): {key: string; pending: PendingMessage} | null {
+	let only: {key: string; pending: PendingMessage} | null = null;
+	for (const [key, pending] of state.pendingMessages) {
+		if (pending.channelRequestId !== channelRequestId) continue;
+		if (only) return null;
+		only = {key, pending};
+	}
+	return only;
+}
+
+function findPendingByKeyOrRequestId(
+	state: RuntimeState,
+	keyOrChannelRequestId: string,
+): {key: string; pending: PendingMessage} | null {
+	const direct = state.pendingMessages.get(keyOrChannelRequestId);
+	if (direct) return {key: keyOrChannelRequestId, pending: direct};
+	return findPendingByRequestId(state, keyOrChannelRequestId);
+}
+
 async function handleIncomingMessage(
 	state: RuntimeState,
 	message: TelegramMessage,
@@ -285,7 +328,11 @@ async function handleIncomingMessage(
 	const senderId = message.from?.id;
 	if (senderId === undefined) return;
 	if (!state.allowedUserIds.has(String(senderId))) {
-		log('debug', `dropping message from non-allowlisted sender: ${senderId}`);
+		log(
+			'unknown',
+			'debug',
+			`dropping message from non-allowlisted sender: ${senderId}`,
+		);
 		return;
 	}
 	const text = message.text?.trim() ?? '';
@@ -308,9 +355,11 @@ async function handleIncomingMessage(
 		} else {
 			const noun = pending.length === 1 ? 'prompt' : 'prompts';
 			const lines = [`*${pending.length} pending ${escapeMarkdownV2(noun)}:*`];
-			for (const [id, p] of pending) {
+			for (const [, p] of pending) {
 				const icon = p.kind === 'permission' ? '🔐' : '❓';
-				lines.push(`${icon} \`${id}\` — ${escapeMarkdownV2(p.headline)}`);
+				lines.push(
+					`${icon} \`${p.sessionId}/${p.channelRequestId}\` — ${escapeMarkdownV2(p.headline)}`,
+				);
 			}
 			await state.bot.sendMessage(
 				message.chat.id,
@@ -337,8 +386,9 @@ async function handleIncomingMessage(
 				const p = state.pendingMessages.get(id);
 				if (p?.kind === 'permission') {
 					send({
+						session_id: p.sessionId,
 						event: 'permission.verdict',
-						params: {channel_request_id: id, behavior: 'deny'},
+						params: {channel_request_id: p.channelRequestId, behavior: 'deny'},
 					});
 				}
 				await applyCancelEdit(state, id, 'cancelled');
@@ -349,7 +399,10 @@ async function handleIncomingMessage(
 
 	const verdict = parseVerdict(text);
 	if (verdict) {
+		const target = findPendingByRequestId(state, verdict.channelRequestId);
+		if (!target) return;
 		send({
+			session_id: target.pending.sessionId,
 			event: 'permission.verdict',
 			params: {
 				channel_request_id: verdict.channelRequestId,
@@ -366,11 +419,12 @@ async function handleIncomingMessage(
 
 	const answerId = parseQuestionAnswerId(text);
 	if (answerId) {
-		const target = state.pendingMessages.get(answerId);
-		if (target?.kind === 'question') {
-			const answer = parseQuestionAnswer(text, target.questionKeys);
+		const target = findPendingByRequestId(state, answerId);
+		if (target?.pending.kind === 'question') {
+			const answer = parseQuestionAnswer(text, target.pending.questionKeys);
 			if (answer) {
 				send({
+					session_id: target.pending.sessionId,
 					event: 'question.answer',
 					params: {
 						channel_request_id: answer.channelRequestId,
@@ -386,12 +440,13 @@ async function handleIncomingMessage(
 	const onlyQuestion = findPendingQuestion(state);
 	if (onlyQuestion) {
 		const answer = buildPlainTextQuestionAnswer(
-			onlyQuestion.id,
+			onlyQuestion.pending.channelRequestId,
 			text,
 			onlyQuestion.pending.questionKeys,
 		);
 		if (answer) {
 			send({
+				session_id: onlyQuestion.pending.sessionId,
 				event: 'question.answer',
 				params: {
 					channel_request_id: answer.channelRequestId,
@@ -404,6 +459,7 @@ async function handleIncomingMessage(
 	}
 
 	send({
+		session_id: CHANNEL_BROADCAST_SESSION_ID,
 		event: 'chat.message',
 		params: {
 			content: text,
@@ -434,7 +490,13 @@ async function handleCallbackQuery(
 	}
 
 	if (parsed.kind === 'permission') {
+		const target = findPendingByRequestId(state, parsed.channelRequestId);
+		if (!target) {
+			await ack();
+			return;
+		}
 		send({
+			session_id: target.pending.sessionId,
 			event: 'permission.verdict',
 			params: {
 				channel_request_id: parsed.channelRequestId,
@@ -449,7 +511,8 @@ async function handleCallbackQuery(
 		return;
 	}
 
-	const pending = state.pendingMessages.get(parsed.channelRequestId);
+	const target = findPendingByRequestId(state, parsed.channelRequestId);
+	const pending = target?.pending;
 	if (
 		pending?.kind !== 'question' ||
 		!pending.buttonOptions ||
@@ -460,6 +523,7 @@ async function handleCallbackQuery(
 	}
 	const option = pending.buttonOptions[parsed.optionIndex]!;
 	send({
+		session_id: pending.sessionId,
 		event: 'question.answer',
 		params: {
 			channel_request_id: parsed.channelRequestId,
@@ -483,13 +547,14 @@ async function markResolved(
 	channelRequestId: string,
 	label: string,
 ): Promise<void> {
-	const ref = state.pendingMessages.get(channelRequestId);
-	state.pendingMessages.delete(channelRequestId);
-	if (!ref || !state.bot) return;
+	const target = findPendingByKeyOrRequestId(state, channelRequestId);
+	if (target) state.pendingMessages.delete(target.key);
+	const resolved = target?.pending;
+	if (!resolved || !state.bot) return;
 	await state.bot.editMessageText(
-		ref.chatId,
-		ref.messageId,
-		buildResolvedText(ref.headline, label),
+		resolved.chatId,
+		resolved.messageId,
+		buildResolvedText(resolved.headline, label),
 		{...MD_OPTIONS, reply_markup: EMPTY_KEYBOARD},
 	);
 }
@@ -499,9 +564,10 @@ async function applyCancelEdit(
 	id: string,
 	reason: string,
 ): Promise<void> {
-	const ref = state.pendingMessages.get(id);
+	const target = findPendingByKeyOrRequestId(state, id);
+	const ref = target?.pending;
 	if (!ref || !state.bot) return;
-	state.pendingMessages.delete(id);
+	state.pendingMessages.delete(target.key);
 	await state.bot.editMessageText(
 		ref.chatId,
 		ref.messageId,
@@ -520,26 +586,31 @@ async function applyCancelEdit(
  */
 async function sendAndTrack(
 	state: RuntimeState,
+	sessionId: string,
 	id: string,
 	text: string,
 	replyMarkup: ReplyMarkup,
 	makePending: (chatId: number | string, messageId: number) => PendingMessage,
 ): Promise<void> {
 	if (!state.bot || state.defaultChatId === null) return;
-	state.inFlightSends.add(id);
+	const key = keyFor(sessionId, id);
+	state.inFlightSends.add(key);
 	const result = await state.bot.sendMessage(state.defaultChatId, text, {
 		...MD_OPTIONS,
 		reply_markup: replyMarkup,
 	});
-	state.inFlightSends.delete(id);
+	state.inFlightSends.delete(key);
 	if (!result) {
-		state.cancelDuringSend.delete(id);
+		state.cancelDuringSend.delete(key);
 		return;
 	}
-	state.pendingMessages.set(id, makePending(result.chat.id, result.message_id));
-	const queuedCancel = state.cancelDuringSend.get(id);
+	state.pendingMessages.set(
+		key,
+		makePending(result.chat.id, result.message_id),
+	);
+	const queuedCancel = state.cancelDuringSend.get(key);
 	if (queuedCancel !== undefined) {
-		state.cancelDuringSend.delete(id);
+		state.cancelDuringSend.delete(key);
 		await applyCancelEdit(state, id, queuedCancel);
 	}
 }
@@ -553,7 +624,8 @@ async function handleMethod(
 			state.allowedUserIds = new Set(
 				message.params.allowed_user_ids.map(id => String(id)),
 			);
-			void startBot(state, message.params.options);
+			if (!state.bot)
+				void startBot(state, message.session_id, message.params.options);
 			return;
 		}
 		case 'permission.request': {
@@ -566,11 +638,14 @@ async function handleMethod(
 			);
 			await sendAndTrack(
 				state,
+				message.session_id,
 				id,
 				text,
 				buildPermissionKeyboard(id),
 				(chatId, messageId) => ({
 					kind: 'permission',
+					sessionId: message.session_id,
+					channelRequestId: id,
 					chatId,
 					messageId,
 					headline: message.params.tool_name,
@@ -580,12 +655,13 @@ async function handleMethod(
 		}
 		case 'permission.cancel': {
 			const id = message.params.channel_request_id;
-			if (state.pendingMessages.has(id)) {
-				await applyCancelEdit(state, id, message.params.reason);
+			const key = keyFor(message.session_id, id);
+			if (state.pendingMessages.has(key)) {
+				await applyCancelEdit(state, key, message.params.reason);
 				return;
 			}
-			if (state.inFlightSends.has(id)) {
-				state.cancelDuringSend.set(id, message.params.reason);
+			if (state.inFlightSends.has(key)) {
+				state.cancelDuringSend.set(key, message.params.reason);
 			}
 			return;
 		}
@@ -605,24 +681,34 @@ async function handleMethod(
 			const headline = message.params.title.trim() || 'Question';
 			const questionKeys = message.params.questions.map(q => q.key);
 			const buttonOptions = keyboard?.options ?? null;
-			await sendAndTrack(state, id, text, replyMarkup, (chatId, messageId) => ({
-				kind: 'question',
-				chatId,
-				messageId,
-				headline,
-				questionKeys,
-				buttonOptions,
-			}));
+			await sendAndTrack(
+				state,
+				message.session_id,
+				id,
+				text,
+				replyMarkup,
+				(chatId, messageId) => ({
+					kind: 'question',
+					sessionId: message.session_id,
+					channelRequestId: id,
+					chatId,
+					messageId,
+					headline,
+					questionKeys,
+					buttonOptions,
+				}),
+			);
 			return;
 		}
 		case 'question.cancel': {
 			const id = message.params.channel_request_id;
-			if (state.pendingMessages.has(id)) {
-				await applyCancelEdit(state, id, message.params.reason);
+			const key = keyFor(message.session_id, id);
+			if (state.pendingMessages.has(key)) {
+				await applyCancelEdit(state, key, message.params.reason);
 				return;
 			}
-			if (state.inFlightSends.has(id)) {
-				state.cancelDuringSend.set(id, message.params.reason);
+			if (state.inFlightSends.has(key)) {
+				state.cancelDuringSend.set(key, message.params.reason);
 			}
 			return;
 		}
@@ -667,16 +753,17 @@ function main(): void {
 			try {
 				parsed = JSON.parse(line);
 			} catch {
-				sendError(`invalid JSON line: ${line.slice(0, 100)}`);
+				sendError('unknown', `invalid JSON line: ${line.slice(0, 100)}`);
 				continue;
 			}
 			const result = parseMethodMessage(parsed);
 			if (!result.ok) {
-				sendError(`invalid method message: ${result.reason}`);
+				sendError('unknown', `invalid method message: ${result.reason}`);
 				continue;
 			}
 			void handleMethod(state, result.value).catch(err => {
 				sendError(
+					result.value.session_id,
 					`method handler failed: ${err instanceof Error ? err.message : String(err)}`,
 				);
 			});

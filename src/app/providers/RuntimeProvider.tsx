@@ -103,6 +103,7 @@ export function HookProvider({
 		const relay = new PermissionRelay({runtime});
 		const questionRelay = new QuestionRelay({runtime});
 		return new ChannelRegistry({
+			sessionId: athenaSessionId,
 			relay,
 			questionRelay,
 			runtime,
@@ -111,7 +112,7 @@ export function HookProvider({
 				console.error(`[athena:channel:${channelName}] ${message}`);
 			},
 		});
-	}, [runtime, channelDefs]);
+	}, [runtime, channelDefs, athenaSessionId]);
 
 	useEffect(() => {
 		return () => channelRegistry?.dispose();

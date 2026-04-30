@@ -81,6 +81,7 @@ describe('ChannelRegistry', () => {
 		const runtime = makeRuntime();
 		const relay = new PermissionRelay({runtime});
 		const registry = new ChannelRegistry({
+			sessionId: 's',
 			relay,
 			runtime,
 			channels: [],
@@ -101,6 +102,7 @@ describe('ChannelRegistry', () => {
 		const relay = new PermissionRelay({runtime});
 		const pushFeedEvent = vi.fn();
 		const registry = new ChannelRegistry({
+			sessionId: 's',
 			relay,
 			runtime,
 			channels: [],
@@ -119,6 +121,7 @@ describe('ChannelRegistry', () => {
 		const relay = new PermissionRelay({runtime});
 		const channels: ChannelDefinition[] = [];
 		const registry = new ChannelRegistry({
+			sessionId: 's',
 			relay,
 			runtime,
 			channels,
@@ -148,6 +151,7 @@ describe('ChannelRegistry', () => {
 		const runtime = makeRuntime();
 		const relay = new PermissionRelay({runtime});
 		const registry = new ChannelRegistry({
+			sessionId: 's',
 			relay,
 			runtime,
 			channels: [],
@@ -175,6 +179,7 @@ describe('ChannelRegistry', () => {
 		const relay = new PermissionRelay({runtime});
 		const questionRelay = new QuestionRelay({runtime});
 		const registry = new ChannelRegistry({
+			sessionId: 's',
 			relay,
 			questionRelay,
 			runtime,
@@ -192,6 +197,7 @@ describe('ChannelRegistry', () => {
 		(
 			registry as unknown as {handleEvent: (name: string, ev: unknown) => void}
 		).handleEvent('telegram', {
+			session_id: 's',
 			event: 'question.answer',
 			params: {
 				channel_request_id: pending,
@@ -213,7 +219,12 @@ describe('ChannelRegistry', () => {
 	it('notify is a no-op when no hosts are attached', () => {
 		const runtime = makeRuntime();
 		const relay = new PermissionRelay({runtime});
-		const registry = new ChannelRegistry({relay, runtime, channels: []});
+		const registry = new ChannelRegistry({
+			sessionId: 's',
+			relay,
+			runtime,
+			channels: [],
+		});
 		expect(() => registry.notify('hello')).not.toThrow();
 		registry.dispose();
 		relay.dispose();
@@ -228,8 +239,13 @@ describe('ChannelRegistry', () => {
 			start: vi.fn(),
 			dispose: vi.fn(),
 		};
-		const registry = new ChannelRegistry({relay, runtime, channels: []});
-		(registry as unknown as {hosts: unknown[]}).hosts.push(fakeHost);
+		const registry = new ChannelRegistry({
+			sessionId: 's',
+			relay,
+			runtime,
+			channels: [],
+		});
+		(registry as unknown as {clients: unknown[]}).clients.push(fakeHost);
 
 		registry.notify('   ');
 		registry.notify('');
@@ -237,6 +253,7 @@ describe('ChannelRegistry', () => {
 
 		registry.notify('hello');
 		expect(fakeHost.send).toHaveBeenCalledWith({
+			session_id: 's',
 			method: 'notification',
 			params: {content: 'hello', meta: {}},
 		});
@@ -253,8 +270,13 @@ describe('ChannelRegistry', () => {
 			start: vi.fn(),
 			dispose: vi.fn(),
 		};
-		const registry = new ChannelRegistry({relay, runtime, channels: []});
-		(registry as unknown as {hosts: unknown[]}).hosts.push(fakeHost);
+		const registry = new ChannelRegistry({
+			sessionId: 's',
+			relay,
+			runtime,
+			channels: [],
+		});
+		(registry as unknown as {clients: unknown[]}).clients.push(fakeHost);
 
 		const huge = 'x'.repeat(5000);
 		registry.notify(huge);
@@ -272,6 +294,7 @@ describe('ChannelRegistry', () => {
 		const relay = new PermissionRelay({runtime});
 		const questionRelay = new QuestionRelay({runtime});
 		const registry = new ChannelRegistry({
+			sessionId: 's',
 			relay,
 			questionRelay,
 			runtime,
@@ -290,6 +313,7 @@ describe('ChannelRegistry', () => {
 		(
 			registry as unknown as {handleEvent: (name: string, ev: unknown) => void}
 		).handleEvent('telegram', {
+			session_id: 's',
 			event: 'question.answer',
 			params: {
 				channel_request_id: pending,

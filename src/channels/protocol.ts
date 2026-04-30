@@ -91,7 +91,10 @@ export function parseMethodMessage(
 	raw: unknown,
 ): ParseResult<ChannelMethodMessage> {
 	if (!isStringRecord(raw)) return {ok: false, reason: 'not an object'};
-	const {method, params} = raw;
+	const {session_id, method, params} = raw;
+	if (typeof session_id !== 'string' || session_id.length === 0) {
+		return {ok: false, reason: 'session_id must be non-empty string'};
+	}
 	if (typeof method !== 'string') return {ok: false, reason: 'method missing'};
 	if (!isStringRecord(params))
 		return {ok: false, reason: 'params missing or not an object'};
@@ -105,6 +108,7 @@ export function parseMethodMessage(
 			return {
 				ok: true,
 				value: {
+					session_id,
 					method,
 					params: {
 						allowed_user_ids: params['allowed_user_ids'],
@@ -130,6 +134,7 @@ export function parseMethodMessage(
 			return {
 				ok: true,
 				value: {
+					session_id,
 					method,
 					params: {channel_request_id, tool_name, description, input_preview},
 				},
@@ -150,6 +155,7 @@ export function parseMethodMessage(
 			return {
 				ok: true,
 				value: {
+					session_id,
 					method,
 					params: {channel_request_id, reason: reason as ChannelCancelReason},
 				},
@@ -169,6 +175,7 @@ export function parseMethodMessage(
 			return {
 				ok: true,
 				value: {
+					session_id,
 					method,
 					params: {channel_request_id, title, questions},
 				},
@@ -189,6 +196,7 @@ export function parseMethodMessage(
 			return {
 				ok: true,
 				value: {
+					session_id,
 					method,
 					params: {channel_request_id, reason: reason as ChannelCancelReason},
 				},
@@ -202,13 +210,14 @@ export function parseMethodMessage(
 			return {
 				ok: true,
 				value: {
+					session_id,
 					method,
 					params: {content: params['content'], meta: params['meta']},
 				},
 			};
 		}
 		case 'shutdown':
-			return {ok: true, value: {method, params: {}}};
+			return {ok: true, value: {session_id, method, params: {}}};
 		default:
 			return {ok: false, reason: `unknown method: ${method}`};
 	}
@@ -218,7 +227,10 @@ export function parseEventMessage(
 	raw: unknown,
 ): ParseResult<ChannelEventMessage> {
 	if (!isStringRecord(raw)) return {ok: false, reason: 'not an object'};
-	const {event, params} = raw;
+	const {session_id, event, params} = raw;
+	if (typeof session_id !== 'string' || session_id.length === 0) {
+		return {ok: false, reason: 'session_id must be non-empty string'};
+	}
 	if (typeof event !== 'string') return {ok: false, reason: 'event missing'};
 	if (!isStringRecord(params))
 		return {ok: false, reason: 'params missing or not an object'};
@@ -232,6 +244,7 @@ export function parseEventMessage(
 			return {
 				ok: true,
 				value: {
+					session_id,
 					event,
 					params: {name: params['name'], version: params['version']},
 				},
@@ -248,7 +261,7 @@ export function parseEventMessage(
 				return {ok: false, reason: 'behavior must be allow|deny'};
 			return {
 				ok: true,
-				value: {event, params: {channel_request_id, behavior}},
+				value: {session_id, event, params: {channel_request_id, behavior}},
 			};
 		}
 		case 'question.answer': {
@@ -263,6 +276,7 @@ export function parseEventMessage(
 			return {
 				ok: true,
 				value: {
+					session_id,
 					event,
 					params: {channel_request_id, answers: params['answers']},
 				},
@@ -281,6 +295,7 @@ export function parseEventMessage(
 			return {
 				ok: true,
 				value: {
+					session_id,
 					event,
 					params: {content: params['content'], meta: params['meta']},
 				},
@@ -295,6 +310,7 @@ export function parseEventMessage(
 			return {
 				ok: true,
 				value: {
+					session_id,
 					event,
 					params: {
 						message: params['message'],
@@ -314,7 +330,11 @@ export function parseEventMessage(
 				return {ok: false, reason: 'message must be string'};
 			return {
 				ok: true,
-				value: {event, params: {level: level as ChannelLogLevel, message}},
+				value: {
+					session_id,
+					event,
+					params: {level: level as ChannelLogLevel, message},
+				},
 			};
 		}
 		default:

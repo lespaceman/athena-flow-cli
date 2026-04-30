@@ -1,4 +1,5 @@
-export {ChannelHost} from './host';
+export {ChannelDaemonClient} from './daemonClient';
+export {channelDaemonRunDir, channelDaemonSocketPath} from './daemonPaths';
 export {ChannelRegistry, type ChannelRegistryOptions} from './registry';
 export {PermissionRelay} from './permissionRelay';
 export {QuestionRelay} from './questionRelay';

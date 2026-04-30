@@ -76,6 +76,7 @@ export class ChannelHost {
 		});
 
 		this.send({
+			session_id: 'legacy',
 			method: 'init',
 			params: {
 				allowed_user_ids: this.definition.allowedUserIds,
@@ -101,7 +102,7 @@ export class ChannelHost {
 		const child = this.child;
 		if (!child) return;
 		try {
-			this.send({method: 'shutdown', params: {}});
+			this.send({session_id: 'legacy', method: 'shutdown', params: {}});
 		} catch {
 			// ignore
 		}

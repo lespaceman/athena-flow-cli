@@ -9,7 +9,7 @@ import type {
 	RuntimeEvent,
 } from '../core/runtime/types';
 import {generateChannelRequestId} from './ids';
-import {ChannelHost} from './host';
+import {ChannelDaemonClient} from './daemonClient';
 import type {PermissionRelay} from './permissionRelay';
 import type {QuestionRelay} from './questionRelay';
 import type {PushChannelFeedEvent} from './feedEvents';
@@ -26,6 +26,7 @@ import type {
 const MAX_NOTIFICATION_LEN = 4000;
 
 export type ChannelRegistryOptions = {
+	sessionId: string;
 	relay: PermissionRelay;
 	questionRelay?: QuestionRelay;
 	runtime: Runtime;
@@ -61,7 +62,8 @@ function reasonForQuestionSource(
 }
 
 export class ChannelRegistry {
-	private readonly hosts: ChannelHost[] = [];
+	private readonly clients: ChannelDaemonClient[] = [];
+	private readonly sessionId: string;
 	private readonly relay: PermissionRelay;
 	private readonly questionRelay: QuestionRelay | undefined;
 	private readonly runtime: Runtime;
@@ -72,6 +74,7 @@ export class ChannelRegistry {
 	private disposed = false;
 
 	constructor(opts: ChannelRegistryOptions) {
+		this.sessionId = opts.sessionId;
 		this.relay = opts.relay;
 		this.questionRelay = opts.questionRelay;
 		this.runtime = opts.runtime;
@@ -79,10 +82,11 @@ export class ChannelRegistry {
 		this.logError = opts.logError;
 
 		this.relay.setOnClaimed((entry, source, context) => {
-			if (this.hosts.length === 0) return;
+			if (this.clients.length === 0) return;
 			const reason = reasonForSource(source);
-			for (const host of this.hosts) {
-				host.send({
+			for (const client of this.clients) {
+				client.send({
+					session_id: this.sessionId,
 					method: 'permission.cancel',
 					params: {channel_request_id: entry.channelRequestId, reason},
 				});
@@ -101,10 +105,11 @@ export class ChannelRegistry {
 		});
 
 		this.questionRelay?.setOnClaimed((entry, source, context) => {
-			if (this.hosts.length === 0) return;
+			if (this.clients.length === 0) return;
 			const reason = reasonForQuestionSource(source);
-			for (const host of this.hosts) {
-				host.send({
+			for (const client of this.clients) {
+				client.send({
+					session_id: this.sessionId,
 					method: 'question.cancel',
 					params: {channel_request_id: entry.channelRequestId, reason},
 				});
@@ -123,17 +128,21 @@ export class ChannelRegistry {
 		});
 
 		for (const def of opts.channels) {
-			const host = new ChannelHost(def, {
-				onEvent: ev => this.handleEvent(def.name, ev),
-				onExit: (code, signal) => {
-					this.logError?.(
-						def.name,
-						`channel exited (code=${code} signal=${signal})`,
-					);
+			const client = new ChannelDaemonClient({
+				definition: def,
+				sessionId: this.sessionId,
+				handlers: {
+					onEvent: ev => this.handleEvent(def.name, ev),
+					onExit: (code, signal) => {
+						this.logError?.(
+							def.name,
+							`channel exited (code=${code} signal=${signal})`,
+						);
+					},
+					onError: msg => this.logError?.(def.name, msg),
 				},
-				onError: msg => this.logError?.(def.name, msg),
 			});
-			this.hosts.push(host);
+			this.clients.push(client);
 		}
 	}
 
@@ -165,15 +174,13 @@ export class ChannelRegistry {
 	}
 
 	startAll(): void {
-		for (const host of this.hosts) {
-			try {
-				host.start();
-			} catch (err) {
+		for (const client of this.clients) {
+			void client.start().catch(err => {
 				this.logError?.(
-					host.name,
+					client.name,
 					`start failed: ${err instanceof Error ? err.message : String(err)}`,
 				);
-			}
+			});
 		}
 	}
 
@@ -185,12 +192,13 @@ export class ChannelRegistry {
 		// "another path claimed first" from "no relay was active". The relay
 		// is authoritative regardless of host count.
 		this.relay.register(event, channelRequestId, toolName);
-		if (this.hosts.length === 0) return;
+		if (this.clients.length === 0) return;
 		const description = event.display?.title ?? toolName;
 		const inputPreview = buildInputPreview(event);
 
-		for (const host of this.hosts) {
-			host.send({
+		for (const client of this.clients) {
+			client.send({
+				session_id: this.sessionId,
 				method: 'permission.request',
 				params: {
 					channel_request_id: channelRequestId,
@@ -202,7 +210,7 @@ export class ChannelRegistry {
 			this.pushFeedEvent?.({
 				kind: 'channel.permission.relayed',
 				data: {
-					channel_name: host.name,
+					channel_name: client.name,
 					channel_request_id: channelRequestId,
 					tool_name: toolName,
 				},
@@ -218,15 +226,16 @@ export class ChannelRegistry {
 	 */
 	notify(content: string, meta: Record<string, string> = {}): void {
 		if (this.disposed) return;
-		if (this.hosts.length === 0) return;
+		if (this.clients.length === 0) return;
 		const trimmed = content.trim();
 		if (trimmed.length === 0) return;
 		const truncated =
 			trimmed.length > MAX_NOTIFICATION_LEN
 				? trimmed.slice(0, MAX_NOTIFICATION_LEN - 1) + '…'
 				: trimmed;
-		for (const host of this.hosts) {
-			host.send({
+		for (const client of this.clients) {
+			client.send({
+				session_id: this.sessionId,
 				method: 'notification',
 				params: {content: truncated, meta},
 			});
@@ -244,10 +253,11 @@ export class ChannelRegistry {
 			questions.map(q => q.key),
 			title,
 		);
-		if (this.hosts.length === 0) return;
+		if (this.clients.length === 0) return;
 
-		for (const host of this.hosts) {
-			host.send({
+		for (const client of this.clients) {
+			client.send({
+				session_id: this.sessionId,
 				method: 'question.request',
 				params: {
 					channel_request_id: channelRequestId,
@@ -258,7 +268,7 @@ export class ChannelRegistry {
 			this.pushFeedEvent?.({
 				kind: 'channel.question.relayed',
 				data: {
-					channel_name: host.name,
+					channel_name: client.name,
 					channel_request_id: channelRequestId,
 					title,
 				},
@@ -269,17 +279,15 @@ export class ChannelRegistry {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
-		// Hosts first, relay last: late verdicts arriving during the SIGTERM
-		// grace window land on `disposed` and drop, rather than on a
-		// half-cleared relay.
-		for (const host of this.hosts) host.dispose();
-		this.hosts.length = 0;
+		for (const client of this.clients) client.dispose();
+		this.clients.length = 0;
 		this.relay.dispose();
 		this.questionRelay?.dispose();
 	}
 
 	private handleEvent(channelName: string, ev: ChannelEventMessage): void {
 		if (this.disposed) return;
+		if (ev.session_id !== this.sessionId) return;
 		switch (ev.event) {
 			case 'ready':
 				return;

@@ -25,6 +25,8 @@ const BUILTIN_ENTRY_FILES: Record<string, string> = {
 	[TELEGRAM_CHANNEL_NAME]: 'channel-telegram.js',
 };
 
+const BUILTIN_DAEMON_ENTRY_FILE = 'channel-daemon.js';
+
 const distDirCache = new Map<string, string>();
 
 /**
@@ -84,6 +86,14 @@ export function resolveChannel(
 	}
 
 	const entryPath = path.join(distDir, entryFile);
+	const daemonEntryPath = path.join(distDir, BUILTIN_DAEMON_ENTRY_FILE);
+	if (!fs.existsSync(daemonEntryPath)) {
+		return {
+			ok: false,
+			name,
+			reason: `channel daemon entry not found in dist: ${BUILTIN_DAEMON_ENTRY_FILE}`,
+		};
+	}
 
 	const sidecar = loadChannelConfig(name);
 	if (!sidecar.ok) {
@@ -95,6 +105,7 @@ export function resolveChannel(
 		definition: {
 			name,
 			entryPath,
+			daemonEntryPath,
 			args: [entryPath],
 			allowedUserIds: sidecar.config.allowed_user_ids,
 			options: sidecar.config.options,

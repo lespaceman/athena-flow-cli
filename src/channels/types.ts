@@ -65,14 +65,36 @@ export type ChannelNotificationParams = {
 
 export type ChannelShutdownParams = Record<string, never>;
 
+export const CHANNEL_BROADCAST_SESSION_ID = '*';
+
 export type ChannelMethodMessage =
-	| {method: 'init'; params: ChannelInitParams}
-	| {method: 'permission.request'; params: ChannelPermissionRequestParams}
-	| {method: 'permission.cancel'; params: ChannelPermissionCancelParams}
-	| {method: 'question.request'; params: ChannelQuestionRequestParams}
-	| {method: 'question.cancel'; params: ChannelQuestionCancelParams}
-	| {method: 'notification'; params: ChannelNotificationParams}
-	| {method: 'shutdown'; params: ChannelShutdownParams};
+	| {session_id: string; method: 'init'; params: ChannelInitParams}
+	| {
+			session_id: string;
+			method: 'permission.request';
+			params: ChannelPermissionRequestParams;
+	  }
+	| {
+			session_id: string;
+			method: 'permission.cancel';
+			params: ChannelPermissionCancelParams;
+	  }
+	| {
+			session_id: string;
+			method: 'question.request';
+			params: ChannelQuestionRequestParams;
+	  }
+	| {
+			session_id: string;
+			method: 'question.cancel';
+			params: ChannelQuestionCancelParams;
+	  }
+	| {
+			session_id: string;
+			method: 'notification';
+			params: ChannelNotificationParams;
+	  }
+	| {session_id: string; method: 'shutdown'; params: ChannelShutdownParams};
 
 // ── Channel → Athena events ──────────────────────────────────────────
 
@@ -107,12 +129,24 @@ export type ChannelLogParams = {
 };
 
 export type ChannelEventMessage =
-	| {event: 'ready'; params: ChannelReadyParams}
-	| {event: 'permission.verdict'; params: ChannelPermissionVerdictParams}
-	| {event: 'question.answer'; params: ChannelQuestionAnswerParams}
-	| {event: 'chat.message'; params: ChannelChatMessageParams}
-	| {event: 'error'; params: ChannelErrorParams}
-	| {event: 'log'; params: ChannelLogParams};
+	| {session_id: string; event: 'ready'; params: ChannelReadyParams}
+	| {
+			session_id: string;
+			event: 'permission.verdict';
+			params: ChannelPermissionVerdictParams;
+	  }
+	| {
+			session_id: string;
+			event: 'question.answer';
+			params: ChannelQuestionAnswerParams;
+	  }
+	| {
+			session_id: string;
+			event: 'chat.message';
+			params: ChannelChatMessageParams;
+	  }
+	| {session_id: string; event: 'error'; params: ChannelErrorParams}
+	| {session_id: string; event: 'log'; params: ChannelLogParams};
 
 // ── Host-side state ──────────────────────────────────────────────────
 
@@ -120,6 +154,8 @@ export type ChannelDefinition = {
 	name: string;
 	/** Absolute path to the channel entry script (Node-runnable). */
 	entryPath: string;
+	/** Absolute path to the channel daemon entry script (Node-runnable). */
+	daemonEntryPath?: string;
 	/** Extra args appended after entryPath (defaults to []). */
 	args?: string[];
 	/** Channel-supplied options forwarded in `init`. */
