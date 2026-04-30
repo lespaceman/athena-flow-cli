@@ -25,6 +25,14 @@ import type {
 /** Telegram caps messages at 4096 chars; leave room for an ellipsis. */
 const MAX_NOTIFICATION_LEN = 4000;
 
+export type InboundChatMessage = {
+	channel_name: string;
+	sender_id: string;
+	content: string;
+};
+
+export type InboundChatHandler = (msg: InboundChatMessage) => void;
+
 export type ChannelRegistryOptions = {
 	sessionId: string;
 	relay: PermissionRelay;
@@ -68,6 +76,7 @@ export class ChannelRegistry {
 	private readonly questionRelay: QuestionRelay | undefined;
 	private readonly runtime: Runtime;
 	private pushFeedEvent: PushChannelFeedEvent | undefined;
+	private onChatMessage: InboundChatHandler | undefined;
 	private readonly logError:
 		| ((channelName: string, message: string) => void)
 		| undefined;
@@ -148,6 +157,16 @@ export class ChannelRegistry {
 
 	setPushFeedEvent(handler: PushChannelFeedEvent | undefined): void {
 		this.pushFeedEvent = handler;
+	}
+
+	/**
+	 * Register a handler to receive inbound chat messages (free-text remote
+	 * messages that aren't permission verdicts or question answers). The
+	 * handler typically forwards the message into the agent as a new user
+	 * turn. Pass `undefined` to clear.
+	 */
+	setOnChatMessage(handler: InboundChatHandler | undefined): void {
+		this.onChatMessage = handler;
 	}
 
 	/**
@@ -334,13 +353,19 @@ export class ChannelRegistry {
 				return;
 			}
 			case 'chat.message': {
+				const senderId = ev.params.meta['sender_id'] ?? 'unknown';
 				this.pushFeedEvent?.({
 					kind: 'channel.chat.inbound',
 					data: {
 						channel_name: channelName,
-						sender_id: ev.params.meta['sender_id'] ?? 'unknown',
+						sender_id: senderId,
 						content: ev.params.content,
 					},
+				});
+				this.onChatMessage?.({
+					channel_name: channelName,
+					sender_id: senderId,
+					content: ev.params.content,
 				});
 				return;
 			}

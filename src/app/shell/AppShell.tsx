@@ -14,7 +14,11 @@ import DiagnosticsConsentDialog, {
 	type DiagnosticsConsentDecision,
 } from '../../ui/components/DiagnosticsConsentDialog';
 import ErrorBoundary from '../../ui/components/ErrorBoundary';
-import {HookProvider, useRuntime} from '../providers/RuntimeProvider';
+import {
+	HookProvider,
+	useChannelRegistry,
+	useRuntime,
+} from '../providers/RuntimeProvider';
 import type {ChannelDefinition} from '../../channels/types';
 import {useHarnessProcess} from '../process/useHarnessProcess';
 import {useHeaderMetrics} from '../../ui/hooks/useHeaderMetrics';
@@ -884,6 +888,74 @@ function AppContent({
 			emitNotification,
 		],
 	);
+
+	const channelRegistry = useChannelRegistry();
+	const pendingChatRef = useRef<string | null>(null);
+	const isHarnessRunningRef = useRef(isHarnessRunning);
+	isHarnessRunningRef.current = isHarnessRunning;
+
+	const submitChatAsTurn = useCallback(
+		(text: string) => {
+			setPendingStartupDiagnostics(null);
+			setStartupFailure(null);
+			addMessage('user', text);
+			if (!isServerRunning && runtimeError) {
+				channelRegistry?.notify(
+					`Could not deliver: Athena ${harnessLabel} is unavailable (${runtimeError.message})`,
+				);
+				return;
+			}
+			const sessionToResume = currentSessionId ?? initialSessionRef.current;
+			const continuation: TurnContinuation = sessionToResume
+				? {mode: 'resume', handle: sessionToResume}
+				: {mode: 'fresh'};
+			startupAttemptRef.current = {
+				feedEventCountAtSpawn: feedEvents.length,
+			};
+			spawnHarness(text, continuation).catch((err: unknown) => {
+				startupAttemptRef.current = null;
+				console.error('[athena] channel-injected spawn failed:', err);
+			});
+			if (initialSessionRef.current) {
+				initialSessionRef.current = undefined;
+			}
+		},
+		[
+			addMessage,
+			channelRegistry,
+			currentSessionId,
+			feedEvents.length,
+			harnessLabel,
+			isServerRunning,
+			runtimeError,
+			spawnHarness,
+		],
+	);
+
+	useEffect(() => {
+		if (!channelRegistry) return;
+		channelRegistry.setOnChatMessage(({content}) => {
+			const trimmed = content.trim();
+			if (trimmed.length === 0) return;
+			if (isHarnessRunningRef.current) {
+				pendingChatRef.current = trimmed;
+				channelRegistry.notify(
+					'⏳ queued — agent is busy; will run when current turn ends',
+				);
+				return;
+			}
+			submitChatAsTurn(trimmed);
+		});
+		return () => channelRegistry.setOnChatMessage(undefined);
+	}, [channelRegistry, submitChatAsTurn]);
+
+	useEffect(() => {
+		if (isHarnessRunning) return;
+		const pending = pendingChatRef.current;
+		if (pending === null) return;
+		pendingChatRef.current = null;
+		submitChatAsTurn(pending);
+	}, [isHarnessRunning, submitChatAsTurn]);
 
 	const getSelectedCommandRef = useRef<
 		() => import('../commands/types').Command | undefined

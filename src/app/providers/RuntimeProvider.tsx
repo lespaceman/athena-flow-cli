@@ -21,6 +21,7 @@ import type {ChannelDefinition} from '../../channels/types';
 const HookContext = createContext<HookContextValue | null>(null);
 const RuntimeRefContext = createContext<Runtime | null>(null);
 const SessionStoreContext = createContext<SessionStore | null>(null);
+const ChannelRegistryContext = createContext<ChannelRegistry | null>(null);
 const EMPTY_MESSAGES: never[] = [];
 const MISSING_CONTEXT = Symbol('missing-hook-context');
 
@@ -156,14 +157,16 @@ export function HookProvider({
 	return (
 		<RuntimeRefContext.Provider value={runtime}>
 			<SessionStoreContext.Provider value={sessionStore}>
-				<HookProviderContent
-					runtime={runtime}
-					allowedTools={allowedTools}
-					sessionStore={sessionStore}
-					channelRegistry={channelRegistry}
-				>
-					{children}
-				</HookProviderContent>
+				<ChannelRegistryContext.Provider value={channelRegistry}>
+					<HookProviderContent
+						runtime={runtime}
+						allowedTools={allowedTools}
+						sessionStore={sessionStore}
+						channelRegistry={channelRegistry}
+					>
+						{children}
+					</HookProviderContent>
+				</ChannelRegistryContext.Provider>
 			</SessionStoreContext.Provider>
 		</RuntimeRefContext.Provider>
 	);
@@ -208,4 +211,8 @@ export function useRuntime(): Runtime | null {
 
 export function useSessionStore(): SessionStore | null {
 	return useContext(SessionStoreContext);
+}
+
+export function useChannelRegistry(): ChannelRegistry | null {
+	return useContext(ChannelRegistryContext);
 }

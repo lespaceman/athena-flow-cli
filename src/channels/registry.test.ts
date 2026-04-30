@@ -324,4 +324,52 @@ describe('ChannelRegistry', () => {
 		expect(runtime.sendDecision).not.toHaveBeenCalled();
 		registry.dispose();
 	});
+
+	it('chat.message routes to setOnChatMessage handler in addition to feed event', () => {
+		const runtime = makeRuntime();
+		const relay = new PermissionRelay({runtime});
+		const pushFeedEvent = vi.fn();
+		const onChat = vi.fn();
+		const registry = new ChannelRegistry({
+			sessionId: 's',
+			relay,
+			runtime,
+			channels: [],
+			pushFeedEvent,
+		});
+		registry.setOnChatMessage(onChat);
+
+		(
+			registry as unknown as {handleEvent: (name: string, ev: unknown) => void}
+		).handleEvent('telegram', {
+			session_id: 's',
+			event: 'chat.message',
+			params: {content: 'check the build', meta: {sender_id: 'u1'}},
+		});
+
+		expect(pushFeedEvent).toHaveBeenCalledWith({
+			kind: 'channel.chat.inbound',
+			data: {
+				channel_name: 'telegram',
+				sender_id: 'u1',
+				content: 'check the build',
+			},
+		});
+		expect(onChat).toHaveBeenCalledWith({
+			channel_name: 'telegram',
+			sender_id: 'u1',
+			content: 'check the build',
+		});
+
+		registry.setOnChatMessage(undefined);
+		(
+			registry as unknown as {handleEvent: (name: string, ev: unknown) => void}
+		).handleEvent('telegram', {
+			session_id: 's',
+			event: 'chat.message',
+			params: {content: 'second', meta: {sender_id: 'u1'}},
+		});
+		expect(onChat).toHaveBeenCalledTimes(1);
+		registry.dispose();
+	});
 });
