@@ -20,51 +20,51 @@ Triage order: C1→C9 (security/DoS) → H1 (dead code) → H2/H3/H6/H7/H11 (lif
 
 ## High
 
-| ID  | File                                              | Issue                                                | Status | Notes                                                                   |
-| --- | ------------------------------------------------- | ---------------------------------------------------- | ------ | ----------------------------------------------------------------------- |
-| H1  | `src/channels/host.ts`                            | Dead code (unused)                                   | ✅     | deleted                                                                 |
-| H2  | `src/channels/daemon.ts:308–321`                  | Idle-exit race vs new connect                        | ✅     | server.close first                                                      |
-| H3  | `src/channels/daemon.ts:122–167`                  | Multi-line first chunk + shutdown desyncs state      | ⬜     |                                                                         |
-| H4  | `src/channels/daemon.ts`                          | Broadcasts during detached window lost silently      | ⬜     | doc or queue                                                            |
-| H5  | `src/channels/registry.ts:326`                    | Mismatched session_id events silently dropped        | ✅     | logError on drop                                                        |
-| H6  | `src/channels/daemonClient.ts:127–131`            | Start failure invisible — req hangs to TTL           | ✅     | onChannelUnavailable callback                                           |
-| H7  | `src/channels/daemonClient.ts`                    | `dispose()` race with in-flight `start()`            | ✅     | recheck after connect()                                                 |
-| H8  | `permissionRelay.ts:71–79`, `registry.ts:168–170` | `setOnClaimed`/`setOnChatMessage` overwrite silently | ✅     | throws in non-prod, added `clearOnClaimed()`                            |
-| H9  | `src/channels/registry.ts`                        | `setOnClaimed` not detached on dispose               | ✅     | dispose clears relay handlers                                           |
-| H10 | `src/channels/telegram/index.ts:80–83`            | `cancelDuringSend`/`inFlightSends` leak on crash     | ⬜     |                                                                         |
-| H11 | `src/channels/daemon.ts:229–239`                  | Subprocess crash → all sessions silent forever       | ⬜     | restart or exit                                                         |
-| H12 | `src/channels/daemon.ts`                          | `fanoutEventToSessions` iterates live Map            | ✅     | snapshot keys + sockets                                                 |
-| H13 | `src/channels/registry.ts`                        | `permission.request` body not length-clamped         | ✅     | rebuilds with truncated preview if total > 4096-margin                  |
-| H14 | `src/channels/telegram/index.ts:179–192`          | `/cancel <args>` silently ignored                    | ✅     | regex now accepts trailing args                                         |
-| H15 | `src/channels/telegram/markdown.ts`               | Markdown escaping not fuzzed                         | ⬜     | property tests                                                          |
-| H16 | `src/channels/telegram/verdict.ts:62`             | ID regex `i` flag accepts uppercase out-of-alphabet  | ⏭️     | False positive on review — `[a-km-z]/i` correctly excludes L. Reverted. |
+| ID  | File                                              | Issue                                                | Status | Notes                                                                     |
+| --- | ------------------------------------------------- | ---------------------------------------------------- | ------ | ------------------------------------------------------------------------- |
+| H1  | `src/channels/host.ts`                            | Dead code (unused)                                   | ✅     | deleted                                                                   |
+| H2  | `src/channels/daemon.ts:308–321`                  | Idle-exit race vs new connect                        | ✅     | server.close first                                                        |
+| H3  | `src/channels/daemon.ts:122–167`                  | Multi-line first chunk + shutdown desyncs state      | ✅     | per-socket `LineReader` via WeakMap; cleared on shutdown                  |
+| H4  | `src/channels/daemon.ts`                          | Broadcasts during detached window lost silently      | ✅     | doc comment on detached-window contract                                   |
+| H5  | `src/channels/registry.ts:326`                    | Mismatched session_id events silently dropped        | ✅     | logError on drop                                                          |
+| H6  | `src/channels/daemonClient.ts:127–131`            | Start failure invisible — req hangs to TTL           | ✅     | onChannelUnavailable callback                                             |
+| H7  | `src/channels/daemonClient.ts`                    | `dispose()` race with in-flight `start()`            | ✅     | recheck after connect()                                                   |
+| H8  | `permissionRelay.ts:71–79`, `registry.ts:168–170` | `setOnClaimed`/`setOnChatMessage` overwrite silently | ✅     | throws in non-prod, added `clearOnClaimed()`                              |
+| H9  | `src/channels/registry.ts`                        | `setOnClaimed` not detached on dispose               | ✅     | dispose clears relay handlers                                             |
+| H10 | `src/channels/telegram/index.ts:80–83`            | `cancelDuringSend`/`inFlightSends` leak on crash     | ✅     | `sendAndTrack` try/finally always cleans `inFlightSends`                  |
+| H11 | `src/channels/daemon.ts:229–239`                  | Subprocess crash → all sessions silent forever       | ✅     | `child.on('exit')` → `process.exit(1)` so client sees ENOENT and resparks |
+| H12 | `src/channels/daemon.ts`                          | `fanoutEventToSessions` iterates live Map            | ✅     | snapshot keys + sockets                                                   |
+| H13 | `src/channels/registry.ts`                        | `permission.request` body not length-clamped         | ✅     | rebuilds with truncated preview if total > 4096-margin                    |
+| H14 | `src/channels/telegram/index.ts:179–192`          | `/cancel <args>` silently ignored                    | ✅     | regex now accepts trailing args                                           |
+| H15 | `src/channels/telegram/markdown.ts`               | Markdown escaping not fuzzed                         | ✅     | 8 fuzz tests added (lone markers, control chars, empty, …)                |
+| H16 | `src/channels/telegram/verdict.ts:62`             | ID regex `i` flag accepts uppercase out-of-alphabet  | ⏭️     | False positive on review — `[a-km-z]/i` correctly excludes L. Reverted.   |
 
 ## Medium
 
-| ID  | File                                            | Issue                                                                | Status | Notes                                                           |
-| --- | ----------------------------------------------- | -------------------------------------------------------------------- | ------ | --------------------------------------------------------------- |
-| M1  | `src/channels/feedEvents.ts`                    | Drift risk against core/feed types                                   | ⬜     | construction tests                                              |
-| M2  | `src/channels/registry.ts`                      | God object (~480 LOC)                                                | ⬜     | split                                                           |
-| M3  | `src/channels/registry.ts:424–477`              | Accepts `multi_select` and `multiSelect`                             | ✅     | dropped legacy alias; harness emits `multiSelect`               |
-| M4  | `host.ts:142`, `daemonClient.ts:91`             | `truncate` duplicated                                                | ⬜     | consolidate                                                     |
-| M5  | `src/channels/registry.ts:184–193`              | Question relay optional, permission required (asymmetric)            | ⬜     |                                                                 |
-| M6  | relays                                          | `PENDING_TTL_MS` / `SWEEP_INTERVAL_MS` duplicated                    | ✅     | extracted to `relayConstants.ts`                                |
-| M7  | `src/channels/registry.ts:26`                   | `MAX_NOTIFICATION_LEN` is Telegram-specific                          | ✅     | dropped — wire caps now belong to channels                      |
-| M8  | `src/channels/telegram/markdown.ts`             | Table separators ignore alignment colons                             | ⬜     | comment                                                         |
-| M9  | `src/channels/telegram/index.ts`                | `sendAndTrack` race in cancel ordering                               | ⬜     | swap                                                            |
-| M10 | `src/channels/telegram/bot.ts:97`               | Polling offset in-memory only                                        | ⬜     | persist                                                         |
-| M11 | `src/channels/telegram/bot.ts:340–344`          | Ignores `retry_after`                                                | ✅     | parsed from response body, sleeps on 429                        |
-| M12 | `bot.ts`                                        | No exponential backoff on transient errors                           | ⬜     |                                                                 |
-| M13 | `bot.ts` getUpdates                             | No AbortController on long-poll                                      | ✅     | AbortController with `(pollTimeoutSec+5)*2*1000` cap            |
-| M14 | `src/channels/daemon.ts`                        | `writeToChild` silent on dead child                                  | ✅     | reports back to origin or broadcast                             |
-| M15 | `src/channels/daemon.ts`                        | `fanoutEventToSessions` exported only for tests                      | ✅     | @internal JSDoc                                                 |
-| M16 | tests                                           | Untested: `host.ts`, `config.ts`, `daemonPaths`, telegram/index, bot | ✅     | new `config.test.ts` + `daemonPaths.test.ts`                    |
-| M17 | tests                                           | No test for `loadChannelConfig` perm rejection                       | ✅     | covered in `config.test.ts` (0644, 0640)                        |
-| M18 | `src/channels/registry.ts`                      | Truncation before MarkdownV2 escape may exceed 4096                  | ✅     | clampToTelegramLimit applied to notify; permission body rebuilt |
-| M19 | `src/app/providers/RuntimeProvider.tsx:102–116` | Memo deps may not be stable                                          | ✅     | verified: `[runtime, channelDefs, athenaSessionId]` correct     |
-| M20 | `src/app/shell/AppShell.tsx:906–911`            | `channelLabelSentRef` lifetime assumption                            | ✅     | inline doc comment                                              |
-| M21 | `src/ui/feed/useFeed.ts:558–562`                | Notify-on-agent.message filter untested                              | ✅     | new `useFeedChannelNotify.test.ts` (3 tests)                    |
-| M22 | `AppShell.tsx`                                  | Single-slot chat queue silently overwrites                           | ✅     | inline doc comment                                              |
+| ID  | File                                            | Issue                                                                | Status | Notes                                                                    |
+| --- | ----------------------------------------------- | -------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------ |
+| M1  | `src/channels/feedEvents.ts`                    | Drift risk against core/feed types                                   | ✅     | new `feedEvents.test.ts` constructs every variant                        |
+| M2  | `src/channels/registry.ts`                      | God object (~480 LOC)                                                | ⬜     | split                                                                    |
+| M3  | `src/channels/registry.ts:424–477`              | Accepts `multi_select` and `multiSelect`                             | ✅     | dropped legacy alias; harness emits `multiSelect`                        |
+| M4  | `host.ts:142`, `daemonClient.ts:91`             | `truncate` duplicated                                                | ✅     | host.ts deleted; only `daemonClient.ts` retains it                       |
+| M5  | `src/channels/registry.ts:184–193`              | Question relay optional, permission required (asymmetric)            | ⬜     |                                                                          |
+| M6  | relays                                          | `PENDING_TTL_MS` / `SWEEP_INTERVAL_MS` duplicated                    | ✅     | extracted to `relayConstants.ts`                                         |
+| M7  | `src/channels/registry.ts:26`                   | `MAX_NOTIFICATION_LEN` is Telegram-specific                          | ✅     | dropped — wire caps now belong to channels                               |
+| M8  | `src/channels/telegram/markdown.ts`             | Table separators ignore alignment colons                             | ✅     | doc comment on `TABLE_SEPARATOR_RE`                                      |
+| M9  | `src/channels/telegram/index.ts`                | `sendAndTrack` race in cancel ordering                               | ✅     | folded into H10 fix; `pendingMessages.set` before `inFlightSends.delete` |
+| M10 | `src/channels/telegram/bot.ts:97`               | Polling offset in-memory only                                        | ✅     | `persistedOffset` field; saved every 10 updates + on shutdown            |
+| M11 | `src/channels/telegram/bot.ts:340–344`          | Ignores `retry_after`                                                | ✅     | parsed from response body, sleeps on 429                                 |
+| M12 | `bot.ts`                                        | No exponential backoff on transient errors                           | ✅     | `consecutiveErrors`-driven 1.5s→30s cap                                  |
+| M13 | `bot.ts` getUpdates                             | No AbortController on long-poll                                      | ✅     | AbortController with `(pollTimeoutSec+5)*2*1000` cap                     |
+| M14 | `src/channels/daemon.ts`                        | `writeToChild` silent on dead child                                  | ✅     | reports back to origin or broadcast                                      |
+| M15 | `src/channels/daemon.ts`                        | `fanoutEventToSessions` exported only for tests                      | ✅     | @internal JSDoc                                                          |
+| M16 | tests                                           | Untested: `host.ts`, `config.ts`, `daemonPaths`, telegram/index, bot | ✅     | new `config.test.ts` + `daemonPaths.test.ts`                             |
+| M17 | tests                                           | No test for `loadChannelConfig` perm rejection                       | ✅     | covered in `config.test.ts` (0644, 0640)                                 |
+| M18 | `src/channels/registry.ts`                      | Truncation before MarkdownV2 escape may exceed 4096                  | ✅     | clampToTelegramLimit applied to notify; permission body rebuilt          |
+| M19 | `src/app/providers/RuntimeProvider.tsx:102–116` | Memo deps may not be stable                                          | ✅     | verified: `[runtime, channelDefs, athenaSessionId]` correct              |
+| M20 | `src/app/shell/AppShell.tsx:906–911`            | `channelLabelSentRef` lifetime assumption                            | ✅     | inline doc comment                                                       |
+| M21 | `src/ui/feed/useFeed.ts:558–562`                | Notify-on-agent.message filter untested                              | ✅     | new `useFeedChannelNotify.test.ts` (3 tests)                             |
+| M22 | `AppShell.tsx`                                  | Single-slot chat queue silently overwrites                           | ✅     | inline doc comment                                                       |
 
 ## Low / Nits
 
