@@ -8,6 +8,7 @@
 
 import type {Runtime, RuntimeEvent} from '../core/runtime/types';
 import {isDev} from '../shared/utils/env';
+import {PENDING_TTL_MS, SWEEP_INTERVAL_MS} from './relayConstants';
 import type {PendingQuestionRelay, QuestionClaimSource} from './types';
 
 export type QuestionClaimContext = {
@@ -20,9 +21,6 @@ export type OnQuestionClaimedHandler = (
 	source: QuestionClaimSource,
 	context: QuestionClaimContext,
 ) => void;
-
-const PENDING_TTL_MS = 15 * 60 * 1000;
-const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
 export class QuestionRelay {
 	private pending = new Map<string, PendingQuestionRelay>();

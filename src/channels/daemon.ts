@@ -75,6 +75,7 @@ function readSecretsFromEnv(): Record<string, unknown> {
 	return {};
 }
 
+/** @internal Exported for tests only. */
 export function fanoutEventToSessions(
 	event: ChannelEventMessage,
 	sessionIds: Iterable<string>,
@@ -82,6 +83,7 @@ export function fanoutEventToSessions(
 	return [...sessionIds].map(sessionId => ({...event, session_id: sessionId}));
 }
 
+/** @internal Exported for tests only. */
 export function expandBroadcastEvent(
 	event: ChannelEventMessage,
 	sessionIds: Iterable<string>,

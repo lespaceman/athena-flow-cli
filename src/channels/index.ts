@@ -23,7 +23,5 @@ export type {
 	ChannelMethodMessage,
 	ClaimSource,
 	QuestionClaimSource,
-	PendingRelay,
-	PendingQuestionRelay,
 } from './types';
 export type {ChannelFeedEventInput, PushChannelFeedEvent} from './feedEvents';

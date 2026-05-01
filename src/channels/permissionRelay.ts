@@ -9,6 +9,7 @@
 
 import type {Runtime, RuntimeEvent} from '../core/runtime/types';
 import {isDev} from '../shared/utils/env';
+import {PENDING_TTL_MS, SWEEP_INTERVAL_MS} from './relayConstants';
 import type {ClaimBehavior, ClaimSource, PendingRelay} from './types';
 
 export type ClaimContext = {
@@ -21,15 +22,6 @@ export type OnClaimedHandler = (
 	source: ClaimSource,
 	context: ClaimContext,
 ) => void;
-
-/**
- * Pending entries older than this with no claim are evicted by the periodic
- * sweep — defense in depth against runtime decisions that never arrive
- * (e.g. harness crash mid-flight). The longest legitimate wait is the Claude
- * forwarder's 5-minute timeout, so 15 minutes is generous.
- */
-const PENDING_TTL_MS = 15 * 60 * 1000;
-const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
 export class PermissionRelay {
 	private pending = new Map<string, PendingRelay>();

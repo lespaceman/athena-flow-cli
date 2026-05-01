@@ -261,7 +261,7 @@ describe('ChannelRegistry', () => {
 		relay.dispose();
 	});
 
-	it('notify truncates content longer than the channel cap', () => {
+	it('notify forwards content verbatim — wire-level caps belong to the channel', () => {
 		const runtime = makeRuntime();
 		const relay = new PermissionRelay({runtime});
 		const fakeHost = {
@@ -283,8 +283,7 @@ describe('ChannelRegistry', () => {
 		const call = fakeHost.send.mock.calls[0]![0] as {
 			params: {content: string};
 		};
-		expect(call.params.content.length).toBe(4000);
-		expect(call.params.content.endsWith('…')).toBe(true);
+		expect(call.params.content).toBe(huge);
 		registry.dispose();
 		relay.dispose();
 	});

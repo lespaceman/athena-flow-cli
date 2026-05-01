@@ -24,8 +24,6 @@ import type {
 	QuestionClaimSource,
 } from './types';
 
-/** Telegram caps messages at 4096 chars; leave room for an ellipsis. */
-const MAX_NOTIFICATION_LEN = 4000;
 const INPUT_PREVIEW_MAX_CHARS = 200;
 
 export type InboundChatMessage = {
@@ -53,30 +51,18 @@ export type ChannelRegistryOptions = {
 	onChannelUnavailable?: (channelName: string, reason: string) => void;
 };
 
-function reasonForSource(source: ClaimSource): ChannelCancelReason {
-	switch (source) {
-		case 'local':
-			return 'resolved_locally';
-		case 'channel':
-			return 'resolved_by_other_channel';
-		case 'timeout':
-			return 'timeout';
-		case 'rule':
-			return 'auto_resolved';
-	}
-}
+// QuestionClaimSource is a subset of ClaimSource; both share these reasons.
+const CANCEL_REASON_BY_SOURCE: Record<ClaimSource, ChannelCancelReason> = {
+	local: 'resolved_locally',
+	channel: 'resolved_by_other_channel',
+	timeout: 'timeout',
+	rule: 'auto_resolved',
+};
 
-function reasonForQuestionSource(
-	source: QuestionClaimSource,
+function reasonForSource(
+	source: ClaimSource | QuestionClaimSource,
 ): ChannelCancelReason {
-	switch (source) {
-		case 'local':
-			return 'resolved_locally';
-		case 'channel':
-			return 'resolved_by_other_channel';
-		case 'timeout':
-			return 'timeout';
-	}
+	return CANCEL_REASON_BY_SOURCE[source];
 }
 
 export class ChannelRegistry {
@@ -129,7 +115,7 @@ export class ChannelRegistry {
 
 		this.questionRelay?.setOnClaimed((entry, source, context) => {
 			if (this.clients.length === 0) return;
-			const reason = reasonForQuestionSource(source);
+			const reason = reasonForSource(source);
 			for (const client of this.clients) {
 				client.send({
 					session_id: this.sessionId,
@@ -282,15 +268,13 @@ export class ChannelRegistry {
 		if (this.clients.length === 0) return;
 		const trimmed = content.trim();
 		if (trimmed.length === 0) return;
-		const truncated =
-			trimmed.length > MAX_NOTIFICATION_LEN
-				? trimmed.slice(0, MAX_NOTIFICATION_LEN - 1) + '…'
-				: trimmed;
+		// Wire-level length caps are the channel's responsibility (e.g.
+		// telegram clampToTelegramLimit). The registry forwards verbatim.
 		for (const client of this.clients) {
 			client.send({
 				session_id: this.sessionId,
 				method: 'notification',
-				params: {content: truncated, meta},
+				params: {content: trimmed, meta},
 			});
 		}
 	}
@@ -467,11 +451,7 @@ function extractQuestions(event: RuntimeEvent): ChannelQuestion[] {
 				typeof q['question'] === 'string' ? q['question'] : 'Question';
 			const header = typeof q['header'] === 'string' ? q['header'] : 'Question';
 			const multiSelect =
-				typeof q['multiSelect'] === 'boolean'
-					? q['multiSelect']
-					: typeof q['multi_select'] === 'boolean'
-						? q['multi_select']
-						: false;
+				typeof q['multiSelect'] === 'boolean' ? q['multiSelect'] : false;
 			const options = Array.isArray(q['options'])
 				? q['options']
 						.map(option => {

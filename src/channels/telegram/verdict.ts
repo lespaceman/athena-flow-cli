@@ -46,6 +46,11 @@ const CB_QUESTION = 'q';
 const CB_ALLOW = 'a';
 const CB_DENY = 'd';
 
+const CB_VERDICT: Record<'allow' | 'deny', string> = {
+	allow: CB_ALLOW,
+	deny: CB_DENY,
+};
+
 const ID_PATTERN = CHANNEL_REQUEST_ID_REGEX.source.replace(/^\^|\$$/g, '');
 const VERDICT_RE = new RegExp(`^\\s*(y|yes|n|no)\\s+(${ID_PATTERN})\\s*$`, 'i');
 const ANSWER_RE = new RegExp(
@@ -154,7 +159,7 @@ export function buildPermissionCallbackData(
 	channelRequestId: string,
 	behavior: 'allow' | 'deny',
 ): string {
-	return `${CB_PERMISSION}:${channelRequestId}:${behavior === 'allow' ? CB_ALLOW : CB_DENY}`;
+	return `${CB_PERMISSION}:${channelRequestId}:${CB_VERDICT[behavior]}`;
 }
 
 export function buildQuestionCallbackData(

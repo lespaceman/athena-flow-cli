@@ -893,9 +893,15 @@ function AppContent({
 	);
 
 	const channelRegistry = useChannelRegistry();
+	// Single-slot queue for inbound chat that arrived while a turn was running.
+	// Newest message wins; older queued messages are silently dropped (the agent
+	// can't "catch up" on multiple parallel chats anyway). If multi-message
+	// queueing is ever needed, switch this to an array and drain on idle.
 	const pendingChatRef = useRef<string | null>(null);
 	const isHarnessRunningRef = useRef(isHarnessRunning);
 	isHarnessRunningRef.current = isHarnessRunning;
+	// Per-AppShell-mount guard: send the topic label exactly once, on the first
+	// channel-injected user input. Resuming a session in a new mount re-sends.
 	const channelLabelSentRef = useRef(false);
 
 	const submitChatAsTurn = useCallback(

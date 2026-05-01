@@ -45,11 +45,11 @@ Triage order: C1→C9 (security/DoS) → H1 (dead code) → H2/H3/H6/H7/H11 (lif
 | --- | ----------------------------------------------- | -------------------------------------------------------------------- | ------ | --------------------------------------------------------------- |
 | M1  | `src/channels/feedEvents.ts`                    | Drift risk against core/feed types                                   | ⬜     | construction tests                                              |
 | M2  | `src/channels/registry.ts`                      | God object (~480 LOC)                                                | ⬜     | split                                                           |
-| M3  | `src/channels/registry.ts:424–477`              | Accepts `multi_select` and `multiSelect`                             | ⬜     | pick one                                                        |
+| M3  | `src/channels/registry.ts:424–477`              | Accepts `multi_select` and `multiSelect`                             | ✅     | dropped legacy alias; harness emits `multiSelect`               |
 | M4  | `host.ts:142`, `daemonClient.ts:91`             | `truncate` duplicated                                                | ⬜     | consolidate                                                     |
 | M5  | `src/channels/registry.ts:184–193`              | Question relay optional, permission required (asymmetric)            | ⬜     |                                                                 |
-| M6  | relays                                          | `PENDING_TTL_MS` / `SWEEP_INTERVAL_MS` duplicated                    | ⬜     |                                                                 |
-| M7  | `src/channels/registry.ts:26`                   | `MAX_NOTIFICATION_LEN` is Telegram-specific                          | ⬜     |                                                                 |
+| M6  | relays                                          | `PENDING_TTL_MS` / `SWEEP_INTERVAL_MS` duplicated                    | ✅     | extracted to `relayConstants.ts`                                |
+| M7  | `src/channels/registry.ts:26`                   | `MAX_NOTIFICATION_LEN` is Telegram-specific                          | ✅     | dropped — wire caps now belong to channels                      |
 | M8  | `src/channels/telegram/markdown.ts`             | Table separators ignore alignment colons                             | ⬜     | comment                                                         |
 | M9  | `src/channels/telegram/index.ts`                | `sendAndTrack` race in cancel ordering                               | ⬜     | swap                                                            |
 | M10 | `src/channels/telegram/bot.ts:97`               | Polling offset in-memory only                                        | ⬜     | persist                                                         |
@@ -57,41 +57,41 @@ Triage order: C1→C9 (security/DoS) → H1 (dead code) → H2/H3/H6/H7/H11 (lif
 | M12 | `bot.ts`                                        | No exponential backoff on transient errors                           | ⬜     |                                                                 |
 | M13 | `bot.ts` getUpdates                             | No AbortController on long-poll                                      | ✅     | AbortController with `(pollTimeoutSec+5)*2*1000` cap            |
 | M14 | `src/channels/daemon.ts`                        | `writeToChild` silent on dead child                                  | ✅     | reports back to origin or broadcast                             |
-| M15 | `src/channels/daemon.ts`                        | `fanoutEventToSessions` exported only for tests                      | ⬜     | @internal                                                       |
+| M15 | `src/channels/daemon.ts`                        | `fanoutEventToSessions` exported only for tests                      | ✅     | @internal JSDoc                                                 |
 | M16 | tests                                           | Untested: `host.ts`, `config.ts`, `daemonPaths`, telegram/index, bot | ⬜     |                                                                 |
 | M17 | tests                                           | No test for `loadChannelConfig` perm rejection                       | ⬜     |                                                                 |
 | M18 | `src/channels/registry.ts`                      | Truncation before MarkdownV2 escape may exceed 4096                  | ✅     | clampToTelegramLimit applied to notify; permission body rebuilt |
 | M19 | `src/app/providers/RuntimeProvider.tsx:102–116` | Memo deps may not be stable                                          | ⬜     | verify                                                          |
-| M20 | `src/app/shell/AppShell.tsx:906–911`            | `channelLabelSentRef` lifetime assumption                            | ⬜     | doc                                                             |
-| M21 | `src/ui/feed/useFeed.ts:558–562`                | Notify-on-agent.message filter untested                              | ⬜     |                                                                 |
-| M22 | `AppShell.tsx`                                  | Single-slot chat queue silently overwrites                           | ⬜     | doc or extend                                                   |
+| M20 | `src/app/shell/AppShell.tsx:906–911`            | `channelLabelSentRef` lifetime assumption                            | ✅     | inline doc comment                                              |
+| M21 | `src/ui/feed/useFeed.ts:558–562`                | Notify-on-agent.message filter untested                              | ✅     | new `useFeedChannelNotify.test.ts` (3 tests)                    |
+| M22 | `AppShell.tsx`                                  | Single-slot chat queue silently overwrites                           | ✅     | inline doc comment                                              |
 
 ## Low / Nits
 
 | ID  | File                        | Issue                              | Status |
-| --- | --------------------------- | ---------------------------------- | ------ | ----------------------------- |
+| --- | --------------------------- | ---------------------------------- | ------ | -------------------------------------------------------------------- |
 | L1  | `host.ts`                   | `'legacy'` literal                 | ⬜     |
 | L2  | `protocol.ts:43–48`         | `Object.entries` preferable        | ⬜     |
 | L3  | `daemon.ts:82–93`           | `Number('30s')` silently default   | ⬜     |
 | L4  | `daemon.ts:138–142,147–152` | `'unknown'` magic string           | ✅     |
 | L5  | `daemonClient.ts:46–47`     | retry constants undocumented       | ⬜     |
-| L6  | misc                        | `'…'` vs `'...'`                   | ✅     | unified to `…`                |
-| L7  | `bot.ts:128–130`            | `as unknown as {stopped}` cast     | ⬜     |
+| L6  | misc                        | `'…'` vs `'...'`                   | ✅     | unified to `…`                                                       |
+| L7  | `bot.ts:128–130`            | `as unknown as {stopped}` cast     | ✅     | `isStopped()` getter                                                 |
 | L8  | `bot.ts:140–152`            | "after 3 attempts" log imprecise   | ⬜     |
 | L9  | `markdown.ts:53–56`         | Sentinel collision risk            | ⬜     |
 | L10 | `markdown.ts:223`           | Control chars bypass escape        | ⬜     |
-| L11 | `verdict.ts:113–125`        | recomputes trim                    | ⬜     |
-| L12 | `verdict.ts:153–156`        | ternary → table lookup             | ⬜     |
-| L13 | `registry.ts:412–422`       | `200` magic                        | ✅     | INPUT_PREVIEW_MAX_CHARS const |
-| L14 | `registry.ts:46–69`         | reason\* fns near-duplicates       | ⬜     |
+| L11 | `verdict.ts:113–125`        | recomputes trim                    | ⏭️     | False positive — single-pass already                                 |
+| L12 | `verdict.ts:153–156`        | ternary → table lookup             | ✅     | CB_VERDICT lookup table                                              |
+| L13 | `registry.ts:412–422`       | `200` magic                        | ✅     | INPUT_PREVIEW_MAX_CHARS const                                        |
+| L14 | `registry.ts:46–69`         | reason\* fns near-duplicates       | ✅     | merged via CANCEL_REASON_BY_SOURCE table                             |
 | L15 | `ChannelReady.version`      | unused                             | ⬜     |
 | L16 | `telegram/index.ts:516–522` | unrate-limited debug logs          | ⬜     |
 | L17 | `telegram/index.ts:1056`    | `markResolved` ignores edit errors | ⬜     |
 | L18 | `telegram/index.ts:778–791` | concurrent cancel race             | ⬜     |
-| L19 | `channels/index.ts`         | re-exports internal types          | ⬜     |
+| L19 | `channels/index.ts`         | re-exports internal types          | ✅     | dropped `PendingRelay`/`PendingQuestionRelay` exports                |
 | L20 | `types.ts:191–195`          | ClaimSource JSDoc cross-ref        | ⬜     |
 | L21 | `feedEvents.ts`             | tiny module fold                   | ⬜     |
-| L22 | `daemon.ts`                 | inline `fanoutEventToSessions`     | ⬜     |
+| L22 | `daemon.ts`                 | inline `fanoutEventToSessions`     | ⏭️     | already inlined in Round 2; kept exported for tests with `@internal` |
 | L23 | misc                        | mixed comment styles               | ⬜     |
 | L24 | `markdown.ts`               | `TABLE_SEPARATOR_RE` flag comment  | ⬜     |
 
@@ -140,6 +140,20 @@ Triage order: C1→C9 (security/DoS) → H1 (dead code) → H2/H3/H6/H7/H11 (lif
 - L4: `UNKNOWN_SESSION_ID` constant (already added in Round 2).
 - L6: `…` unified across `daemonClient.truncate`.
 - L13: `INPUT_PREVIEW_MAX_CHARS = 200` extracted in `registry.ts`.
+
+### Round 5 (cleanup batch)
+
+- M3: dropped legacy `multi_select` alias in `extractQuestions`; harness emits `multiSelect` (camelCase) which is converted once to `multi_select` for the wire.
+- M6: extracted `PENDING_TTL_MS` and `SWEEP_INTERVAL_MS` to `src/channels/relayConstants.ts`; both relays import from there.
+- M7: removed `MAX_NOTIFICATION_LEN` from registry; `notify` now forwards verbatim. Wire-level caps belong to the channel (telegram already clamps via `clampToTelegramLimit`). Updated registry test accordingly.
+- M15: `@internal` JSDoc on `fanoutEventToSessions` and `expandBroadcastEvent`.
+- M20+M22: inline doc comments on `channelLabelSentRef` and `pendingChatRef` in `AppShell.tsx` explaining lifetime + single-slot semantics.
+- M21: new `src/app/providers/__tests__/useFeedChannelNotify.test.ts` — pins root vs subagent scope filter, plus null-registry safety.
+- L7: `TelegramBot.isStopped()` getter replaces the `as unknown as {stopped}` cast.
+- L12: `CB_VERDICT` lookup table replaces the inline ternary in `buildPermissionCallbackData`.
+- L14: collapsed `reasonForSource` and `reasonForQuestionSource` into a single `CANCEL_REASON_BY_SOURCE` lookup table with one helper accepting either union.
+- L19: `channels/index.ts` no longer re-exports the internal `PendingRelay` / `PendingQuestionRelay` types.
+- Skipped: L11 (false positive — `text.trim()` is single-pass), L22 (already inlined in Round 2).
 
 ### Round 4 (simplify pass)
 

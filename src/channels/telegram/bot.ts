@@ -129,17 +129,18 @@ export class TelegramBot {
 		this.stopped = true;
 	}
 
+	isStopped(): boolean {
+		return this.stopped;
+	}
+
 	async *poll(): AsyncIterable<TelegramUpdate> {
-		while (!this.stopped) {
+		while (!this.isStopped()) {
 			try {
 				const updates = await this.getUpdates();
 				this.consecutiveAuthFailures = 0;
 				for (const update of updates) {
-					// `stopped` may have flipped during the await above (consumer
-					// called `stop()`), so re-check explicitly. Cast through
-					// `unknown` to keep TS from narrowing the field after the
-					// loop guard.
-					if ((this as unknown as {stopped: boolean}).stopped) return;
+					// `stopped` may have flipped during the await above.
+					if (this.isStopped()) return;
 					if (update.update_id >= this.offset) {
 						this.offset = update.update_id + 1;
 					}
