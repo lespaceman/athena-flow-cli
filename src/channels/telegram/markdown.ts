@@ -114,6 +114,69 @@ function dropTableSeparators(text: string): string {
 		.join('\n');
 }
 
+/** A line that contains a `|` and is non-empty. */
+function isTableRowLine(line: string): boolean {
+	return line.includes('|') && line.trim().length > 0;
+}
+
+function parseTableRow(line: string): string[] {
+	const trimmed = line.trim().replace(/^\||\|$/g, '');
+	return trimmed.split('|').map(c => c.trim());
+}
+
+function renderTableAsCodeBlock(rawLines: string[]): string {
+	const rows = rawLines
+		.filter(l => !TABLE_SEPARATOR_RE.test(l))
+		.map(parseTableRow);
+	if (rows.length === 0) return '';
+	const cols = Math.max(...rows.map(r => r.length));
+	const widths = new Array<number>(cols).fill(0);
+	for (const row of rows) {
+		while (row.length < cols) row.push('');
+		for (let c = 0; c < cols; c++) {
+			widths[c] = Math.max(widths[c]!, row[c]!.length);
+		}
+	}
+	const formatRow = (row: string[]): string =>
+		row.map((cell, c) => cell.padEnd(widths[c]!)).join(' | ');
+	const separator = widths.map(w => '-'.repeat(w)).join('-+-');
+	const lines = [
+		formatRow(rows[0]!),
+		separator,
+		...rows.slice(1).map(formatRow),
+	];
+	const body = lines.join('\n');
+	return '```\n' + escapeMarkdownV2CodeBlock(body) + '\n```';
+}
+
+/**
+ * Detect contiguous GFM table blocks (≥2 row-like lines containing a
+ * separator row) and stash each as a pre-rendered MarkdownV2 fenced code
+ * block so column alignment survives Telegram's variable-width font.
+ */
+function formatTables(text: string, ref: (rendered: string) => string): string {
+	const lines = text.split('\n');
+	const out: string[] = [];
+	let i = 0;
+	while (i < lines.length) {
+		if (!isTableRowLine(lines[i]!)) {
+			out.push(lines[i]!);
+			i++;
+			continue;
+		}
+		const start = i;
+		while (i < lines.length && isTableRowLine(lines[i]!)) i++;
+		const block = lines.slice(start, i);
+		const hasSeparator = block.some(l => TABLE_SEPARATOR_RE.test(l));
+		if (hasSeparator && block.length >= 2) {
+			out.push(ref(renderTableAsCodeBlock(block)));
+		} else {
+			out.push(...block);
+		}
+	}
+	return out.join('\n');
+}
+
 function dropHorizontalRules(text: string): string {
 	return text
 		.split('\n')
@@ -171,7 +234,8 @@ function renderTextSegment(text: string): string {
 		return `${STASH_OPEN}${id}${STASH_CLOSE}`;
 	};
 
-	let s = dropTableSeparators(text);
+	let s = formatTables(text, ref);
+	s = dropTableSeparators(s);
 	s = dropHorizontalRules(s);
 	// Convert headings to **…** so BOLD_RE picks them up in the inline pass.
 	s = s.replace(HEADING_RE, '**$1**');
@@ -185,7 +249,7 @@ function renderTextSegment(text: string): string {
 			const bq = BLOCKQUOTE_LINE_RE.exec(line);
 			if (!bq) return line;
 			const levels = bq[1]!;
-			const content = bq[2] ?? '';
+			const content = bq[2]!;
 			const formatted = applyInlineFormats(content, ref);
 			const resolved = formatted.replace(
 				STASH_REF_RE,

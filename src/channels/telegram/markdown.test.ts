@@ -193,10 +193,28 @@ describe('agentMarkdownToTelegramV2', () => {
 	});
 
 	// ── Tables ─────────────────────────────────────────────────────────
-	it('strips GFM table separator rows', () => {
-		const md = '| a | b |\n| --- | --- |\n| 1 | 2 |';
+	it('renders GFM tables as aligned monospace code blocks', () => {
+		const md =
+			'| pkg | status |\n| --- | --- |\n| core | ok |\n| ui | failed |';
 		expect(agentMarkdownToTelegramV2(md)).toBe(
-			'\\| a \\| b \\|\n\\| 1 \\| 2 \\|',
+			'```\npkg  | status\n-----+-------\ncore | ok    \nui   | failed\n```',
+		);
+	});
+
+	it('aligns columns to the widest cell per column', () => {
+		const md = '| short | longer header |\n| --- | --- |\n| x | y |';
+		expect(agentMarkdownToTelegramV2(md)).toBe(
+			'```\nshort | longer header\n------+--------------\nx     | y            \n```',
+		);
+	});
+
+	it('does not treat a single pipe-line without separator as a table', () => {
+		expect(agentMarkdownToTelegramV2('value | other')).toBe('value \\| other');
+	});
+
+	it('still strips orphan separator rows outside a table', () => {
+		expect(agentMarkdownToTelegramV2('text\n| --- | --- |\nmore')).toBe(
+			'text\nmore',
 		);
 	});
 

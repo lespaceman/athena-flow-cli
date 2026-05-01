@@ -67,6 +67,8 @@ export type ChannelShutdownParams = Record<string, never>;
 
 export const CHANNEL_BROADCAST_SESSION_ID = '*';
 
+export const MAX_SESSION_LABEL_LEN = 128;
+
 export type ChannelMethodMessage =
 	| {session_id: string; method: 'init'; params: ChannelInitParams}
 	| {
@@ -94,7 +96,8 @@ export type ChannelMethodMessage =
 			method: 'notification';
 			params: ChannelNotificationParams;
 	  }
-	| {session_id: string; method: 'shutdown'; params: ChannelShutdownParams};
+	| {session_id: string; method: 'shutdown'; params: ChannelShutdownParams}
+	| {session_id: string; method: 'session.update'; params: {label: string}};
 
 // ── Channel → Athena events ──────────────────────────────────────────
 

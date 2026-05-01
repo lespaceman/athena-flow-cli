@@ -42,6 +42,7 @@ export default function Message({
 				<MarkdownText
 					content={message.content.trimStart()}
 					availableWidth={Math.max(10, (parentWidth ?? termColumns()) - 2)}
+					mode="inline-feed"
 				/>
 			</Box>
 		</Box>

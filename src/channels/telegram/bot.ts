@@ -26,6 +26,8 @@ export type TelegramMessage = {
 	chat: TelegramChat;
 	date: number;
 	text?: string;
+	/** Set for messages sent to a forum topic thread. */
+	message_thread_id?: number;
 };
 
 export type TelegramCallbackQuery = {
@@ -69,6 +71,7 @@ export type ParseMode = 'MarkdownV2' | 'HTML';
 export type SendMessageOptions = {
 	parse_mode?: ParseMode;
 	reply_markup?: ReplyMarkup;
+	message_thread_id?: number;
 };
 
 export type BotCommand = {
@@ -164,6 +167,8 @@ export class TelegramBot {
 			const params: Record<string, unknown> = {chat_id: chatId, text};
 			if (options.parse_mode) params['parse_mode'] = options.parse_mode;
 			if (options.reply_markup) params['reply_markup'] = options.reply_markup;
+			if (options.message_thread_id !== undefined)
+				params['message_thread_id'] = options.message_thread_id;
 			const result = await this.call<SendMessageResult>('sendMessage', params);
 			return result;
 		} catch (err) {
@@ -174,6 +179,66 @@ export class TelegramBot {
 				)}`,
 			);
 			return null;
+		}
+	}
+
+	async createForumTopic(
+		chatId: number | string,
+		name: string,
+	): Promise<{message_thread_id: number} | null> {
+		try {
+			return await this.call<{message_thread_id: number}>('createForumTopic', {
+				chat_id: chatId,
+				name,
+			});
+		} catch (err) {
+			this.log(
+				'warn',
+				`createForumTopic failed: ${this.redact(
+					err instanceof Error ? err.message : String(err),
+				)}`,
+			);
+			return null;
+		}
+	}
+
+	async editForumTopic(
+		chatId: number | string,
+		messageThreadId: number,
+		name: string,
+	): Promise<void> {
+		try {
+			await this.call('editForumTopic', {
+				chat_id: chatId,
+				message_thread_id: messageThreadId,
+				name,
+			});
+		} catch (err) {
+			this.log(
+				'debug',
+				`editForumTopic failed: ${this.redact(
+					err instanceof Error ? err.message : String(err),
+				)}`,
+			);
+		}
+	}
+
+	async closeForumTopic(
+		chatId: number | string,
+		messageThreadId: number,
+	): Promise<void> {
+		try {
+			await this.call('closeForumTopic', {
+				chat_id: chatId,
+				message_thread_id: messageThreadId,
+			});
+		} catch (err) {
+			this.log(
+				'debug',
+				`closeForumTopic failed: ${this.redact(
+					err instanceof Error ? err.message : String(err),
+				)}`,
+			);
 		}
 	}
 

@@ -1,24 +1,29 @@
 import React from 'react';
 import {Box, Text} from 'ink';
-import {renderMarkdown} from '../../../shared/markdown/renderMarkdown';
+import {
+	renderMarkdown,
+	type MarkdownRenderMode,
+} from '../../../shared/markdown/renderMarkdown';
 
 type Props = {
 	content: string;
 	maxLines?: number;
 	availableWidth: number;
+	mode?: MarkdownRenderMode;
 };
 
 export default function MarkdownText({
 	content,
 	maxLines,
 	availableWidth,
+	mode = 'tool-output',
 }: Props): React.ReactNode {
 	if (!content) return null;
 
 	const rendered = renderMarkdown({
 		content,
 		width: availableWidth,
-		mode: 'tool-output',
+		mode,
 	});
 
 	if (maxLines != null) {

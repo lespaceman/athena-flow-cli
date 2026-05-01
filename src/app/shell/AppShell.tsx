@@ -19,7 +19,10 @@ import {
 	useChannelRegistry,
 	useRuntime,
 } from '../providers/RuntimeProvider';
-import type {ChannelDefinition} from '../../channels/types';
+import {
+	MAX_SESSION_LABEL_LEN,
+	type ChannelDefinition,
+} from '../../channels/types';
 import {useHarnessProcess} from '../process/useHarnessProcess';
 import {useHeaderMetrics} from '../../ui/hooks/useHeaderMetrics';
 import {useTerminalTitle} from '../../ui/hooks/useTerminalTitle';
@@ -893,12 +896,19 @@ function AppContent({
 	const pendingChatRef = useRef<string | null>(null);
 	const isHarnessRunningRef = useRef(isHarnessRunning);
 	isHarnessRunningRef.current = isHarnessRunning;
+	const channelLabelSentRef = useRef(false);
 
 	const submitChatAsTurn = useCallback(
 		(text: string) => {
 			setPendingStartupDiagnostics(null);
 			setStartupFailure(null);
 			addMessage('user', text);
+			if (!channelLabelSentRef.current && channelRegistry) {
+				channelLabelSentRef.current = true;
+				channelRegistry.notifySessionLabel(
+					text.slice(0, MAX_SESSION_LABEL_LEN),
+				);
+			}
 			if (!isServerRunning && runtimeError) {
 				channelRegistry?.notify(
 					`Could not deliver: Athena ${harnessLabel} is unavailable (${runtimeError.message})`,

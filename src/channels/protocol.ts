@@ -218,6 +218,14 @@ export function parseMethodMessage(
 		}
 		case 'shutdown':
 			return {ok: true, value: {session_id, method, params: {}}};
+		case 'session.update': {
+			if (typeof params['label'] !== 'string')
+				return {ok: false, reason: 'label must be string'};
+			return {
+				ok: true,
+				value: {session_id, method, params: {label: params['label']}},
+			};
+		}
 		default:
 			return {ok: false, reason: `unknown method: ${method}`};
 	}

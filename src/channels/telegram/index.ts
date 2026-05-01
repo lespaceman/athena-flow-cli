@@ -6,11 +6,19 @@
  * for messages + callback queries, gates senders against the allowlist
  * supplied in `init`, and routes verdict-shaped replies to
  * `permission.verdict` / `question.answer` events.
+ *
+ * Forum mode (opt-in via `options.forum_mode: true`): each Athena session
+ * gets its own Forum Topic in a supergroup. Messages within a topic are
+ * routed to the owning session instead of broadcast. State is persisted to
+ * ~/.config/athena/channel-state/telegram-{chatId}.json.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import process from 'node:process';
+import {channelStateDir} from '../config';
 import {encodeLine, LineReader, parseMethodMessage} from '../protocol';
-import {CHANNEL_BROADCAST_SESSION_ID} from '../types';
+import {CHANNEL_BROADCAST_SESSION_ID, MAX_SESSION_LABEL_LEN} from '../types';
 import type {
 	ChannelEventMessage,
 	ChannelMethodMessage,
@@ -73,10 +81,73 @@ type RuntimeState = {
 	inFlightSends: Set<string>;
 	/** Cancel reasons that arrived while a `sendMessage` was in flight. */
 	cancelDuringSend: Map<string, string>;
+
+	// Forum mode fields (only meaningful when forumMode === true)
+	forumMode: boolean;
+	/** session_id → message_thread_id */
+	sessionTopics: Map<string, number>;
+	/** message_thread_id → session_id (reverse index) */
+	topicSessions: Map<number, string>;
+	/** Pre-created topic thread IDs not yet claimed by any session */
+	pendingTopics: number[];
+	/** Absolute path to the persisted state JSON file */
+	statePath: string | null;
 };
 
-const VERSION = '0.2.0';
+// ── Persisted state ──────────────────────────────────────────────────
+
+type PersistedState = {
+	version: 1;
+	forum_chat_id: number | string;
+	session_topics: Record<string, number>;
+	pending_topics: number[];
+};
+
+function loadState(state: RuntimeState): void {
+	if (!state.statePath) return;
+	let raw: PersistedState;
+	try {
+		raw = JSON.parse(
+			fs.readFileSync(state.statePath, 'utf8'),
+		) as PersistedState;
+	} catch {
+		// Missing or corrupted — start fresh.
+		return;
+	}
+	if (raw.version !== 1) return;
+	for (const [sid, tid] of Object.entries(raw.session_topics ?? {})) {
+		state.sessionTopics.set(sid, tid);
+		state.topicSessions.set(tid, sid);
+	}
+	state.pendingTopics = Array.isArray(raw.pending_topics)
+		? raw.pending_topics
+		: [];
+}
+
+function saveState(state: RuntimeState): void {
+	if (!state.statePath) return;
+	const data: PersistedState = {
+		version: 1,
+		forum_chat_id: state.defaultChatId ?? 0,
+		session_topics: Object.fromEntries(state.sessionTopics),
+		pending_topics: state.pendingTopics,
+	};
+	const tmp = `${state.statePath}.tmp`;
+	try {
+		fs.writeFileSync(tmp, JSON.stringify(data), 'utf8');
+		fs.renameSync(tmp, state.statePath);
+	} catch {
+		// Non-fatal — worst case we recreate topics on next boot
+	}
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+const VERSION = '0.3.0';
 const NAME = TELEGRAM_CHANNEL_NAME;
+
+/** Thread ID used in Telegram for the "General" topic of a forum group. */
+const GENERAL_TOPIC_THREAD_ID = 1;
 
 function send(event: ChannelEventMessage): void {
 	process.stdout.write(encodeLine(event));
@@ -92,6 +163,38 @@ function log(sessionId: string, level: ChannelLogLevel, message: string): void {
 
 function sendError(sessionId: string, message: string, fatal = false): void {
 	send({session_id: sessionId, event: 'error', params: {message, fatal}});
+}
+
+/** Returns the forum thread ID for a session, or undefined in flat-chat mode. */
+function threadIdForSession(
+	state: RuntimeState,
+	sessionId: string,
+): number | undefined {
+	return state.forumMode ? state.sessionTopics.get(sessionId) : undefined;
+}
+
+type SlashCommand = 'help' | 'status' | 'cancel' | 'newsession';
+
+/** Match `/cmd` or `/cmd@bot` (Telegram appends `@<bot_username>` in groups). */
+function parseCommand(text: string): SlashCommand | null {
+	const m = /^\/([a-z]+)(?:@\S*)?$/i.exec(text);
+	if (!m) return null;
+	const cmd = m[1]!.toLowerCase();
+	if (
+		cmd === 'help' ||
+		cmd === 'status' ||
+		cmd === 'cancel' ||
+		cmd === 'newsession'
+	) {
+		return cmd;
+	}
+	return null;
+}
+
+function mdOptsForThread(threadId: number | undefined): SendMessageOptions {
+	return threadId === undefined
+		? MD_OPTIONS
+		: {...MD_OPTIONS, message_thread_id: threadId};
 }
 
 // ── Rendering helpers (MarkdownV2) ───────────────────────────────────
@@ -222,10 +325,21 @@ function buildCancelText(reason: string): string {
 
 // ── Bot lifecycle ────────────────────────────────────────────────────
 
-const BOT_COMMANDS = [
+const BOT_COMMANDS_BASE = [
 	{command: 'status', description: 'Show current Athena session status'},
-	{command: 'cancel', description: 'Cancel the pending prompt'},
+	{
+		command: 'cancel',
+		description: 'Cancel the pending permission or question prompt',
+	},
 	{command: 'help', description: 'How to use this bot'},
+];
+
+const BOT_COMMANDS_FORUM = [
+	...BOT_COMMANDS_BASE,
+	{
+		command: 'newsession',
+		description: 'Pre-create a topic for the next Athena session',
+	},
 ];
 
 const HELP_TEXT = [
@@ -234,7 +348,15 @@ const HELP_TEXT = [
 	'• Questions with options come with one button per option.',
 	'• Free-text questions: reply directly to the message.',
 	'• Multi-question replies: answer <id> {"Q1":"A1","Q2":"A2"}',
-	'• Power users: "yes <id>" / "no <id>" still works.',
+	'• /cancel — cancel a pending permission or question prompt.',
+].join('\n');
+
+const HELP_TEXT_FORUM = [
+	'Athena Telegram channel (forum mode):',
+	'• /newsession — pre-create a topic for the next Athena session.',
+	'• /cancel — cancel pending prompts in this topic.',
+	'• /status — see all sessions and their topics.',
+	"• Permission / question prompts appear in the session's topic.",
 ].join('\n');
 
 async function startBot(
@@ -264,10 +386,28 @@ async function startBot(
 		process.exit(1);
 	}
 
+	state.forumMode = options['forum_mode'] === true;
+
+	if (state.forumMode) {
+		const stateDir = channelStateDir();
+		try {
+			fs.mkdirSync(stateDir, {recursive: true});
+		} catch {
+			// Non-fatal
+		}
+		state.statePath = path.join(
+			stateDir,
+			`telegram-${state.defaultChatId}.json`,
+		);
+		loadState(state);
+	}
+
 	state.bot = new TelegramBot({token}, (level, message) =>
 		log(sessionId, level, message),
 	);
-	void state.bot.setMyCommands(BOT_COMMANDS);
+	void state.bot.setMyCommands(
+		state.forumMode ? BOT_COMMANDS_FORUM : BOT_COMMANDS_BASE,
+	);
 	send({
 		session_id: sessionId,
 		event: 'ready',
@@ -285,14 +425,57 @@ async function startBot(
 	}
 }
 
+// ── Forum topic management ───────────────────────────────────────────
+
+async function ensureTopicForSession(
+	state: RuntimeState,
+	sessionId: string,
+	label?: string,
+): Promise<number | null> {
+	if (!state.forumMode || !state.bot || state.defaultChatId === null)
+		return null;
+
+	const existing = state.sessionTopics.get(sessionId);
+	if (existing !== undefined) return existing;
+
+	const topicName = label ?? `Session ${sessionId.slice(0, 8)}`;
+	let threadId: number;
+
+	if (state.pendingTopics.length > 0) {
+		threadId = state.pendingTopics.shift()!;
+		await state.bot.editForumTopic(state.defaultChatId, threadId, topicName);
+	} else {
+		const result = await state.bot.createForumTopic(
+			state.defaultChatId,
+			topicName,
+		);
+		if (!result) return null;
+		threadId = result.message_thread_id;
+	}
+
+	state.sessionTopics.set(sessionId, threadId);
+	state.topicSessions.set(threadId, sessionId);
+	saveState(state);
+
+	await state.bot.sendMessage(
+		state.defaultChatId,
+		escapeMarkdownV2('✅ Session connected'),
+		mdOptsForThread(threadId),
+	);
+
+	return threadId;
+}
+
 // ── Incoming events ──────────────────────────────────────────────────
 
 function findPendingQuestion(
 	state: RuntimeState,
+	sessionId?: string,
 ): {id: string; pending: PendingQuestion} | null {
 	let only: {id: string; pending: PendingQuestion} | null = null;
 	for (const [id, pending] of state.pendingMessages) {
 		if (pending.kind !== 'question') continue;
+		if (sessionId !== undefined && pending.sessionId !== sessionId) continue;
 		if (only) return null;
 		only = {id, pending};
 	}
@@ -302,10 +485,12 @@ function findPendingQuestion(
 function findPendingByRequestId(
 	state: RuntimeState,
 	channelRequestId: string,
+	sessionId?: string,
 ): {key: string; pending: PendingMessage} | null {
 	let only: {key: string; pending: PendingMessage} | null = null;
 	for (const [key, pending] of state.pendingMessages) {
 		if (pending.channelRequestId !== channelRequestId) continue;
+		if (sessionId !== undefined && pending.sessionId !== sessionId) continue;
 		if (only) return null;
 		only = {key, pending};
 	}
@@ -338,44 +523,354 @@ async function handleIncomingMessage(
 	const text = message.text?.trim() ?? '';
 	if (text.length === 0) return;
 
-	if (text === '/help' || text.startsWith('/help@')) {
-		if (state.bot) await state.bot.sendMessage(message.chat.id, HELP_TEXT);
+	if (state.forumMode) {
+		await handleForumMessage(state, message, text);
+	} else {
+		await handleFlatMessage(state, message, text);
+	}
+}
+
+async function handleForumMessage(
+	state: RuntimeState,
+	message: TelegramMessage,
+	text: string,
+): Promise<void> {
+	const threadId = message.message_thread_id;
+	const chatId = message.chat.id;
+
+	if (threadId === undefined || threadId === GENERAL_TOPIC_THREAD_ID) {
+		await handleGeneralTopicMessage(state, chatId, text, threadId);
 		return;
 	}
 
-	if (text === '/status' || text.startsWith('/status@')) {
-		if (!state.bot) return;
-		const pending = [...state.pendingMessages.entries()];
-		if (pending.length === 0) {
+	const sessionId = state.topicSessions.get(threadId);
+
+	if (sessionId === undefined) {
+		if (state.bot) {
 			await state.bot.sendMessage(
-				message.chat.id,
-				escapeMarkdownV2('No pending prompts.'),
-				MD_OPTIONS,
-			);
-		} else {
-			const noun = pending.length === 1 ? 'prompt' : 'prompts';
-			const lines = [`*${pending.length} pending ${escapeMarkdownV2(noun)}:*`];
-			for (const [, p] of pending) {
-				const icon = p.kind === 'permission' ? '🔐' : '❓';
-				lines.push(
-					`${icon} \`${p.sessionId}/${p.channelRequestId}\` — ${escapeMarkdownV2(p.headline)}`,
-				);
-			}
-			await state.bot.sendMessage(
-				message.chat.id,
-				lines.join('\n'),
-				MD_OPTIONS,
+				chatId,
+				escapeMarkdownV2(
+					'⚠️ This topic is not linked to any session. Use /status to see active sessions.',
+				),
+				mdOptsForThread(threadId),
 			);
 		}
 		return;
 	}
 
-	if (text === '/cancel' || text.startsWith('/cancel@')) {
+	const command = parseCommand(text);
+	if (command === 'help') {
+		await state.bot?.sendMessage(chatId, HELP_TEXT_FORUM, {
+			message_thread_id: threadId,
+		});
+		return;
+	}
+	if (command === 'status') {
+		await sendStatusInTopic(state, chatId, threadId, sessionId);
+		return;
+	}
+	if (command === 'cancel') {
+		await cancelSessionPrompts(state, chatId, threadId, sessionId);
+		return;
+	}
+
+	const verdict = parseVerdict(text);
+	if (verdict) {
+		const target = findPendingByRequestId(
+			state,
+			verdict.channelRequestId,
+			sessionId,
+		);
+		if (!target) return;
+		send({
+			session_id: target.pending.sessionId,
+			event: 'permission.verdict',
+			params: {
+				channel_request_id: verdict.channelRequestId,
+				behavior: verdict.behavior,
+			},
+		});
+		await markResolved(
+			state,
+			verdict.channelRequestId,
+			verdict.behavior === 'allow' ? 'allowed via reply' : 'denied via reply',
+		);
+		return;
+	}
+
+	const answerId = parseQuestionAnswerId(text);
+	if (answerId) {
+		const target = findPendingByRequestId(state, answerId, sessionId);
+		const answer =
+			target?.pending.kind === 'question'
+				? parseQuestionAnswer(text, target.pending.questionKeys)
+				: null;
+		if (answer) {
+			send({
+				session_id: target!.pending.sessionId,
+				event: 'question.answer',
+				params: {
+					channel_request_id: answer.channelRequestId,
+					answers: answer.answers,
+				},
+			});
+			await markResolved(state, answer.channelRequestId, 'answered');
+			return;
+		}
+	}
+
+	const onlyQuestion = findPendingQuestion(state, sessionId);
+	if (onlyQuestion) {
+		const answer = buildPlainTextQuestionAnswer(
+			onlyQuestion.pending.channelRequestId,
+			text,
+			onlyQuestion.pending.questionKeys,
+		);
+		if (answer) {
+			send({
+				session_id: onlyQuestion.pending.sessionId,
+				event: 'question.answer',
+				params: {
+					channel_request_id: answer.channelRequestId,
+					answers: answer.answers,
+				},
+			});
+			await markResolved(state, answer.channelRequestId, 'answered');
+			return;
+		}
+	}
+
+	send({
+		session_id: sessionId,
+		event: 'chat.message',
+		params: {
+			content: text,
+			meta: {
+				sender_id: String(message.from!.id),
+				chat_id: String(chatId),
+				thread_id: String(threadId),
+			},
+		},
+	});
+}
+
+async function handleGeneralTopicMessage(
+	state: RuntimeState,
+	chatId: number,
+	text: string,
+	threadId: number | undefined,
+): Promise<void> {
+	const replyOpts = mdOptsForThread(threadId);
+	const command = parseCommand(text);
+
+	if (command === 'help') {
+		await state.bot?.sendMessage(chatId, HELP_TEXT_FORUM, {
+			message_thread_id: threadId,
+		});
+		return;
+	}
+	if (command === 'status') {
+		await sendGlobalStatus(state, chatId, threadId);
+		return;
+	}
+	if (command === 'cancel') {
+		await state.bot?.sendMessage(
+			chatId,
+			escapeMarkdownV2(
+				'Use /cancel within a session topic to cancel its prompts.',
+			),
+			replyOpts,
+		);
+		return;
+	}
+	if (command === 'newsession') {
+		await handleNewSession(state, chatId, threadId);
+		return;
+	}
+
+	await state.bot?.sendMessage(
+		chatId,
+		escapeMarkdownV2(
+			'Please use a session topic to send messages. Tap /status to see active sessions.',
+		),
+		replyOpts,
+	);
+}
+
+async function sendStatusInTopic(
+	state: RuntimeState,
+	chatId: number,
+	threadId: number,
+	sessionId: string,
+): Promise<void> {
+	if (!state.bot) return;
+	const pending = [...state.pendingMessages.values()].filter(
+		p => p.sessionId === sessionId,
+	);
+	const replyOpts = mdOptsForThread(threadId);
+	if (pending.length === 0) {
+		await state.bot.sendMessage(
+			chatId,
+			escapeMarkdownV2('No pending prompts for this session.'),
+			replyOpts,
+		);
+		return;
+	}
+	const noun = pending.length === 1 ? 'prompt' : 'prompts';
+	const lines = [`*${pending.length} pending ${escapeMarkdownV2(noun)}:*`];
+	for (const p of pending) {
+		const icon = p.kind === 'permission' ? '🔐' : '❓';
+		lines.push(
+			`${icon} \`${p.channelRequestId}\` — ${escapeMarkdownV2(p.headline)}`,
+		);
+	}
+	await state.bot.sendMessage(chatId, lines.join('\n'), replyOpts);
+}
+
+async function sendGlobalStatus(
+	state: RuntimeState,
+	chatId: number,
+	threadId: number | undefined,
+): Promise<void> {
+	if (!state.bot) return;
+	const replyOpts = mdOptsForThread(threadId);
+
+	if (state.sessionTopics.size === 0 && state.pendingTopics.length === 0) {
+		await state.bot.sendMessage(
+			chatId,
+			escapeMarkdownV2('No active or pending sessions.'),
+			replyOpts,
+		);
+		return;
+	}
+
+	const lines: string[] = ['*Athena Sessions:*', ''];
+	for (const [sid, tid] of state.sessionTopics) {
+		lines.push(`🟢 \`${sid.slice(0, 8)}\` — topic thread ${tid}`);
+	}
+	for (const tid of state.pendingTopics) {
+		lines.push(`⏳ Pending topic thread ${tid} — waiting for session`);
+	}
+	await state.bot.sendMessage(chatId, lines.join('\n'), replyOpts);
+}
+
+async function cancelSessionPrompts(
+	state: RuntimeState,
+	chatId: number,
+	threadId: number,
+	sessionId: string,
+): Promise<void> {
+	if (!state.bot) return;
+
+	const sessionKeys = [...state.pendingMessages.entries()]
+		.filter(([, p]) => p.sessionId === sessionId)
+		.map(([key]) => key);
+
+	if (sessionKeys.length === 0) {
+		await state.bot.sendMessage(
+			chatId,
+			escapeMarkdownV2('Nothing pending to cancel for this session.'),
+			mdOptsForThread(threadId),
+		);
+		return;
+	}
+
+	await Promise.all(
+		sessionKeys.map(async id => {
+			const p = state.pendingMessages.get(id);
+			if (p?.kind === 'permission') {
+				send({
+					session_id: p.sessionId,
+					event: 'permission.verdict',
+					params: {channel_request_id: p.channelRequestId, behavior: 'deny'},
+				});
+			}
+			await applyCancelEdit(state, id, 'cancelled');
+		}),
+	);
+}
+
+async function handleNewSession(
+	state: RuntimeState,
+	chatId: number,
+	replyThreadId: number | undefined,
+): Promise<void> {
+	if (!state.bot) return;
+	const replyOpts = mdOptsForThread(replyThreadId);
+
+	const result = await state.bot.createForumTopic(chatId, 'New Session');
+	if (!result) {
+		await state.bot.sendMessage(
+			chatId,
+			escapeMarkdownV2(
+				'⚠️ Failed to create topic. Is the bot an admin with Manage Topics permission?',
+			),
+			replyOpts,
+		);
+		return;
+	}
+
+	state.pendingTopics.push(result.message_thread_id);
+	saveState(state);
+	await state.bot.sendMessage(
+		chatId,
+		escapeMarkdownV2(
+			'Topic created. Run `athena` on your machine to connect it.',
+		),
+		mdOptsForThread(result.message_thread_id),
+	);
+	await state.bot.sendMessage(
+		chatId,
+		escapeMarkdownV2(
+			`✅ New topic created (thread ${result.message_thread_id}). Start Athena to connect.`,
+		),
+		replyOpts,
+	);
+}
+
+async function handleFlatMessage(
+	state: RuntimeState,
+	message: TelegramMessage,
+	text: string,
+): Promise<void> {
+	const chatId = message.chat.id;
+	const senderId = message.from!.id;
+
+	const command = parseCommand(text);
+	if (command === 'help') {
+		if (state.bot) await state.bot.sendMessage(chatId, HELP_TEXT);
+		return;
+	}
+
+	if (command === 'status') {
+		if (!state.bot) return;
+		const pending = [...state.pendingMessages.values()];
+		if (pending.length === 0) {
+			await state.bot.sendMessage(
+				chatId,
+				escapeMarkdownV2('No pending prompts.'),
+				MD_OPTIONS,
+			);
+			return;
+		}
+		const noun = pending.length === 1 ? 'prompt' : 'prompts';
+		const lines = [`*${pending.length} pending ${escapeMarkdownV2(noun)}:*`];
+		for (const p of pending) {
+			const icon = p.kind === 'permission' ? '🔐' : '❓';
+			lines.push(
+				`${icon} \`${p.sessionId}/${p.channelRequestId}\` — ${escapeMarkdownV2(p.headline)}`,
+			);
+		}
+		await state.bot.sendMessage(chatId, lines.join('\n'), MD_OPTIONS);
+		return;
+	}
+
+	if (command === 'cancel') {
 		if (!state.bot) return;
 		const all = [...state.pendingMessages.keys()];
 		if (all.length === 0) {
 			await state.bot.sendMessage(
-				message.chat.id,
+				chatId,
 				escapeMarkdownV2('Nothing pending to cancel.'),
 				MD_OPTIONS,
 			);
@@ -420,20 +915,21 @@ async function handleIncomingMessage(
 	const answerId = parseQuestionAnswerId(text);
 	if (answerId) {
 		const target = findPendingByRequestId(state, answerId);
-		if (target?.pending.kind === 'question') {
-			const answer = parseQuestionAnswer(text, target.pending.questionKeys);
-			if (answer) {
-				send({
-					session_id: target.pending.sessionId,
-					event: 'question.answer',
-					params: {
-						channel_request_id: answer.channelRequestId,
-						answers: answer.answers,
-					},
-				});
-				await markResolved(state, answer.channelRequestId, 'answered');
-				return;
-			}
+		const answer =
+			target?.pending.kind === 'question'
+				? parseQuestionAnswer(text, target.pending.questionKeys)
+				: null;
+		if (answer) {
+			send({
+				session_id: target!.pending.sessionId,
+				event: 'question.answer',
+				params: {
+					channel_request_id: answer.channelRequestId,
+					answers: answer.answers,
+				},
+			});
+			await markResolved(state, answer.channelRequestId, 'answered');
+			return;
 		}
 	}
 
@@ -465,7 +961,7 @@ async function handleIncomingMessage(
 			content: text,
 			meta: {
 				sender_id: String(senderId),
-				chat_id: String(message.chat.id),
+				chat_id: String(chatId),
 			},
 		},
 	});
@@ -595,8 +1091,9 @@ async function sendAndTrack(
 	if (!state.bot || state.defaultChatId === null) return;
 	const key = keyFor(sessionId, id);
 	state.inFlightSends.add(key);
+	const threadId = threadIdForSession(state, sessionId);
 	const result = await state.bot.sendMessage(state.defaultChatId, text, {
-		...MD_OPTIONS,
+		...mdOptsForThread(threadId),
 		reply_markup: replyMarkup,
 	});
 	state.inFlightSends.delete(key);
@@ -621,14 +1118,27 @@ async function handleMethod(
 ): Promise<void> {
 	switch (message.method) {
 		case 'init': {
-			state.allowedUserIds = new Set(
-				message.params.allowed_user_ids.map(id => String(id)),
-			);
-			if (!state.bot)
+			// Union-merge allowedUserIds — never overwrite (multi-session correctness)
+			for (const id of message.params.allowed_user_ids) {
+				state.allowedUserIds.add(String(id));
+			}
+			if (!state.bot) {
 				void startBot(state, message.session_id, message.params.options);
+			} else if (state.forumMode) {
+				// Bot already running — ensure this session has a topic
+				const label =
+					typeof message.params.options['session_label'] === 'string'
+						? message.params.options['session_label']
+						: undefined;
+				void ensureTopicForSession(state, message.session_id, label);
+			}
 			return;
 		}
 		case 'permission.request': {
+			if (state.forumMode) {
+				// Ensure topic exists before posting the prompt
+				await ensureTopicForSession(state, message.session_id);
+			}
 			const id = message.params.channel_request_id;
 			const text = buildPromptMarkdown(
 				message.params.tool_name,
@@ -666,6 +1176,9 @@ async function handleMethod(
 			return;
 		}
 		case 'question.request': {
+			if (state.forumMode) {
+				await ensureTopicForSession(state, message.session_id);
+			}
 			const id = message.params.channel_request_id;
 			const keyboard = buildQuestionKeyboard(id, message.params.questions);
 			const text = buildQuestionMarkdown(
@@ -714,21 +1227,38 @@ async function handleMethod(
 		}
 		case 'notification': {
 			if (!state.bot || state.defaultChatId === null) return;
+			const threadId = threadIdForSession(state, message.session_id);
 			const rendered = agentMarkdownToTelegramV2(message.params.content);
 			const result = await state.bot.sendMessage(
 				state.defaultChatId,
 				rendered,
-				MD_OPTIONS,
+				mdOptsForThread(threadId),
 			);
 			if (!result) {
 				await state.bot.sendMessage(
 					state.defaultChatId,
 					message.params.content,
+					{message_thread_id: threadId},
 				);
 			}
 			return;
 		}
+		case 'session.update': {
+			if (!state.forumMode || !state.bot || state.defaultChatId === null)
+				return;
+			const threadId = state.sessionTopics.get(message.session_id);
+			if (threadId === undefined) return;
+			const label = message.params.label.slice(0, MAX_SESSION_LABEL_LEN);
+			await state.bot.editForumTopic(state.defaultChatId, threadId, label);
+			return;
+		}
 		case 'shutdown': {
+			if (state.forumMode && state.bot && state.defaultChatId !== null) {
+				const threadId = state.sessionTopics.get(message.session_id);
+				if (threadId !== undefined) {
+					void state.bot.closeForumTopic(state.defaultChatId, threadId);
+				}
+			}
 			state.bot?.stop();
 			process.exit(0);
 		}
@@ -743,6 +1273,11 @@ function main(): void {
 		pendingMessages: new Map(),
 		inFlightSends: new Set(),
 		cancelDuringSend: new Map(),
+		forumMode: false,
+		sessionTopics: new Map(),
+		topicSessions: new Map(),
+		pendingTopics: [],
+		statePath: null,
 	};
 
 	const reader = new LineReader();

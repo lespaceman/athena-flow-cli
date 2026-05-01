@@ -42,6 +42,32 @@ describe('Message', () => {
 		expect(frame).toContain('Hi there');
 	});
 
+	it('renders assistant message tables as stacked records', () => {
+		const {lastFrame} = render(
+			<Message
+				parentWidth={80}
+				message={{
+					id: '2',
+					role: 'assistant',
+					content: [
+						'| Capability | Possible? | Notes |',
+						'| --- | --- | --- |',
+						'| Add menu command | Yes | 2-line change to BOT_COMMANDS |',
+					].join('\n'),
+					timestamp: new Date(),
+					seq: 1,
+				}}
+			/>,
+		);
+		const frame = lastFrame() ?? '';
+
+		expect(frame).toContain('• Capability: Add menu command');
+		expect(frame).toContain('Possible?: Yes');
+		expect(frame).toContain('Notes: 2-line change to BOT_COMMANDS');
+		expect(frame).not.toContain('┌');
+		expect(frame).not.toContain('│');
+	});
+
 	it('uses correct prefix per role', () => {
 		const {lastFrame: userFrame} = render(
 			<Message

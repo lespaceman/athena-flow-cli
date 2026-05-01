@@ -238,6 +238,23 @@ export class ChannelRegistry {
 	}
 
 	/**
+	 * Notify all channels that the session has been assigned a human-readable
+	 * label (e.g. the first user message). Channels may use this to rename
+	 * UI elements such as Telegram forum topics.
+	 */
+	notifySessionLabel(label: string): void {
+		if (this.disposed) return;
+		if (this.clients.length === 0) return;
+		for (const client of this.clients) {
+			client.send({
+				session_id: this.sessionId,
+				method: 'session.update',
+				params: {label},
+			});
+		}
+	}
+
+	/**
 	 * Fan a one-shot text notification out to all attached channels. Used to
 	 * mirror agent assistant messages to remote channels (so the user can read
 	 * the conversation on their phone). No relay tracking, no cancellation —

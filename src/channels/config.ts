@@ -27,6 +27,10 @@ export function channelConfigPath(name: string): string {
 	return path.join(channelConfigDir(), `${name}.json`);
 }
 
+export function channelStateDir(): string {
+	return path.join(os.homedir(), '.config', 'athena', 'channel-state');
+}
+
 /**
  * Load and validate a channel sidecar. Returns a structured failure rather
  * than throwing — channel startup is fail-soft.
