@@ -214,8 +214,12 @@ export async function runGatewayCommand(
 			if (json) {
 				logOut(JSON.stringify(res));
 			} else {
+				const runtimeSummary =
+					res.runtimes.length > 0
+						? ` runtime=${res.runtimes[0]!.runtimeId} binding=${res.runtimes[0]!.binding.state} pid=${res.runtimes[0]!.pid}`
+						: ' runtime=<none>';
 				logOut(
-					`gateway: running pid=${res.daemonPid} uptime=${res.uptimeMs}ms version=${res.version}`,
+					`gateway: running pid=${res.daemonPid} uptime=${res.uptimeMs}ms version=${res.version}${runtimeSummary}`,
 				);
 			}
 			return 0;

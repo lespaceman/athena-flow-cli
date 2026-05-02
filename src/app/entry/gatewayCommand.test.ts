@@ -236,6 +236,44 @@ describe('runGatewayCommand', () => {
 			expect(Array.isArray(parsed.channels)).toBe(true);
 		});
 
+		it('status human output reports connected runtime', async () => {
+			const cap = captureLogs();
+			const close = vi.fn();
+			const request = vi.fn(async () => ({
+				daemonPid: 4321,
+				startedAt: 100,
+				uptimeMs: 50,
+				version: 'test',
+				channels: [],
+				runtimes: [
+					{
+						runtimeId: 'runtime-1',
+						defaultAgentId: 'main',
+						pid: 1234,
+						registeredAt: 110,
+						binding: {state: 'active', boundAt: 120},
+						pendingDispatchCount: 0,
+					},
+				],
+			}));
+			const code = await runGatewayCommand(
+				{subcommand: 'status', subcommandArgs: []},
+				{
+					...cap.baseDeps,
+					connectGateway: async () => ({
+						request,
+						onPush: vi.fn(),
+						close,
+					}),
+				},
+			);
+
+			expect(code).toBe(0);
+			expect(cap.out.join('\n')).toContain(
+				'runtime=runtime-1 binding=active pid=1234',
+			);
+		});
+
 		it('status uses the linked remote endpoint when configured', async () => {
 			const cap = captureLogs();
 			const close = vi.fn();
