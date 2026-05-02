@@ -6,6 +6,13 @@ import {render, waitFor} from '@testing-library/react';
 const useFeedMock = vi.fn();
 const createSessionStoreMock = vi.fn();
 const sessionsDirMock = vi.fn(() => '/tmp/athena-sessions');
+const sessionBridgeStartMock = vi.fn();
+const sessionBridgeStopMock = vi.fn();
+const sessionBridgeRelayPermissionMock = vi.fn();
+const sessionBridgeInstances: Array<{
+	runtimeId: string;
+	defaultAgentId: string;
+}> = [];
 
 vi.mock('./useFeed', () => ({
 	useFeed: (...args: unknown[]) => useFeedMock(...args),
@@ -17,6 +24,17 @@ vi.mock('../../infra/sessions/store', () => ({
 
 vi.mock('../../infra/sessions/registry', () => ({
 	sessionsDir: () => sessionsDirMock(),
+}));
+
+vi.mock('../channels/sessionBridge', () => ({
+	SessionBridge: class {
+		constructor(opts: {runtimeId: string; defaultAgentId: string}) {
+			sessionBridgeInstances.push(opts);
+		}
+		start = sessionBridgeStartMock;
+		stop = sessionBridgeStopMock;
+		relayPermission = sessionBridgeRelayPermissionMock;
+	},
 }));
 
 const {HookProvider} = await import('./RuntimeProvider');
@@ -38,6 +56,19 @@ describe('HookProvider runtime factory wiring', () => {
 		useFeedMock.mockReset();
 		createSessionStoreMock.mockReset();
 		sessionsDirMock.mockClear();
+		sessionBridgeStartMock.mockReset();
+		sessionBridgeStopMock.mockReset();
+		sessionBridgeRelayPermissionMock.mockReset();
+		sessionBridgeInstances.length = 0;
+		sessionBridgeStartMock.mockRejectedValue(new Error('gateway unavailable'));
+		sessionBridgeRelayPermissionMock.mockResolvedValue({
+			channelRequestId: 'relay-1',
+			result: {
+				kind: 'verdict',
+				channelId: 'test-channel',
+				behavior: 'allow',
+			},
+		});
 		createSessionStoreMock.mockReturnValue({
 			close: vi.fn(),
 			toBootstrap: vi.fn(),
@@ -286,5 +317,77 @@ describe('HookProvider runtime factory wiring', () => {
 		// On full unmount, sessionStore IS closed
 		unmount();
 		expect(store.close).toHaveBeenCalledTimes(1);
+	});
+
+	it('starts a SessionBridge and relays permission verdicts into runtime decisions', async () => {
+		sessionBridgeStartMock.mockResolvedValueOnce({
+			registeredAt: 1,
+			gatewayStartedAt: 1,
+		});
+		const runtime = makeRuntime();
+
+		render(
+			<HookProvider
+				projectDir="/repo"
+				instanceId={11}
+				harness="claude-code"
+				runtime={runtime}
+				athenaSessionId="athena-remote"
+			>
+				<></>
+			</HookProvider>,
+		);
+
+		await waitFor(() =>
+			expect(sessionBridgeInstances).toContainEqual({
+				runtimeId: 'athena-remote',
+				defaultAgentId: 'main',
+			}),
+		);
+		await waitFor(() =>
+			expect(
+				useFeedMock.mock.calls.some(
+					call =>
+						typeof (call[4] as {relayPermission?: unknown})?.relayPermission ===
+						'function',
+				),
+			).toBe(true),
+		);
+
+		const relayOptions = useFeedMock.mock.calls.find(
+			call =>
+				typeof (call[4] as {relayPermission?: unknown})?.relayPermission ===
+				'function',
+		)?.[4] as {relayPermission: (event: unknown) => void};
+
+		relayOptions.relayPermission({
+			id: 'perm-1',
+			timestamp: Date.now(),
+			kind: 'permission.request',
+			hookName: 'PermissionRequest',
+			sessionId: 'session-1',
+			toolName: 'Bash',
+			data: {tool_name: 'Bash', tool_input: {command: 'pwd'}},
+			context: {cwd: '/repo', transcriptPath: '/tmp/transcript.jsonl'},
+			interaction: {expectsDecision: true, defaultTimeoutMs: 12_000},
+			payload: {tool_input: {command: 'pwd'}},
+			display: {title: 'Bash: pwd'},
+		});
+
+		await waitFor(() =>
+			expect(sessionBridgeRelayPermissionMock).toHaveBeenCalledWith({
+				toolName: 'Bash',
+				description: 'Bash: pwd',
+				inputPreview: '{\n  "command": "pwd"\n}',
+				ttlMs: 12_000,
+			}),
+		);
+		await waitFor(() =>
+			expect(runtime.sendDecision).toHaveBeenCalledWith('perm-1', {
+				type: 'json',
+				source: 'user',
+				intent: {kind: 'permission_allow'},
+			}),
+		);
 	});
 });
