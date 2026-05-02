@@ -5,11 +5,16 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {
 	connect,
+	type ControlClient,
 	GatewayUnauthorizedError,
 	GatewayUnreachableError,
 } from '../../gateway/control/client';
 import {resolveGatewayPaths} from '../../gateway/paths';
-import {writeGatewayClientConfig} from '../../infra/config/gatewayClient';
+import {createWsClientTransport} from '../../gateway/transport/wsClient';
+import {
+	readGatewayClientConfig,
+	writeGatewayClientConfig,
+} from '../../infra/config/gatewayClient';
 import type {
 	PingResponsePayload,
 	RuntimeEndpoint,
@@ -39,8 +44,19 @@ export type GatewayCommandDeps = {
 	resolveDaemonEntry?: () => string;
 	resolveSocketPath?: () => string;
 	resolveTokenPath?: () => string;
+	readClientConfig?: () => RuntimeEndpoint;
 	writeClientConfig?: (config: RuntimeEndpoint) => void;
+	connectGateway?: (
+		opts: GatewayCommandConnectOptions,
+	) => Promise<ControlClient>;
 	spawnDaemon?: (entry: string, args: string[]) => ChildProcess;
+};
+
+export type GatewayCommandConnectOptions = {
+	endpoint: RuntimeEndpoint;
+	socketPath: string;
+	tokenPath: string;
+	timeoutMs: number;
 };
 
 function defaultResolveDaemonEntry(): string {
@@ -80,8 +96,10 @@ export async function runGatewayCommand(
 		deps.resolveSocketPath ?? (() => resolveGatewayPaths().socketPath);
 	const resolveTokenPath =
 		deps.resolveTokenPath ?? (() => resolveGatewayPaths().tokenPath);
+	const readClientConfig = deps.readClientConfig ?? readGatewayClientConfig;
 	const writeClientConfig =
 		deps.writeClientConfig ?? (config => writeGatewayClientConfig(config));
+	const connectGateway = deps.connectGateway ?? defaultConnectGateway;
 	const spawnDaemon =
 		deps.spawnDaemon ??
 		((entry: string, args: string[]) =>
@@ -140,10 +158,15 @@ export async function runGatewayCommand(
 		const json = flagJson(subcommandArgs);
 		const socketPath = resolveSocketPath();
 		const tokenPath = resolveTokenPath();
+		const endpoint = readClientConfig();
 		const startedAt = Date.now();
 		try {
-			const token = readToken(tokenPath);
-			const client = await connect({socketPath, token, timeoutMs: 3_000});
+			const client = await connectGateway({
+				endpoint,
+				socketPath,
+				tokenPath,
+				timeoutMs: 3_000,
+			});
 			const res = await client.request<
 				Record<string, never>,
 				PingResponsePayload
@@ -175,9 +198,14 @@ export async function runGatewayCommand(
 		const json = flagJson(subcommandArgs);
 		const socketPath = resolveSocketPath();
 		const tokenPath = resolveTokenPath();
+		const endpoint = readClientConfig();
 		try {
-			const token = readToken(tokenPath);
-			const client = await connect({socketPath, token, timeoutMs: 3_000});
+			const client = await connectGateway({
+				endpoint,
+				socketPath,
+				tokenPath,
+				timeoutMs: 3_000,
+			});
 			const res = await client.request<
 				Record<string, never>,
 				StatusResponsePayload
@@ -199,6 +227,27 @@ export async function runGatewayCommand(
 	logError(`Unknown gateway subcommand: ${subcommand}`);
 	logError(USAGE);
 	return 2;
+}
+
+async function defaultConnectGateway(
+	opts: GatewayCommandConnectOptions,
+): Promise<ControlClient> {
+	if (opts.endpoint.mode === 'remote') {
+		return connect({
+			socketPath: opts.socketPath,
+			token: opts.endpoint.token,
+			timeoutMs: opts.timeoutMs,
+			transport: createWsClientTransport({
+				url: opts.endpoint.url,
+				timeoutMs: opts.timeoutMs,
+			}),
+		});
+	}
+	return connect({
+		socketPath: opts.socketPath,
+		token: readToken(opts.tokenPath),
+		timeoutMs: opts.timeoutMs,
+	});
 }
 
 type LinkArgs =

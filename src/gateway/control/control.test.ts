@@ -85,6 +85,43 @@ describe('gateway control plane', () => {
 		client.close();
 	});
 
+	it('includes active runtime binding in status snapshot', async () => {
+		daemon = await startDaemon({
+			foreground: true,
+			silent: true,
+			paths,
+			skipSignalHandlers: true,
+			skipChannelLoad: true,
+		});
+		const token = fs.readFileSync(paths.tokenPath, 'utf-8').trim();
+		const client = await connect({socketPath: paths.socketPath, token});
+		await client.request('session.register', {
+			runtimeId: 'runtime-1',
+			defaultAgentId: 'main',
+			pid: 1234,
+		});
+
+		const res = await client.request<
+			Record<string, never>,
+			StatusResponsePayload
+		>('status', {});
+
+		expect(res.runtimes).toEqual([
+			{
+				runtimeId: 'runtime-1',
+				defaultAgentId: 'main',
+				pid: 1234,
+				registeredAt: expect.any(Number),
+				binding: {
+					state: 'active',
+					boundAt: expect.any(Number),
+				},
+				pendingDispatchCount: 0,
+			},
+		]);
+		client.close();
+	});
+
 	it('rejects connect with wrong token', async () => {
 		daemon = await startDaemon({
 			foreground: true,

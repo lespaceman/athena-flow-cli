@@ -18,6 +18,7 @@ function captureLogs() {
 			logOut: (m: string) => out.push(m),
 			logError: (m: string) => err.push(m),
 			resolveDaemonEntry: () => '/nonexistent/daemon.js',
+			readClientConfig: () => ({mode: 'local' as const}),
 		},
 	};
 }
@@ -233,6 +234,58 @@ describe('runGatewayCommand', () => {
 			const parsed = JSON.parse(cap.out[0]!);
 			expect(parsed.daemonPid).toBe(process.pid);
 			expect(Array.isArray(parsed.channels)).toBe(true);
+		});
+
+		it('status uses the linked remote endpoint when configured', async () => {
+			const cap = captureLogs();
+			const close = vi.fn();
+			const request = vi.fn(async () => ({
+				daemonPid: 4321,
+				startedAt: 100,
+				uptimeMs: 50,
+				version: 'test',
+				channels: [],
+				runtimes: [
+					{
+						runtimeId: 'runtime-1',
+						defaultAgentId: 'main',
+						pid: 1234,
+						registeredAt: 110,
+						binding: {state: 'active', boundAt: 120},
+						pendingDispatchCount: 0,
+					},
+				],
+			}));
+			const connectGateway = vi.fn(async () => ({
+				request,
+				onPush: vi.fn(),
+				close,
+			}));
+			const code = await runGatewayCommand(
+				{subcommand: 'status', subcommandArgs: ['--json']},
+				{
+					...cap.baseDeps,
+					readClientConfig: () => ({
+						mode: 'remote',
+						url: 'ws://127.0.0.1:18789',
+						token: 'remote-token',
+					}),
+					connectGateway,
+				},
+			);
+
+			expect(code).toBe(0);
+			expect(connectGateway).toHaveBeenCalledWith(
+				expect.objectContaining({
+					endpoint: {
+						mode: 'remote',
+						url: 'ws://127.0.0.1:18789',
+						token: 'remote-token',
+					},
+				}),
+			);
+			expect(close).toHaveBeenCalledTimes(1);
+			expect(JSON.parse(cap.out[0]!).runtimes).toHaveLength(1);
 		});
 	});
 

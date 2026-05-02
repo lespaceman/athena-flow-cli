@@ -19,6 +19,7 @@ export type {
 	StatusRequestPayload,
 	StatusResponsePayload,
 	ChannelStatusEntry,
+	RuntimeStatusEntry,
 	SessionRegisterRequestPayload,
 	SessionRegisterResponsePayload,
 	SessionUnregisterRequestPayload,

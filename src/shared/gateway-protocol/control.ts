@@ -48,6 +48,18 @@ export type ChannelStatusEntry = {
 	lastHealthAt?: number;
 };
 
+export type RuntimeStatusEntry = {
+	runtimeId: string;
+	defaultAgentId: string;
+	pid: number;
+	registeredAt: number;
+	binding:
+		| {state: 'active'; boundAt: number}
+		| {state: 'stale'; staleSince: number}
+		| {state: 'none'};
+	pendingDispatchCount: number;
+};
+
 export type StatusRequestPayload = Record<string, never>;
 export type StatusResponsePayload = {
 	daemonPid: number;
@@ -55,6 +67,7 @@ export type StatusResponsePayload = {
 	uptimeMs: number;
 	version: string;
 	channels: ChannelStatusEntry[];
+	runtimes: RuntimeStatusEntry[];
 };
 
 /**

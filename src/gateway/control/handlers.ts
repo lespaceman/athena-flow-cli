@@ -27,6 +27,7 @@ import type {
 	SessionTurnCompleteRequestPayload,
 	SessionUnregisterRequestPayload,
 	SessionUnregisterResponsePayload,
+	RuntimeStatusEntry,
 	StatusResponsePayload,
 } from '../../shared/gateway-protocol';
 import type {ChannelManager} from '../channelManager';
@@ -114,6 +115,7 @@ export function createDispatcher(deps: DispatcherDeps): RequestHandler {
 					uptimeMs: ts - deps.startedAt,
 					version: readVersion(),
 					channels,
+					runtimes: runtimeStatusEntries(deps.registry),
 				};
 				return ok(envelope, ts, payload);
 			}
@@ -302,6 +304,29 @@ export function createDispatcher(deps: DispatcherDeps): RequestHandler {
 		}
 	};
 	return handle;
+}
+
+function runtimeStatusEntries(
+	registry: SessionRegistry | undefined,
+): RuntimeStatusEntry[] {
+	const runtime = registry?.getCurrent();
+	if (!runtime || !registry) return [];
+	const binding = registry.getBinding();
+	return [
+		{
+			runtimeId: runtime.runtimeId,
+			defaultAgentId: runtime.defaultAgentId,
+			pid: runtime.pid,
+			registeredAt: runtime.registeredAt,
+			binding:
+				binding?.state === 'active'
+					? {state: 'active', boundAt: binding.boundAt}
+					: binding?.state === 'stale'
+						? {state: 'stale', staleSince: binding.staleSince}
+						: {state: 'none'},
+			pendingDispatchCount: registry.pendingDispatchCount(),
+		},
+	];
 }
 
 function ok<T>(
