@@ -224,10 +224,20 @@ describe('HookProvider runtime factory wiring', () => {
 		);
 
 		expect(queryByText('Starting Athena hook server...')).not.toBeNull();
-		expect(useFeedMock).toHaveBeenCalledTimes(1);
+		expect(
+			useFeedMock.mock.calls.some(
+				([runtimeArg]) => runtimeArg === secondRuntime,
+			),
+		).toBe(false);
 
 		resolveSecondStart?.();
-		await waitFor(() => expect(useFeedMock).toHaveBeenCalledTimes(2));
+		await waitFor(() =>
+			expect(
+				useFeedMock.mock.calls.some(
+					([runtimeArg]) => runtimeArg === secondRuntime,
+				),
+			).toBe(true),
+		);
 	});
 
 	it('does not close sessionStore when only the runtime changes', async () => {
