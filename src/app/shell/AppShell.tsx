@@ -14,7 +14,11 @@ import DiagnosticsConsentDialog, {
 	type DiagnosticsConsentDecision,
 } from '../../ui/components/DiagnosticsConsentDialog';
 import ErrorBoundary from '../../ui/components/ErrorBoundary';
-import {HookProvider, useRuntime} from '../providers/RuntimeProvider';
+import {
+	HookProvider,
+	useRuntime,
+	useSessionBridge,
+} from '../providers/RuntimeProvider';
 import {useHarnessProcess} from '../process/useHarnessProcess';
 import {useHeaderMetrics} from '../../ui/hooks/useHeaderMetrics';
 import {useTerminalTitle} from '../../ui/hooks/useTerminalTitle';
@@ -883,11 +887,106 @@ function AppContent({
 		],
 	);
 
-	// Channel-driven chat injection (telegram → harness turn) was wired here
-	// against the legacy ChannelRegistry. Removed in M6 demolition; the
-	// gateway-based equivalent lands when the session bridge in
-	// app/channels/sessionBridge.ts wires session.dispatch.turn pushes back
-	// into spawnHarness.
+	// Channel-driven chat injection. SessionBridge pushes session.dispatch.turn
+	// frames here when an inbound message routes to this session; we translate
+	// them into spawnHarness calls and post the assistant's reply back via
+	// bridge.completeTurn when the next root agent.message arrives.
+	const sessionBridge = useSessionBridge();
+	const pendingDispatchRef = useRef<{
+		dispatchId: string;
+		location: import('../../shared/gateway-protocol').ChannelLocation;
+	} | null>(null);
+	const queuedDispatchRef = useRef<
+		| import('../../shared/gateway-protocol').SessionDispatchTurnPushPayload
+		| null
+	>(null);
+	const isHarnessRunningRef = useRef(isHarnessRunning);
+	isHarnessRunningRef.current = isHarnessRunning;
+
+	const submitDispatchAsTurn = useCallback(
+		(
+			payload: import('../../shared/gateway-protocol').SessionDispatchTurnPushPayload,
+		) => {
+			const text = payload.inbound.text;
+			if (text.trim().length === 0) return;
+			pendingDispatchRef.current = {
+				dispatchId: payload.dispatchId,
+				location: payload.inbound.location,
+			};
+			addMessage('user', text);
+			const sessionToResume = currentSessionId ?? initialSessionRef.current;
+			const continuation: TurnContinuation = sessionToResume
+				? {mode: 'resume', handle: sessionToResume}
+				: {mode: 'fresh'};
+			startupAttemptRef.current = {
+				feedEventCountAtSpawn: feedEvents.length,
+			};
+			spawnHarness(text, continuation).catch((err: unknown) => {
+				startupAttemptRef.current = null;
+				console.error('[athena] gateway-injected spawn failed:', err);
+				pendingDispatchRef.current = null;
+			});
+			if (initialSessionRef.current) {
+				initialSessionRef.current = undefined;
+			}
+		},
+		[addMessage, currentSessionId, feedEvents.length, spawnHarness],
+	);
+
+	useEffect(() => {
+		if (!sessionBridge) return;
+		const off = sessionBridge.onTurnDispatch(payload => {
+			if (isHarnessRunningRef.current || pendingDispatchRef.current) {
+				queuedDispatchRef.current = payload;
+				return;
+			}
+			submitDispatchAsTurn(payload);
+		});
+		return off;
+	}, [sessionBridge, submitDispatchAsTurn]);
+
+	// Drain queued dispatch when the harness finishes.
+	useEffect(() => {
+		if (isHarnessRunning) return;
+		if (pendingDispatchRef.current) return;
+		const queued = queuedDispatchRef.current;
+		if (!queued) return;
+		queuedDispatchRef.current = null;
+		submitDispatchAsTurn(queued);
+	}, [isHarnessRunning, submitDispatchAsTurn]);
+
+	// Watch for the next root assistant message to complete the parked dispatch.
+	useEffect(() => {
+		if (!sessionBridge) return;
+		const pending = pendingDispatchRef.current;
+		if (!pending) return;
+		// Find a root agent.message that arrived after the dispatch was parked.
+		// We use a simple "latest qualifying event wins" rule — any tool calls
+		// or sub-agent messages between the user input and the root reply are
+		// not posted to the channel.
+		const reply = [...feedEvents]
+			.reverse()
+			.find(fe => fe.kind === 'agent.message' && fe.data.scope === 'root');
+		if (!reply || reply.kind !== 'agent.message') return;
+		const text = reply.data.message;
+		if (!text || text.length === 0) return;
+		pendingDispatchRef.current = null;
+		const idempotencyKey = `dispatch:${pending.dispatchId}`;
+		void sessionBridge
+			.completeTurn({
+				dispatchId: pending.dispatchId,
+				location: pending.location,
+				text,
+				idempotencyKey,
+			})
+			.catch((err: unknown) => {
+				console.error(
+					`[athena] gateway completeTurn failed: ${
+						err instanceof Error ? err.message : String(err)
+					}`,
+				);
+			});
+	}, [feedEvents, sessionBridge]);
 
 	const getSelectedCommandRef = useRef<
 		() => import('../commands/types').Command | undefined

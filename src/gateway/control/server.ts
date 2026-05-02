@@ -96,7 +96,10 @@ export async function startControlServer(
 	await unlinkIfStale(socketPath);
 	fs.mkdirSync(path.dirname(socketPath), {recursive: true, mode: 0o700});
 
+	const activeSockets = new Set<net.Socket>();
 	const server = net.createServer({pauseOnConnect: false}, socket => {
+		activeSockets.add(socket);
+		socket.once('close', () => activeSockets.delete(socket));
 		handleConnection(
 			socket,
 			token,
@@ -131,6 +134,14 @@ export async function startControlServer(
 	return {
 		close: () =>
 			new Promise<void>(resolve => {
+				// `server.close()` only fires its callback once all sockets close.
+				// In-flight handlers (e.g. a long-poll relay waiting on a human)
+				// keep client sockets alive indefinitely, so we destroy them
+				// explicitly to bound shutdown time.
+				for (const socket of activeSockets) {
+					socket.destroy();
+				}
+				activeSockets.clear();
 				server.close(() => {
 					try {
 						fs.unlinkSync(socketPath);

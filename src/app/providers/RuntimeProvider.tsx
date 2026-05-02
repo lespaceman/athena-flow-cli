@@ -13,9 +13,11 @@ import {type HookContextValue, type HookProviderProps} from './types';
 import {createRuntime} from '../runtime/createRuntime';
 import type {Runtime} from '../../core/runtime/types';
 import type {SessionStore} from '../../infra/sessions/store';
+import {SessionBridge} from '../channels/sessionBridge';
 const HookContext = createContext<HookContextValue | null>(null);
 const RuntimeRefContext = createContext<Runtime | null>(null);
 const SessionStoreContext = createContext<SessionStore | null>(null);
+const SessionBridgeContext = createContext<SessionBridge | null>(null);
 const EMPTY_MESSAGES: never[] = [];
 const MISSING_CONTEXT = Symbol('missing-hook-context');
 
@@ -85,6 +87,9 @@ export function HookProvider({
 	);
 
 	const [readyRuntime, setReadyRuntime] = useState<Runtime | null>(null);
+	const [sessionBridge, setSessionBridge] = useState<SessionBridge | null>(
+		null,
+	);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -98,6 +103,35 @@ export function HookProvider({
 			cancelled = true;
 		};
 	}, [runtime]);
+
+	// Best-effort gateway connection. Falls through silently when the daemon
+	// isn't running so dev/test sessions still work without a gateway.
+	useEffect(() => {
+		let cancelled = false;
+		const bridge = new SessionBridge({
+			runtimeId: athenaSessionId,
+			defaultAgentId: 'main',
+		});
+		bridge
+			.start()
+			.then(() => {
+				if (cancelled) {
+					void bridge.stop();
+					return;
+				}
+				setSessionBridge(bridge);
+			})
+			.catch(() => {
+				// Daemon not running, unauthorized, or already-registered. The
+				// session continues without bridge; channel-driven turns and
+				// cross-channel relays are simply unavailable.
+			});
+		return () => {
+			cancelled = true;
+			void bridge.stop();
+			setSessionBridge(null);
+		};
+	}, [athenaSessionId]);
 
 	// Separate lifecycle effects: closing sessionStore must only happen when
 	// sessionStore itself is recreated (or on unmount), NOT when runtime changes.
@@ -122,13 +156,15 @@ export function HookProvider({
 	return (
 		<RuntimeRefContext.Provider value={runtime}>
 			<SessionStoreContext.Provider value={sessionStore}>
-				<HookProviderContent
-					runtime={runtime}
-					allowedTools={allowedTools}
-					sessionStore={sessionStore}
-				>
-					{children}
-				</HookProviderContent>
+				<SessionBridgeContext.Provider value={sessionBridge}>
+					<HookProviderContent
+						runtime={runtime}
+						allowedTools={allowedTools}
+						sessionStore={sessionStore}
+					>
+						{children}
+					</HookProviderContent>
+				</SessionBridgeContext.Provider>
 			</SessionStoreContext.Provider>
 		</RuntimeRefContext.Provider>
 	);
@@ -173,4 +209,14 @@ export function useRuntime(): Runtime | null {
 
 export function useSessionStore(): SessionStore | null {
 	return useContext(SessionStoreContext);
+}
+
+/**
+ * Access the SessionBridge for the current session. Returns `null` when the
+ * gateway daemon is unreachable or while the bridge is still connecting. Code
+ * that depends on the bridge must handle the null case (channel-driven flows
+ * are inactive in that state).
+ */
+export function useSessionBridge(): SessionBridge | null {
+	return useContext(SessionBridgeContext);
 }
