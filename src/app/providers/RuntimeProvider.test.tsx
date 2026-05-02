@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React from 'react';
-import {describe, it, expect, vi, beforeEach} from 'vitest';
-import {render, waitFor} from '@testing-library/react';
+import {describe, it, expect, vi, beforeEach, afterEach} from 'vitest';
+import {cleanup, render, waitFor} from '@testing-library/react';
 
 const useFeedMock = vi.fn();
 const createSessionStoreMock = vi.fn();
@@ -103,6 +103,11 @@ describe('HookProvider runtime factory wiring', () => {
 			recordTokens: vi.fn(),
 			restoredTokens: null,
 		});
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.useRealTimers();
 	});
 
 	it('constructs runtime via runtimeFactory using selected harness inputs', async () => {
@@ -388,6 +393,45 @@ describe('HookProvider runtime factory wiring', () => {
 				source: 'user',
 				intent: {kind: 'permission_allow'},
 			}),
+		);
+	});
+
+	it('retries SessionBridge startup after an initial connection failure', async () => {
+		sessionBridgeStartMock
+			.mockRejectedValueOnce(new Error('gateway unavailable'))
+			.mockResolvedValueOnce({
+				registeredAt: 1,
+				gatewayStartedAt: 1,
+			});
+		const runtime = makeRuntime();
+
+		render(
+			<HookProvider
+				projectDir="/repo"
+				instanceId={12}
+				harness="claude-code"
+				runtime={runtime}
+				athenaSessionId="athena-retry"
+			>
+				<></>
+			</HookProvider>,
+		);
+
+		await waitFor(() =>
+			expect(sessionBridgeStartMock).toHaveBeenCalledTimes(1),
+		);
+
+		await new Promise(resolve => setTimeout(resolve, 2_100));
+
+		expect(sessionBridgeStartMock).toHaveBeenCalledTimes(2);
+		await waitFor(() =>
+			expect(
+				useFeedMock.mock.calls.some(
+					call =>
+						typeof (call[4] as {relayPermission?: unknown})?.relayPermission ===
+						'function',
+				),
+			).toBe(true),
 		);
 	});
 });

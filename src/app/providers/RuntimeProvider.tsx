@@ -22,6 +22,7 @@ const SessionStoreContext = createContext<SessionStore | null>(null);
 const SessionBridgeContext = createContext<SessionBridge | null>(null);
 const EMPTY_MESSAGES: never[] = [];
 const MISSING_CONTEXT = Symbol('missing-hook-context');
+const SESSION_BRIDGE_RETRY_MS = 2_000;
 
 function HookProviderContent({
 	runtime,
@@ -145,38 +146,47 @@ export function HookProvider({
 	// isn't running so dev/test sessions still work without a gateway.
 	useEffect(() => {
 		let cancelled = false;
-		const bridge = new SessionBridge({
-			runtimeId: athenaSessionId,
-			defaultAgentId: 'main',
-		});
-		writeGatewayTrace(
-			`RuntimeProvider starting SessionBridge runtimeId=${athenaSessionId}`,
-		);
-		bridge
-			.start()
-			.then(() => {
-				if (cancelled) {
-					void bridge.stop();
-					return;
-				}
-				writeGatewayTrace(
-					`RuntimeProvider SessionBridge ready runtimeId=${athenaSessionId}`,
-				);
-				setSessionBridge(bridge);
-			})
-			.catch(err => {
-				writeGatewayTrace(
-					`RuntimeProvider SessionBridge failed runtimeId=${athenaSessionId} error=${
-						err instanceof Error ? err.message : String(err)
-					}`,
-				);
-				// Daemon not running, unauthorized, or already-registered. The
-				// session continues without bridge; channel-driven turns and
-				// cross-channel relays are simply unavailable.
+		let retryTimer: NodeJS.Timeout | null = null;
+		let activeBridge: SessionBridge | null = null;
+		const connectBridge = () => {
+			const bridge = new SessionBridge({
+				runtimeId: athenaSessionId,
+				defaultAgentId: 'main',
 			});
+			writeGatewayTrace(
+				`RuntimeProvider starting SessionBridge runtimeId=${athenaSessionId}`,
+			);
+			bridge
+				.start()
+				.then(() => {
+					if (cancelled) {
+						void bridge.stop();
+						return;
+					}
+					activeBridge = bridge;
+					writeGatewayTrace(
+						`RuntimeProvider SessionBridge ready runtimeId=${athenaSessionId}`,
+					);
+					setSessionBridge(bridge);
+				})
+				.catch(err => {
+					writeGatewayTrace(
+						`RuntimeProvider SessionBridge failed runtimeId=${athenaSessionId} error=${
+							err instanceof Error ? err.message : String(err)
+						}`,
+					);
+					if (!cancelled) {
+						retryTimer = setTimeout(connectBridge, SESSION_BRIDGE_RETRY_MS);
+					}
+				});
+		};
+		connectBridge();
 		return () => {
 			cancelled = true;
-			void bridge.stop();
+			if (retryTimer) {
+				clearTimeout(retryTimer);
+			}
+			void activeBridge?.stop();
 			setSessionBridge(null);
 		};
 	}, [athenaSessionId]);
