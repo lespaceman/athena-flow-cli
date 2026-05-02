@@ -1,16 +1,18 @@
 /**
  * UDS NDJSON client for the gateway control plane.
  *
- * Spawns a fresh connection per request in M3 — M5+ will switch to a
- * long-lived multiplexed client when the session bridge needs persistent
- * push-event subscription. For one-shot RPCs (ping/status/probe) the
- * per-request connect is fine and avoids state-tracking complexity.
+ * Long-lived connection: tracks pending requests by `request_id` and routes
+ * unsolicited push frames (those carrying `push_id` instead of `request_id`)
+ * to subscribers registered via `onPush`. The session bridge in
+ * `app/channels/sessionBridge.ts` (M5+) opens one of these per Athena
+ * runtime and stays connected.
  */
 
 import crypto from 'node:crypto';
 import net from 'node:net';
 import type {
 	ControlEnvelope,
+	ControlPushEnvelope,
 	ControlResponseEnvelope,
 } from '../../shared/gateway-protocol';
 import {encodeLine, LineReader, LineReaderOverflowError} from './lineReader';
@@ -47,13 +49,19 @@ export type ControlClient = {
 		kind: string,
 		payload: TPayload,
 	): Promise<TResponse>;
+	onPush: (
+		kind: string,
+		cb: (envelope: ControlPushEnvelope) => void,
+	) => () => void;
 	close: () => void;
 };
 
-/**
- * Open a control connection: connect → send `connect` frame → wait for
- * `hello` ack. Subsequent `request` calls reuse this socket.
- */
+type PendingResolver = {
+	resolve: (env: ControlResponseEnvelope) => void;
+	reject: (err: Error) => void;
+	timer: NodeJS.Timeout;
+};
+
 export async function connect(
 	opts: ControlClientOptions,
 ): Promise<ControlClient> {
@@ -87,8 +95,46 @@ export async function connect(
 	});
 
 	const reader = new LineReader();
-	const inbox: string[] = [];
-	const waiters: Array<(line: string) => void> = [];
+	const helloWaiters: Array<(line: string) => void> = [];
+	const pending = new Map<string, PendingResolver>();
+	const pushSubs = new Map<string, Set<(env: ControlPushEnvelope) => void>>();
+	let helloAcked = false;
+
+	const handleLine = (line: string): void => {
+		if (!helloAcked) {
+			const w = helloWaiters.shift();
+			if (w) w(line);
+			return;
+		}
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(line);
+		} catch {
+			return;
+		}
+		if (!isStringRecord(parsed)) return;
+		if (typeof parsed['request_id'] === 'string') {
+			const requestId = parsed['request_id'] as string;
+			const entry = pending.get(requestId);
+			if (!entry) return;
+			pending.delete(requestId);
+			clearTimeout(entry.timer);
+			entry.resolve(parsed as ControlResponseEnvelope);
+			return;
+		}
+		if (typeof parsed['push_id'] === 'string') {
+			const env = parsed as ControlPushEnvelope;
+			const subs = pushSubs.get(env.kind);
+			if (!subs) return;
+			for (const cb of subs) {
+				try {
+					cb(env);
+				} catch {
+					// listener errors must not crash the client
+				}
+			}
+		}
+	};
 
 	socket.on('data', chunk => {
 		let lines: string[];
@@ -101,22 +147,22 @@ export async function connect(
 			}
 			throw err;
 		}
-		for (const line of lines) {
-			const w = waiters.shift();
-			if (w) w(line);
-			else inbox.push(line);
-		}
+		for (const line of lines) handleLine(line);
 	});
 
-	const nextLine = (): Promise<string> => {
-		const buffered = inbox.shift();
-		if (buffered !== undefined) return Promise.resolve(buffered);
-		return new Promise<string>(resolve => waiters.push(resolve));
-	};
+	socket.on('close', () => {
+		for (const [, p] of pending) {
+			clearTimeout(p.timer);
+			p.reject(new GatewayProtocolError('connection closed'));
+		}
+		pending.clear();
+	});
 
-	// Handshake: send connect frame, await hello.
+	const helloLinePromise = new Promise<string>(resolve =>
+		helloWaiters.push(resolve),
+	);
 	socket.write(encodeLine({kind: 'connect', token: opts.token}));
-	const helloLine = await nextLine();
+	const helloLine = await helloLinePromise;
 	let hello: unknown;
 	try {
 		hello = JSON.parse(helloLine);
@@ -137,6 +183,7 @@ export async function connect(
 		}
 		throw new GatewayProtocolError(String(msg));
 	}
+	helloAcked = true;
 
 	const request = async <TPayload, TResponse>(
 		kind: string,
@@ -149,38 +196,45 @@ export async function connect(
 			kind,
 			payload,
 		};
-		const reqTimer = setTimeout(() => socket.destroy(), timeoutMs);
-		try {
-			socket.write(encodeLine(envelope));
-			const line = await nextLine();
-			let parsed: unknown;
-			try {
-				parsed = JSON.parse(line);
-			} catch {
-				throw new GatewayProtocolError('invalid response frame');
-			}
-			if (!isStringRecord(parsed)) {
-				throw new GatewayProtocolError('response not an object');
-			}
-			const res = parsed as ControlResponseEnvelope;
-			if (res.request_id !== requestId) {
-				throw new GatewayProtocolError(
-					`response request_id mismatch: ${res.request_id} != ${requestId}`,
-				);
-			}
-			if (!res.ok) {
-				const code = res.error.code;
-				const message = res.error.message;
-				throw new GatewayProtocolError(`${code}: ${message}`);
-			}
-			return res.payload as TResponse;
-		} finally {
-			clearTimeout(reqTimer);
+		const responsePromise = new Promise<ControlResponseEnvelope>(
+			(resolve, reject) => {
+				const timer = setTimeout(() => {
+					pending.delete(requestId);
+					reject(new GatewayProtocolError(`request ${kind} timed out`));
+				}, timeoutMs);
+				pending.set(requestId, {resolve, reject, timer});
+			},
+		);
+		socket.write(encodeLine(envelope));
+		const res = await responsePromise;
+		if (res.request_id !== requestId) {
+			throw new GatewayProtocolError('response request_id mismatch');
 		}
+		if (!res.ok) {
+			throw new GatewayProtocolError(`${res.error.code}: ${res.error.message}`);
+		}
+		return res.payload as TResponse;
+	};
+
+	const onPush = (
+		kind: string,
+		cb: (env: ControlPushEnvelope) => void,
+	): (() => void) => {
+		let subs = pushSubs.get(kind);
+		if (!subs) {
+			subs = new Set();
+			pushSubs.set(kind, subs);
+		}
+		subs.add(cb);
+		const ownSubs = subs;
+		return () => {
+			ownSubs.delete(cb);
+		};
 	};
 
 	return {
 		request,
+		onPush,
 		close: () => {
 			socket.end();
 			socket.destroy();

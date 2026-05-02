@@ -10,7 +10,9 @@
  *        {"ok":false,"error":{"code":"unauthorized","message":"..."}}
  *
  *   2. Subsequent frames are `ControlEnvelope`s; each gets a
- *      `ControlResponseEnvelope` reply correlated by `request_id`.
+ *      `ControlResponseEnvelope` reply correlated by `request_id`. The
+ *      server may also push `ControlPushEnvelope`s to the connection when
+ *      the daemon has unsolicited events (e.g. `session.dispatch.turn`).
  *
  * Filesystem ACL is the primary authentication boundary (UDS path in a 0700
  * dir, socket file 0600); the token in the connect frame is a defense-in-
@@ -22,6 +24,7 @@ import net from 'node:net';
 import path from 'node:path';
 import type {
 	ControlEnvelope,
+	ControlPushEnvelope,
 	ControlResponseEnvelope,
 } from '../../shared/gateway-protocol';
 import {timingSafeTokenEqual} from '../auth';
@@ -29,8 +32,18 @@ import {encodeLine, LineReader, LineReaderOverflowError} from './lineReader';
 
 const CONNECT_TIMEOUT_MS = 2_000;
 
+export type ConnectionContext = {
+	/** Process-unique id for this connection. */
+	connectionId: string;
+	/** Push an unsolicited frame to the connected peer. */
+	push: (envelope: ControlPushEnvelope) => void;
+	/** Force-close the connection (e.g. when the runtime unregisters). */
+	disconnect: () => void;
+};
+
 export type RequestHandler = (
 	envelope: ControlEnvelope,
+	connection: ConnectionContext,
 ) => Promise<ControlResponseEnvelope> | ControlResponseEnvelope;
 
 export type ControlServerOptions = {
@@ -38,6 +51,10 @@ export type ControlServerOptions = {
 	token: string;
 	startedAt: number;
 	handler: RequestHandler;
+	/** Notified when a connection authenticates. */
+	onConnect?: (ctx: ConnectionContext) => void;
+	/** Notified when a connection closes (after auth or otherwise). */
+	onDisconnect?: (ctx: ConnectionContext) => void;
 	/** Override stderr for tests. */
 	logError?: (message: string) => void;
 };
@@ -63,6 +80,12 @@ function nowError(
 	};
 }
 
+let connectionCounter = 0;
+function nextConnectionId(): string {
+	connectionCounter = (connectionCounter + 1) >>> 0;
+	return `c${connectionCounter}-${process.pid}`;
+}
+
 export async function startControlServer(
 	opts: ControlServerOptions,
 ): Promise<ControlServer> {
@@ -70,14 +93,19 @@ export async function startControlServer(
 	const logError =
 		opts.logError ?? ((m: string) => process.stderr.write(m + '\n'));
 
-	// Best-effort cleanup of any stale socket file from a previous crash. We
-	// only unlink if there's no live listener — `connect()` to the path with
-	// a tight timeout is the cleanest probe.
 	await unlinkIfStale(socketPath);
 	fs.mkdirSync(path.dirname(socketPath), {recursive: true, mode: 0o700});
 
 	const server = net.createServer({pauseOnConnect: false}, socket => {
-		handleConnection(socket, token, startedAt, handler, logError);
+		handleConnection(
+			socket,
+			token,
+			startedAt,
+			handler,
+			logError,
+			opts.onConnect,
+			opts.onDisconnect,
+		);
 	});
 
 	await new Promise<void>((resolve, reject) => {
@@ -148,6 +176,8 @@ function handleConnection(
 	startedAt: number,
 	handler: RequestHandler,
 	logError: (m: string) => void,
+	onConnect?: (ctx: ConnectionContext) => void,
+	onDisconnect?: (ctx: ConnectionContext) => void,
 ): void {
 	let authed = false;
 	const reader = new LineReader();
@@ -155,9 +185,15 @@ function handleConnection(
 		socket.destroy();
 	}, CONNECT_TIMEOUT_MS);
 
-	const respond = (line: string): void => {
+	const writeLine = (line: string): void => {
 		if (!socket.writable) return;
 		socket.write(line);
+	};
+
+	const ctx: ConnectionContext = {
+		connectionId: nextConnectionId(),
+		push: env => writeLine(encodeLine(env)),
+		disconnect: () => socket.destroy(),
 	};
 
 	socket.on('data', chunk => {
@@ -195,7 +231,7 @@ function handleConnection(
 					typeof tok !== 'string' ||
 					!timingSafeTokenEqual(tok, expectedToken)
 				) {
-					respond(
+					writeLine(
 						encodeLine({
 							ok: false,
 							error: {code: 'unauthorized', message: 'invalid token'},
@@ -206,16 +242,16 @@ function handleConnection(
 				}
 				authed = true;
 				clearTimeout(connectTimer);
-				respond(
+				writeLine(
 					encodeLine({
 						ok: true,
 						hello: {daemonPid: process.pid, startedAt},
 					}),
 				);
+				onConnect?.(ctx);
 				continue;
 			}
 
-			// Authed: expect a ControlEnvelope.
 			const requestId =
 				typeof parsed['request_id'] === 'string'
 					? (parsed['request_id'] as string)
@@ -226,16 +262,16 @@ function handleConnection(
 				!('payload' in parsed) ||
 				requestId.length === 0
 			) {
-				respond(
+				writeLine(
 					encodeLine(nowError(requestId, 'bad_request', 'malformed envelope')),
 				);
 				continue;
 			}
 			void Promise.resolve()
-				.then(() => handler(parsed as ControlEnvelope))
-				.then(res => respond(encodeLine(res)))
+				.then(() => handler(parsed as ControlEnvelope, ctx))
+				.then(res => writeLine(encodeLine(res)))
 				.catch((err: unknown) =>
-					respond(
+					writeLine(
 						encodeLine(
 							nowError(
 								requestId,
@@ -250,7 +286,6 @@ function handleConnection(
 
 	socket.on('error', err => {
 		const code = (err as NodeJS.ErrnoException).code;
-		// Client disconnect during write — common, not interesting.
 		if (code !== 'EPIPE' && code !== 'ECONNRESET') {
 			logError(`gateway: socket error: ${err.message}`);
 		}
@@ -258,5 +293,8 @@ function handleConnection(
 
 	socket.on('close', () => {
 		clearTimeout(connectTimer);
+		if (authed) {
+			onDisconnect?.(ctx);
+		}
 	});
 }

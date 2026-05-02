@@ -3,27 +3,33 @@
  * cloud function invocations, and dispatches inbound chats to a registered
  * Athena interactive runtime over a UDS NDJSON control plane.
  *
- * M3 wires lock acquisition, token loading, and the control-plane server.
- * Adapters / invoker / outbox land in M4+.
+ * M3 wired lock acquisition, token loading, and the control-plane server.
+ * M5 adds the channel manager + session registry + dispatcher and routes
+ * push frames to whichever connection has the registered runtime. Channel
+ * registration from config and the cloud function invoker land in M6+.
  */
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import {loadOrCreateToken} from './auth';
+import {ChannelManager} from './channelManager';
 import {createDispatcher} from './control/handlers';
-import {startControlServer, type ControlServer} from './control/server';
+import {
+	startControlServer,
+	type ConnectionContext,
+	type ControlServer,
+} from './control/server';
+import {Dispatcher} from './dispatcher';
 import {acquireLock, type LockHandle} from './lock';
 import {resolveGatewayPaths, type GatewayPaths} from './paths';
+import {SessionRegistry} from './sessionRegistry';
 
 export type DaemonOptions = {
 	/** When true the daemon stays in foreground (no detach). */
 	foreground: boolean;
-	/** Suppresses stdout banner; used by integration tests. */
 	silent?: boolean;
-	/** Override path resolution; tests inject a tmpdir. */
 	paths?: GatewayPaths;
-	/** Override env (paths resolution); tests use this for XDG isolation. */
 	env?: NodeJS.ProcessEnv;
-	/** Skip signal handler installation; tests may not want it. */
 	skipSignalHandlers?: boolean;
 };
 
@@ -31,16 +37,12 @@ export type DaemonHandle = {
 	startedAt: number;
 	pid: number;
 	paths: GatewayPaths;
+	registry: SessionRegistry;
+	dispatcher: Dispatcher;
+	channelManager: ChannelManager;
 	stop: () => Promise<void>;
 };
 
-/**
- * Start the gateway daemon. M3: acquires the single-instance lock, loads
- * (or creates) the bearer token, starts the UDS control-plane server, and
- * installs SIGINT/SIGTERM handlers. The caller keeps the event loop alive
- * via a long-period `setInterval` in `entry.ts` — `process.stdin` is
- * unreliable when redirected by background launchers/systemd.
- */
 export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 	const startedAt = Date.now();
 	const pid = process.pid;
@@ -59,7 +61,48 @@ export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 
 	const lock: LockHandle = acquireLock(paths.lockPath);
 	const token = loadOrCreateToken(paths.tokenPath);
-	const dispatch = createDispatcher({startedAt});
+
+	const registry = new SessionRegistry();
+	const channelManager = new ChannelManager();
+
+	// Push frames target the connection that registered as the runtime. The
+	// map is the only state the daemon keeps about active connections.
+	const runtimeConnections = new Map<string, ConnectionContext>();
+	const pushDispatch = (
+		payload: import('../shared/gateway-protocol').SessionDispatchTurnPushPayload,
+	): void => {
+		const current = registry.getCurrent();
+		if (!current) return;
+		const ctx = runtimeConnections.get(current.runtimeId);
+		if (!ctx) return;
+		ctx.push({
+			push_id: crypto.randomUUID(),
+			ts: Date.now(),
+			kind: 'session.dispatch.turn',
+			payload,
+		});
+	};
+	const dispatcher = new Dispatcher({
+		registry,
+		pushDispatch,
+		sendOutbound: (channelId, msg) => channelManager.send(channelId, msg),
+	});
+	channelManager.setInboundSink(inbound => {
+		dispatcher.handleInbound(inbound);
+	});
+
+	const handler = createDispatcher({
+		startedAt,
+		registry,
+		dispatcher,
+		channelManager,
+		registerRuntimeConnection: (runtimeId, ctx) => {
+			runtimeConnections.set(runtimeId, ctx);
+		},
+		unregisterRuntimeConnection: runtimeId => {
+			runtimeConnections.delete(runtimeId);
+		},
+	});
 
 	let server: ControlServer;
 	try {
@@ -67,7 +110,24 @@ export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 			socketPath: paths.socketPath,
 			token,
 			startedAt,
-			handler: dispatch,
+			handler,
+			onDisconnect: ctx => {
+				// If the registered runtime's connection drops without unregister,
+				// clean up so a fresh runtime can take over.
+				const current = registry.getCurrent();
+				if (
+					current &&
+					runtimeConnections.get(current.runtimeId)?.connectionId ===
+						ctx.connectionId
+				) {
+					try {
+						registry.unregister(current.runtimeId);
+					} catch {
+						// already unregistered
+					}
+					runtimeConnections.delete(current.runtimeId);
+				}
+			},
 		});
 	} catch (err) {
 		lock.release();
@@ -75,8 +135,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 	}
 
 	if (!opts.silent) {
-		// Stdout is the supervisor's first signal that we're alive — single
-		// line, no banner art.
 		process.stdout.write(
 			`athena-gateway: ok pid=${pid} socket=${paths.socketPath}\n`,
 		);
@@ -87,6 +145,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 		if (stopping) return;
 		stopping = true;
 		try {
+			await channelManager.stop();
 			await server.close();
 		} finally {
 			lock.release();
@@ -102,5 +161,5 @@ export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 		process.once('SIGTERM', onSignal);
 	}
 
-	return {startedAt, pid, paths, stop};
+	return {startedAt, pid, paths, registry, dispatcher, channelManager, stop};
 }
