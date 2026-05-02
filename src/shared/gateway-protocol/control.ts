@@ -7,11 +7,23 @@
  * kinds are added in M3–M6, function invoke in M7.
  */
 
+import type {
+	ChannelLocation,
+	NormalizedInbound,
+	OutboundMessage,
+} from './channel-events';
+
 /**
  * Request kinds — sent from client to gateway. Each kind has a corresponding
  * response payload returned via `ControlResponseEnvelope`.
  */
-export type ControlRequestKind = 'ping' | 'status';
+export type ControlRequestKind =
+	| 'ping'
+	| 'status'
+	| 'session.register'
+	| 'session.unregister'
+	| 'session.turn.complete'
+	| 'channel.send';
 
 export type PingRequestPayload = Record<string, never>;
 export type PingResponsePayload = {
@@ -36,6 +48,59 @@ export type StatusResponsePayload = {
 };
 
 /**
+ * Identifies a single Athena interactive runtime that has registered with the
+ * gateway. The gateway enforces one-runtime-at-a-time; duplicate registration
+ * is rejected with code `already_registered`.
+ */
+export type SessionRegisterRequestPayload = {
+	runtimeId: string;
+	defaultAgentId: string;
+	pid: number;
+};
+export type SessionRegisterResponsePayload = {
+	registeredAt: number;
+	gatewayStartedAt: number;
+};
+
+export type SessionUnregisterRequestPayload = {
+	runtimeId: string;
+};
+export type SessionUnregisterResponsePayload = {
+	unregisteredAt: number;
+};
+
+/**
+ * Reported by the runtime when an inbound-driven turn finishes. Triggers the
+ * gateway to relay the assistant's reply outbound on the originating channel.
+ * The runtime echoes the `dispatchId` from the inbound push so the gateway
+ * can correlate to the originating chat surface without keeping per-turn
+ * state on the client.
+ */
+export type SessionTurnCompleteRequestPayload = {
+	runtimeId: string;
+	dispatchId: string;
+	location: ChannelLocation;
+	text: string;
+	idempotencyKey: string;
+};
+export type SessionTurnCompleteResponsePayload = {
+	delivered: boolean;
+	providerMessageId?: string;
+};
+
+/**
+ * Direct send-on-channel RPC for callers that aren't the registered runtime
+ * (e.g. cloud-function callers in M7 echoing replies back).
+ */
+export type ChannelSendRequestPayload = {
+	message: OutboundMessage;
+};
+export type ChannelSendResponsePayload = {
+	providerMessageId: string;
+	deliveredAt: number;
+};
+
+/**
  * Push kinds — sent from gateway to client without a request. Defined here so
  * the type list stays in one place; payload shapes for chat/relay/function
  * pushes are filled in by their respective milestones.
@@ -43,6 +108,20 @@ export type StatusResponsePayload = {
 export type ControlPushKind =
 	| 'channel.health'
 	| 'chat.inbound'
+	| 'session.dispatch.turn'
 	| 'relay.permission.request'
 	| 'relay.question.request'
 	| 'function.progress';
+
+/**
+ * Pushed to the registered runtime when a chat surface produces an inbound
+ * message that routes to a session it owns. The runtime is expected to start
+ * a turn and reply with `session.turn.complete` carrying the same
+ * `dispatchId`.
+ */
+export type SessionDispatchTurnPushPayload = {
+	dispatchId: string;
+	sessionKey: string;
+	agentId: string;
+	inbound: NormalizedInbound;
+};

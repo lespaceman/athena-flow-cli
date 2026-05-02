@@ -17,6 +17,15 @@ export type {
 	StatusRequestPayload,
 	StatusResponsePayload,
 	ChannelStatusEntry,
+	SessionRegisterRequestPayload,
+	SessionRegisterResponsePayload,
+	SessionUnregisterRequestPayload,
+	SessionUnregisterResponsePayload,
+	SessionTurnCompleteRequestPayload,
+	SessionTurnCompleteResponsePayload,
+	ChannelSendRequestPayload,
+	ChannelSendResponsePayload,
+	SessionDispatchTurnPushPayload,
 } from './control';
 export type {
 	ChannelLocation,
