@@ -14,6 +14,14 @@ import type {
 	ControlPushEnvelope,
 	ControlResponseEnvelope,
 	PingResponsePayload,
+	RelayPermissionCancelRequestPayload,
+	RelayPermissionCancelResponsePayload,
+	RelayPermissionRequestPayload,
+	RelayPermissionResponsePayload,
+	RelayQuestionCancelRequestPayload,
+	RelayQuestionCancelResponsePayload,
+	RelayQuestionRequestPayload,
+	RelayQuestionResponsePayload,
 	SessionRegisterRequestPayload,
 	SessionRegisterResponsePayload,
 	SessionTurnCompleteRequestPayload,
@@ -23,6 +31,7 @@ import type {
 } from '../../shared/gateway-protocol';
 import type {ChannelManager} from '../channelManager';
 import type {Dispatcher} from '../dispatcher';
+import type {RelayCoordinator} from '../relay/coordinator';
 import {
 	AlreadyRegisteredError,
 	NotRegisteredError,
@@ -49,6 +58,7 @@ export type DispatcherDeps = {
 	registry?: SessionRegistry;
 	dispatcher?: Dispatcher;
 	channelManager?: ChannelManager;
+	relayCoordinator?: RelayCoordinator;
 	/**
 	 * Registers a connection-scoped push function under the runtime's id so
 	 * the dispatcher can reach the right socket. Wired by daemon.ts; absent
@@ -171,6 +181,87 @@ export function createDispatcher(deps: DispatcherDeps): RequestHandler {
 					providerMessageId: result.providerMessageId,
 					deliveredAt: result.deliveredAt,
 				};
+				return ok(envelope, ts, payload);
+			}
+			case 'relay.permission.request': {
+				if (!deps.relayCoordinator)
+					return error(
+						envelope,
+						ts,
+						'unsupported',
+						'relay coordinator not configured',
+					);
+				const req = envelope.payload as RelayPermissionRequestPayload;
+				const broadcast = deps.relayCoordinator.requestPermission({
+					...(req.channelRequestId !== undefined
+						? {channelRequestId: req.channelRequestId}
+						: {}),
+					toolName: req.toolName,
+					description: req.description,
+					inputPreview: req.inputPreview,
+					...(req.ttlMs !== undefined ? {ttlMs: req.ttlMs} : {}),
+				});
+				const result = await broadcast.result;
+				const payload: RelayPermissionResponsePayload = {
+					channelRequestId: broadcast.channelRequestId,
+					result,
+				};
+				return ok(envelope, Date.now(), payload);
+			}
+			case 'relay.permission.cancel': {
+				if (!deps.relayCoordinator)
+					return error(
+						envelope,
+						ts,
+						'unsupported',
+						'relay coordinator not configured',
+					);
+				const req = envelope.payload as RelayPermissionCancelRequestPayload;
+				const cancelled = deps.relayCoordinator.cancel(
+					req.channelRequestId,
+					req.reason,
+				);
+				const payload: RelayPermissionCancelResponsePayload = {cancelled};
+				return ok(envelope, ts, payload);
+			}
+			case 'relay.question.request': {
+				if (!deps.relayCoordinator)
+					return error(
+						envelope,
+						ts,
+						'unsupported',
+						'relay coordinator not configured',
+					);
+				const req = envelope.payload as RelayQuestionRequestPayload;
+				const broadcast = deps.relayCoordinator.requestQuestion({
+					...(req.channelRequestId !== undefined
+						? {channelRequestId: req.channelRequestId}
+						: {}),
+					title: req.title,
+					questions: req.questions,
+					...(req.ttlMs !== undefined ? {ttlMs: req.ttlMs} : {}),
+				});
+				const result = await broadcast.result;
+				const payload: RelayQuestionResponsePayload = {
+					channelRequestId: broadcast.channelRequestId,
+					result,
+				};
+				return ok(envelope, Date.now(), payload);
+			}
+			case 'relay.question.cancel': {
+				if (!deps.relayCoordinator)
+					return error(
+						envelope,
+						ts,
+						'unsupported',
+						'relay coordinator not configured',
+					);
+				const req = envelope.payload as RelayQuestionCancelRequestPayload;
+				const cancelled = deps.relayCoordinator.cancel(
+					req.channelRequestId,
+					req.reason,
+				);
+				const payload: RelayQuestionCancelResponsePayload = {cancelled};
 				return ok(envelope, ts, payload);
 			}
 			default:

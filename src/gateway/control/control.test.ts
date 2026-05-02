@@ -49,6 +49,7 @@ describe('gateway control plane', () => {
 			silent: true,
 			paths,
 			skipSignalHandlers: true,
+			skipChannelLoad: true,
 		});
 		const token = fs.readFileSync(paths.tokenPath, 'utf-8').trim();
 		const client = await connect({socketPath: paths.socketPath, token});
@@ -68,6 +69,7 @@ describe('gateway control plane', () => {
 			silent: true,
 			paths,
 			skipSignalHandlers: true,
+			skipChannelLoad: true,
 		});
 		const token = fs.readFileSync(paths.tokenPath, 'utf-8').trim();
 		const client = await connect({socketPath: paths.socketPath, token});
@@ -88,6 +90,7 @@ describe('gateway control plane', () => {
 			silent: true,
 			paths,
 			skipSignalHandlers: true,
+			skipChannelLoad: true,
 		});
 		await expect(
 			connect({socketPath: paths.socketPath, token: 'definitely-wrong'}),
@@ -110,6 +113,7 @@ describe('gateway control plane', () => {
 			silent: true,
 			paths,
 			skipSignalHandlers: true,
+			skipChannelLoad: true,
 		});
 		const token = fs.readFileSync(paths.tokenPath, 'utf-8').trim();
 		const client = await connect({socketPath: paths.socketPath, token});

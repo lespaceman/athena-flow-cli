@@ -94,6 +94,11 @@ export class ChannelManager {
 		}));
 	}
 
+	/** Snapshot of currently registered adapters; used by the relay coordinator. */
+	listAdapters(): ReadonlyArray<ChannelAdapter> {
+		return [...this.entries.values()].map(e => e.adapter);
+	}
+
 	async register(adapter: ChannelAdapter): Promise<void> {
 		if (this.stopped) {
 			throw new Error('channel manager already stopped');

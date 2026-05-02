@@ -26,6 +26,14 @@ export type {
 	ChannelSendRequestPayload,
 	ChannelSendResponsePayload,
 	SessionDispatchTurnPushPayload,
+	RelayPermissionRequestPayload,
+	RelayPermissionResponsePayload,
+	RelayPermissionCancelRequestPayload,
+	RelayPermissionCancelResponsePayload,
+	RelayQuestionRequestPayload,
+	RelayQuestionResponsePayload,
+	RelayQuestionCancelRequestPayload,
+	RelayQuestionCancelResponsePayload,
 } from './control';
 export type {
 	ChannelLocation,
@@ -45,3 +53,12 @@ export type {
 	ChannelHealthListener,
 	ChannelAdapter,
 } from './adapter';
+export type {
+	RelayCancelReason,
+	RelayQuestionOption,
+	RelayQuestion,
+	PermissionRelayRequest,
+	PermissionRelayResult,
+	QuestionRelayRequest,
+	QuestionRelayResult,
+} from './relay';

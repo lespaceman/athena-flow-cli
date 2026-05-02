@@ -11,6 +11,8 @@
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import {loadChannelSidecars} from '../infra/config/channels';
+import {instantiateAdapter} from './adapters/factory';
 import {loadOrCreateToken} from './auth';
 import {ChannelManager} from './channelManager';
 import {createDispatcher} from './control/handlers';
@@ -22,6 +24,7 @@ import {
 import {Dispatcher} from './dispatcher';
 import {acquireLock, type LockHandle} from './lock';
 import {resolveGatewayPaths, type GatewayPaths} from './paths';
+import {RelayCoordinator} from './relay/coordinator';
 import {SessionRegistry} from './sessionRegistry';
 
 export type DaemonOptions = {
@@ -31,6 +34,11 @@ export type DaemonOptions = {
 	paths?: GatewayPaths;
 	env?: NodeJS.ProcessEnv;
 	skipSignalHandlers?: boolean;
+	/**
+	 * When true, skip loading `~/.config/athena/channels/*.json` sidecars on
+	 * startup. Tests use this to keep the daemon adapter-free.
+	 */
+	skipChannelLoad?: boolean;
 };
 
 export type DaemonHandle = {
@@ -40,6 +48,7 @@ export type DaemonHandle = {
 	registry: SessionRegistry;
 	dispatcher: Dispatcher;
 	channelManager: ChannelManager;
+	relayCoordinator: RelayCoordinator;
 	stop: () => Promise<void>;
 };
 
@@ -64,6 +73,9 @@ export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 
 	const registry = new SessionRegistry();
 	const channelManager = new ChannelManager();
+	const relayCoordinator = new RelayCoordinator({
+		adapters: () => channelManager.listAdapters(),
+	});
 
 	// Push frames target the connection that registered as the runtime. The
 	// map is the only state the daemon keeps about active connections.
@@ -91,11 +103,42 @@ export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 		dispatcher.handleInbound(inbound);
 	});
 
+	if (!opts.skipChannelLoad) {
+		const {sidecars, errors} = loadChannelSidecars();
+		for (const err of errors) {
+			process.stderr.write(
+				`athena-gateway: skipping ${err.path}: ${err.reason}\n`,
+			);
+		}
+		for (const sidecar of sidecars) {
+			const built = instantiateAdapter(sidecar);
+			if (!built.ok) {
+				process.stderr.write(
+					`athena-gateway: ${sidecar.name}: ${built.reason}\n`,
+				);
+				continue;
+			}
+			try {
+				await channelManager.register(built.adapter);
+				if (!opts.silent) {
+					process.stdout.write(`athena-gateway: registered ${sidecar.name}\n`);
+				}
+			} catch (err) {
+				process.stderr.write(
+					`athena-gateway: register ${sidecar.name} failed: ${
+						err instanceof Error ? err.message : String(err)
+					}\n`,
+				);
+			}
+		}
+	}
+
 	const handler = createDispatcher({
 		startedAt,
 		registry,
 		dispatcher,
 		channelManager,
+		relayCoordinator,
 		registerRuntimeConnection: (runtimeId, ctx) => {
 			runtimeConnections.set(runtimeId, ctx);
 		},
@@ -145,6 +188,7 @@ export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 		if (stopping) return;
 		stopping = true;
 		try {
+			relayCoordinator.disposeAll('auto_resolved');
 			await channelManager.stop();
 			await server.close();
 		} finally {
@@ -161,5 +205,14 @@ export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 		process.once('SIGTERM', onSignal);
 	}
 
-	return {startedAt, pid, paths, registry, dispatcher, channelManager, stop};
+	return {
+		startedAt,
+		pid,
+		paths,
+		registry,
+		dispatcher,
+		channelManager,
+		relayCoordinator,
+		stop,
+	};
 }

@@ -22,16 +22,29 @@ import type {
 	HealthSample,
 	NormalizedInbound,
 	OutboundMessage,
+	PermissionRelayRequest,
+	PermissionRelayResult,
 	ProbeResult,
+	QuestionRelayRequest,
+	QuestionRelayResult,
 	SendResult,
 	StopReason,
 } from '../../../shared/gateway-protocol';
+import {TelegramRelay} from './relay';
 
 export type TelegramAdapterOptions = {
 	/** Bot token from BotFather. Required. */
 	token: string;
 	/** Sender allowlist (Telegram numeric user ids as strings). Empty = closed. */
 	allowedUserIds: ReadonlyArray<string>;
+	/**
+	 * Chat used for relay prompts (permission/question). Required for relay
+	 * support; if omitted the adapter still serves chat inbound but
+	 * `requestPermissionVerdict`/`requestQuestionAnswer` resolve `no_relay`.
+	 */
+	defaultChatId?: number | string;
+	/** Optional forum-topic id under `defaultChatId` for relay prompts. */
+	defaultThreadId?: number;
 	/** Override base URL for tests. */
 	apiBase?: string;
 	/** Long-poll timeout seconds. */
@@ -52,6 +65,8 @@ export class TelegramAdapter implements ChannelAdapter {
 	readonly capabilities: ChannelCapabilities = {
 		chat: true,
 		threads: true,
+		relayPermission: true,
+		relayQuestion: true,
 		// Telegram caps text at 4096 chars; we leave chunking to the manager.
 		maxMessageBytes: 4096,
 	};
@@ -60,6 +75,7 @@ export class TelegramAdapter implements ChannelAdapter {
 	private readonly opts: TelegramAdapterOptions;
 	private readonly inboundListeners = new Set<ChannelInboundListener>();
 	private readonly healthListeners = new Set<ChannelHealthListener>();
+	private readonly relay: TelegramRelay;
 	private pollTask: Promise<void> | null = null;
 	private lastInboundAt: number | undefined;
 	private lastTransportOk = true;
@@ -67,6 +83,32 @@ export class TelegramAdapter implements ChannelAdapter {
 
 	constructor(opts: TelegramAdapterOptions) {
 		this.opts = opts;
+		this.relay = new TelegramRelay({
+			resolveTarget: () => {
+				if (this.opts.defaultChatId === undefined) return null;
+				return {
+					chatId: this.opts.defaultChatId,
+					...(this.opts.defaultThreadId !== undefined
+						? {threadId: this.opts.defaultThreadId}
+						: {}),
+				};
+			},
+			log: (level, msg) => this.ctx?.log(level, msg),
+		});
+	}
+
+	requestPermissionVerdict(
+		req: PermissionRelayRequest,
+		signal: AbortSignal,
+	): Promise<PermissionRelayResult> {
+		return this.relay.requestPermission(req, signal);
+	}
+
+	requestQuestionAnswer(
+		req: QuestionRelayRequest,
+		signal: AbortSignal,
+	): Promise<QuestionRelayResult> {
+		return this.relay.requestQuestion(req, signal);
 	}
 
 	async start(ctx: AdapterContext): Promise<void> {
@@ -91,6 +133,7 @@ export class TelegramAdapter implements ChannelAdapter {
 			pollTimeoutSec: this.opts.pollTimeoutSec,
 			log: ctx.log,
 		});
+		this.relay.bindBot(this.bot);
 		this.pollTask = this.runPollLoop();
 		ctx.signal.addEventListener('abort', () => {
 			this.bot?.stop();
@@ -98,6 +141,7 @@ export class TelegramAdapter implements ChannelAdapter {
 	}
 
 	async stop(_reason: StopReason): Promise<void> {
+		this.relay.disposeAll();
 		this.bot?.stop();
 		const task = this.pollTask;
 		this.pollTask = null;
@@ -108,6 +152,7 @@ export class TelegramAdapter implements ChannelAdapter {
 				// poll loop logs its own errors; nothing to add here
 			}
 		}
+		this.relay.bindBot(null);
 		this.bot = null;
 		this.ctx = null;
 	}
@@ -181,6 +226,10 @@ export class TelegramAdapter implements ChannelAdapter {
 				: new Set(this.opts.allowedUserIds.map(String));
 		try {
 			for await (const update of bot.poll()) {
+				if (this.relay.handleUpdate(update)) {
+					this.markHealth(true);
+					continue;
+				}
 				const inbound = normalizeInbound(update, allow);
 				if (!inbound) continue;
 				this.lastInboundAt = inbound.receivedAt;

@@ -12,6 +12,12 @@ import type {
 	NormalizedInbound,
 	OutboundMessage,
 } from './channel-events';
+import type {
+	PermissionRelayResult,
+	QuestionRelayResult,
+	RelayCancelReason,
+	RelayQuestion,
+} from './relay';
 
 /**
  * Request kinds — sent from client to gateway. Each kind has a corresponding
@@ -23,7 +29,11 @@ export type ControlRequestKind =
 	| 'session.register'
 	| 'session.unregister'
 	| 'session.turn.complete'
-	| 'channel.send';
+	| 'channel.send'
+	| 'relay.permission.request'
+	| 'relay.permission.cancel'
+	| 'relay.question.request'
+	| 'relay.question.cancel';
 
 export type PingRequestPayload = Record<string, never>;
 export type PingResponsePayload = {
@@ -101,6 +111,56 @@ export type ChannelSendResponsePayload = {
 };
 
 /**
+ * Relay request/response payloads.
+ *
+ * The request RPC blocks until the coordinator resolves: a verdict/answer
+ * arrives from a channel, the caller cancels via `relay.*.cancel`, the TTL
+ * elapses, or no relay-capable adapter is registered. There is no separate
+ * `relay.*.timeout` push — the response carries `{kind: 'cancelled',
+ * reason: 'timeout'}` directly. The plan originally proposed a push for
+ * timeouts; collapsing it into the response keeps the client API uniform
+ * and removes a needless out-of-band channel.
+ */
+export type RelayPermissionRequestPayload = {
+	channelRequestId?: string;
+	toolName: string;
+	description: string;
+	inputPreview: string;
+	ttlMs?: number;
+};
+export type RelayPermissionResponsePayload = {
+	channelRequestId: string;
+	result: PermissionRelayResult;
+};
+
+export type RelayPermissionCancelRequestPayload = {
+	channelRequestId: string;
+	reason: RelayCancelReason;
+};
+export type RelayPermissionCancelResponsePayload = {
+	cancelled: boolean;
+};
+
+export type RelayQuestionRequestPayload = {
+	channelRequestId?: string;
+	title: string;
+	questions: RelayQuestion[];
+	ttlMs?: number;
+};
+export type RelayQuestionResponsePayload = {
+	channelRequestId: string;
+	result: QuestionRelayResult;
+};
+
+export type RelayQuestionCancelRequestPayload = {
+	channelRequestId: string;
+	reason: RelayCancelReason;
+};
+export type RelayQuestionCancelResponsePayload = {
+	cancelled: boolean;
+};
+
+/**
  * Push kinds — sent from gateway to client without a request. Defined here so
  * the type list stays in one place; payload shapes for chat/relay/function
  * pushes are filled in by their respective milestones.
@@ -109,8 +169,6 @@ export type ControlPushKind =
 	| 'channel.health'
 	| 'chat.inbound'
 	| 'session.dispatch.turn'
-	| 'relay.permission.request'
-	| 'relay.question.request'
 	| 'function.progress';
 
 /**

@@ -14,12 +14,22 @@ import type {
 	ProbeResult,
 	SendResult,
 } from './channel-events';
+import type {
+	PermissionRelayRequest,
+	PermissionRelayResult,
+	QuestionRelayRequest,
+	QuestionRelayResult,
+} from './relay';
 
 export type ChannelCapabilities = {
 	/** True if the adapter can deliver outbound chat messages. */
 	chat: boolean;
 	/** True if the adapter exposes per-thread routing (e.g. Telegram forum). */
 	threads: boolean;
+	/** True if the adapter implements `requestPermissionVerdict`. */
+	relayPermission: boolean;
+	/** True if the adapter implements `requestQuestionAnswer`. */
+	relayQuestion: boolean;
 	/** Maximum text bytes per outbound message; missing means adapter handles chunking. */
 	maxMessageBytes?: number;
 };
@@ -56,4 +66,19 @@ export interface ChannelAdapter {
 	on(event: 'health', cb: ChannelHealthListener): void;
 	off(event: 'inbound', cb: ChannelInboundListener): void;
 	off(event: 'health', cb: ChannelHealthListener): void;
+	/**
+	 * Present iff `capabilities.relayPermission` is true. Resolves with the
+	 * user's verdict, or — when `signal` aborts before a verdict arrives —
+	 * with `{kind: 'cancelled'}`. Implementations are responsible for
+	 * surfacing the prompt on the channel and tearing it down on abort.
+	 */
+	requestPermissionVerdict?(
+		req: PermissionRelayRequest,
+		signal: AbortSignal,
+	): Promise<PermissionRelayResult>;
+	/** Present iff `capabilities.relayQuestion` is true. Same shape contract. */
+	requestQuestionAnswer?(
+		req: QuestionRelayRequest,
+		signal: AbortSignal,
+	): Promise<QuestionRelayResult>;
 }

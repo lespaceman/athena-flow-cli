@@ -37,6 +37,7 @@ describe('startDaemon', () => {
 			silent: true,
 			paths,
 			skipSignalHandlers: true,
+			skipChannelLoad: true,
 		});
 		expect(handle.pid).toBe(process.pid);
 		expect(handle.startedAt).toBeLessThanOrEqual(Date.now());
@@ -50,6 +51,7 @@ describe('startDaemon', () => {
 			silent: true,
 			paths,
 			skipSignalHandlers: true,
+			skipChannelLoad: true,
 		});
 		await handle.stop();
 		await expect(handle.stop()).resolves.toBeUndefined();
@@ -61,6 +63,7 @@ describe('startDaemon', () => {
 			silent: true,
 			paths,
 			skipSignalHandlers: true,
+			skipChannelLoad: true,
 		});
 		expect(fs.existsSync(paths.socketPath)).toBe(true);
 		expect(fs.existsSync(paths.lockPath)).toBe(true);
@@ -78,6 +81,7 @@ describe('startDaemon', () => {
 			silent: true,
 			paths,
 			skipSignalHandlers: true,
+			skipChannelLoad: true,
 		});
 		await expect(
 			startDaemon({
@@ -85,6 +89,7 @@ describe('startDaemon', () => {
 				silent: true,
 				paths,
 				skipSignalHandlers: true,
+				skipChannelLoad: true,
 			}),
 		).rejects.toMatchObject({name: 'GatewayAlreadyRunningError'});
 		await first.stop();

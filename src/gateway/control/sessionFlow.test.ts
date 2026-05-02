@@ -109,6 +109,7 @@ describe('M5 session flow', () => {
 			silent: true,
 			paths,
 			skipSignalHandlers: true,
+			skipChannelLoad: true,
 		});
 		const adapter = new FakeAdapter();
 		await daemon.channelManager.register(adapter);
@@ -167,6 +168,7 @@ describe('M5 session flow', () => {
 			silent: true,
 			paths,
 			skipSignalHandlers: true,
+			skipChannelLoad: true,
 		});
 		const token = fs.readFileSync(paths.tokenPath, 'utf-8').trim();
 		const client1 = await connect({socketPath: paths.socketPath, token});
@@ -196,6 +198,7 @@ describe('M5 session flow', () => {
 			silent: true,
 			paths,
 			skipSignalHandlers: true,
+			skipChannelLoad: true,
 		});
 		const token = fs.readFileSync(paths.tokenPath, 'utf-8').trim();
 		const c1 = await connect({socketPath: paths.socketPath, token});

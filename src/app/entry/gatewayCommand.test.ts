@@ -84,6 +84,7 @@ describe('runGatewayCommand', () => {
 				silent: true,
 				paths,
 				skipSignalHandlers: true,
+				skipChannelLoad: true,
 			});
 		});
 		afterEach(async () => {

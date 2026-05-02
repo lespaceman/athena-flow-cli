@@ -44,10 +44,16 @@ export class GatewayProtocolError extends Error {
 	}
 }
 
+export type ControlRequestOptions = {
+	/** Override the per-client default timeout for this single request. */
+	timeoutMs?: number;
+};
+
 export type ControlClient = {
 	request<TPayload, TResponse>(
 		kind: string,
 		payload: TPayload,
+		opts?: ControlRequestOptions,
 	): Promise<TResponse>;
 	onPush: (
 		kind: string,
@@ -188,6 +194,7 @@ export async function connect(
 	const request = async <TPayload, TResponse>(
 		kind: string,
 		payload: TPayload,
+		reqOpts?: ControlRequestOptions,
 	): Promise<TResponse> => {
 		const requestId = crypto.randomUUID();
 		const envelope: ControlEnvelope<string, TPayload> = {
@@ -196,12 +203,13 @@ export async function connect(
 			kind,
 			payload,
 		};
+		const effectiveTimeoutMs = reqOpts?.timeoutMs ?? timeoutMs;
 		const responsePromise = new Promise<ControlResponseEnvelope>(
 			(resolve, reject) => {
 				const timer = setTimeout(() => {
 					pending.delete(requestId);
 					reject(new GatewayProtocolError(`request ${kind} timed out`));
-				}, timeoutMs);
+				}, effectiveTimeoutMs);
 				pending.set(requestId, {resolve, reject, timer});
 			},
 		);
