@@ -32,7 +32,7 @@ import {
 	type SendMessageOptions,
 	type TelegramCallbackQuery,
 	type TelegramMessage,
-} from './bot';
+} from '../../shared/telegram/bot';
 import {
 	agentMarkdownToTelegramV2,
 	escapeMarkdownV2,

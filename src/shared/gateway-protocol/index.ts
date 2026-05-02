@@ -27,3 +27,12 @@ export type {
 	ProbeResult,
 	HealthSample,
 } from './channel-events';
+export type {
+	ChannelCapabilities,
+	StopReason,
+	AdapterLogger,
+	AdapterContext,
+	ChannelInboundListener,
+	ChannelHealthListener,
+	ChannelAdapter,
+} from './adapter';

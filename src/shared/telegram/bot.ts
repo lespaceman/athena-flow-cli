@@ -7,7 +7,7 @@
  * the channel is implemented; no third-party Telegram SDK.
  */
 
-import {errorMessage} from '../../shared/utils/errorMessage';
+import {errorMessage} from '../utils/errorMessage';
 
 export class TelegramApiError extends Error {
 	constructor(
