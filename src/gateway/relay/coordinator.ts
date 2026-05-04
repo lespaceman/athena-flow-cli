@@ -31,7 +31,7 @@ import type {
 	QuestionRelayResult,
 	RelayCancelReason,
 } from '../../shared/gateway-protocol';
-import {generateChannelRequestId} from './ids';
+import {generateChannelRequestId} from '../../shared/gateway-protocol/channelRequestId';
 
 export const DEFAULT_RELAY_TTL_MS = 5 * 60_000;
 

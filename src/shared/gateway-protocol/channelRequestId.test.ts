@@ -3,7 +3,7 @@ import {
 	CHANNEL_REQUEST_ID_LENGTH,
 	generateChannelRequestId,
 	isValidChannelRequestId,
-} from './ids';
+} from './channelRequestId';
 
 describe('channel request ids', () => {
 	it('generates lowercase 5-char ids in the [a-km-z] alphabet', () => {

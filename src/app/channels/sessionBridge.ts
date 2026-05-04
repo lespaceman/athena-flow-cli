@@ -29,7 +29,7 @@ import {
 	type ControlClient,
 } from '../../gateway/control/client';
 import {resolveGatewayPaths, type GatewayPaths} from '../../gateway/paths';
-import {generateChannelRequestId} from '../../gateway/relay/ids';
+import {generateChannelRequestId} from '../../shared/gateway-protocol/channelRequestId';
 import {writeGatewayTrace} from '../../gateway/transport/trace';
 import {
 	createWsClientTransport,

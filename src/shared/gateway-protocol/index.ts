@@ -68,6 +68,12 @@ export type {
 	QuestionRelayRequest,
 	QuestionRelayResult,
 } from './relay';
+export {
+	CHANNEL_REQUEST_ID_LENGTH,
+	CHANNEL_REQUEST_ID_REGEX,
+	generateChannelRequestId,
+	isValidChannelRequestId,
+} from './channelRequestId';
 export type {
 	AthenaConsoleFrameKind,
 	AthenaConsoleAddress,

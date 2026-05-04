@@ -18,7 +18,7 @@
 import {
 	CHANNEL_REQUEST_ID_REGEX,
 	isValidChannelRequestId,
-} from '../../relay/ids';
+} from '../../../shared/gateway-protocol/channelRequestId';
 
 export type ParsedVerdict = {
 	channelRequestId: string;
