@@ -31,7 +31,7 @@ import {
 	type GatewayPaths,
 } from './gatewayControlClient';
 import {generateChannelRequestId} from '../../shared/gateway-protocol/channelRequestId';
-import {writeGatewayTrace} from '../../gateway/transport/trace';
+import {writeGatewayTrace} from '../../infra/gatewayTrace';
 import {readGatewayClientConfig} from '../../infra/config/gatewayClient';
 import {trackGatewayTransportReconnect} from '../../infra/telemetry/events';
 import type {

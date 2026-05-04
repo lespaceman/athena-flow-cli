@@ -15,7 +15,7 @@ import type {Runtime} from '../../core/runtime/types';
 import type {SessionStore} from '../../infra/sessions/store';
 import {SessionBridge} from '../channels/sessionBridge';
 import type {RuntimeEvent, RuntimeDecision} from '../../core/runtime/types';
-import {writeGatewayTrace} from '../../gateway/transport/trace';
+import {writeGatewayTrace} from '../../infra/gatewayTrace';
 const HookContext = createContext<HookContextValue | null>(null);
 const RuntimeRefContext = createContext<Runtime | null>(null);
 const SessionStoreContext = createContext<SessionStore | null>(null);

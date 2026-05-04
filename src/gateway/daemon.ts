@@ -37,7 +37,7 @@ import {openGatewayState, type GatewayStateDb} from './state/db';
 import {InboundQueue} from './state/inboundQueue';
 import {Outbox} from './state/outbox';
 import {createWsServerTransport} from './transport/tlsWs';
-import {writeGatewayTrace} from './transport/trace';
+import {writeGatewayTrace} from '../infra/gatewayTrace';
 import {
 	trackGatewayRuntimeExpired,
 	trackGatewayRuntimeRebind,

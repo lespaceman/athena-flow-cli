@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import {writeGatewayTrace} from '../../infra/gatewayTrace';
 
 export type GatewayTraceDirection = 'in' | 'out';
 
@@ -12,21 +12,6 @@ export function traceGatewayFrame(
 	writeGatewayTrace(
 		`${transport} ${direction} ${peer} ${JSON.stringify(redactFrame(frame))}`,
 	);
-}
-
-export function writeGatewayTrace(message: string): void {
-	if (process.env['ATHENA_GATEWAY_TRACE'] !== '1') return;
-	const line = `athena-gateway: [trace] ${message}\n`;
-	const traceFile = process.env['ATHENA_GATEWAY_TRACE_FILE'];
-	if (traceFile && traceFile.length > 0) {
-		try {
-			fs.appendFileSync(traceFile, line, 'utf-8');
-			return;
-		} catch {
-			// fall through to stderr
-		}
-	}
-	process.stderr.write(line);
 }
 
 function redactFrame(value: unknown): unknown {

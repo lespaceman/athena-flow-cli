@@ -34,7 +34,7 @@ import {
 	handleEvent,
 	type ControllerCallbacks,
 } from '../../core/controller/runtimeController';
-import {writeGatewayTrace} from '../../gateway/transport/trace';
+import {writeGatewayTrace} from '../../infra/gatewayTrace';
 import {
 	getActivePerfCycleId,
 	logPerfEvent,
