@@ -93,14 +93,44 @@ describe('ConsoleBrokerClient', () => {
 
 		await client.connect({
 			runnerId: 'r1',
+			workspaceId: 'ws1',
 			clientName: 'athena-cli',
 			clientVersion: '0.0.0-test',
 		});
 
 		expect(helloFrames).toHaveLength(1);
-		expect(helloFrames[0]!.kind).toBe('console.hello');
+		const helloFrame = helloFrames[0]!;
+		expect(helloFrame.kind).toBe('console.hello');
+		if (helloFrame.kind !== 'console.hello') throw new Error('wrong kind');
+		expect(helloFrame.address.runnerId).toBe('r1');
+		expect(helloFrame.address.workspaceId).toBe('ws1');
 		expect(client.getReadyAddress()?.runnerId).toBe('r1');
 		client.close('done');
+	});
+
+	it('rejects when ready.address.runnerId does not match the claimed runner', async () => {
+		const client = makeClient();
+		server.once('connection', ws => {
+			ws.on('message', () => {
+				ws.send(
+					JSON.stringify({
+						kind: 'console.ready',
+						frameId: 'r',
+						sentAt: 0,
+						protocolVersion: 1,
+						brokerName: 'b',
+						address: {runnerId: 'wrong-runner'},
+					}),
+				);
+			});
+		});
+		await expect(
+			client.connect({
+				runnerId: 'r1',
+				clientName: 'athena-cli',
+				clientVersion: 'x',
+			}),
+		).rejects.toThrow(/runnerId mismatch/);
 	});
 
 	it('sends pairing token via Authorization header (never URL)', async () => {

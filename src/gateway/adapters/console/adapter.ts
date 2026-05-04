@@ -106,6 +106,9 @@ export class ConsoleAdapter implements ChannelAdapter {
 		});
 		await client.connect({
 			runnerId: this.opts.runnerId,
+			...(this.opts.workspaceId !== undefined
+				? {workspaceId: this.opts.workspaceId}
+				: {}),
 			clientName: CLIENT_NAME,
 			clientVersion: CLIENT_VERSION,
 		});

@@ -46,6 +46,13 @@ export type AthenaConsoleHelloFrame = AthenaConsoleFrameBase & {
 	protocolVersion: number;
 	clientName: string;
 	clientVersion: string;
+	/**
+	 * Runner identity claimed by the adapter. The broker MUST verify this
+	 * against the credentials presented on the WSS upgrade and reject the
+	 * connection if they don't match. The adapter MUST cross-check the
+	 * `runnerId` echoed back in `console.ready.address`.
+	 */
+	address: AthenaConsoleAddress;
 };
 
 export type AthenaConsoleReadyFrame = AthenaConsoleFrameBase & {

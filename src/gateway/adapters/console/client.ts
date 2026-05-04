@@ -43,6 +43,7 @@ export type ConsoleBrokerClientOptions = {
 
 export type ConsoleHelloPayload = {
 	runnerId: string;
+	workspaceId?: string;
 	clientName: string;
 	clientVersion: string;
 };
@@ -158,6 +159,12 @@ export function createConsoleBrokerClient(
 							protocolVersion: 1,
 							clientName: hello.clientName,
 							clientVersion: hello.clientVersion,
+							address: {
+								runnerId: hello.runnerId,
+								...(hello.workspaceId !== undefined
+									? {workspaceId: hello.workspaceId}
+									: {}),
+							},
 						};
 						next.send(JSON.stringify(helloFrame));
 					} catch (err) {
@@ -196,6 +203,16 @@ export function createConsoleBrokerClient(
 					}
 					if (!ready) {
 						if (parsed.kind === 'console.ready') {
+							const claimedRunnerId = hello.runnerId;
+							const readyRunnerId = parsed.address.runnerId;
+							if (readyRunnerId !== claimedRunnerId) {
+								finishErr(
+									new Error(
+										`console broker ready runnerId mismatch: claimed ${claimedRunnerId}, got ${readyRunnerId}`,
+									),
+								);
+								return;
+							}
 							ready = parsed;
 							next.removeListener('close', earlyCloseListener);
 							const address = parsed.address;
