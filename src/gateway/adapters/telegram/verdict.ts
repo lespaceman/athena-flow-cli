@@ -12,7 +12,8 @@
  *
  * Case-insensitive for text (phone autocorrect frequently capitalizes the
  * first letter). The 5-letter ID alphabet matches the Athena/Claude Code
- * channel-request-id alphabet, sourced from `../ids`.
+ * channel-request-id alphabet, sourced from
+ * `shared/gateway-protocol/channelRequestId`.
  */
 
 import {
