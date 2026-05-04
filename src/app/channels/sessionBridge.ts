@@ -29,6 +29,7 @@ import {
 	type ControlClient,
 } from '../../gateway/control/client';
 import {resolveGatewayPaths, type GatewayPaths} from '../../gateway/paths';
+import {generateChannelRequestId} from '../../gateway/relay/ids';
 import {writeGatewayTrace} from '../../gateway/transport/trace';
 import {
 	createWsClientTransport,
@@ -251,42 +252,78 @@ export class SessionBridge {
 		writeGatewayTrace(
 			`sessionBridge relayPermission tool=${req.toolName} runtimeId=${this.opts.runtimeId}`,
 		);
-		const client = await this.requireConnectedClient();
+		const channelRequestId = req.channelRequestId ?? generateChannelRequestId();
 		const payload: RelayPermissionRequestPayload = {
-			...(req.channelRequestId !== undefined
-				? {channelRequestId: req.channelRequestId}
-				: {}),
+			channelRequestId,
 			toolName: req.toolName,
 			description: req.description,
 			inputPreview: req.inputPreview,
 			...(req.ttlMs !== undefined ? {ttlMs: req.ttlMs} : {}),
 		};
-		return client.request<
+		const overallTimeoutMs = req.ttlMs ?? RELAY_REQUEST_TIMEOUT_MS;
+		return this.requestWithReconnect<
 			RelayPermissionRequestPayload,
 			RelayPermissionResponsePayload
-		>('relay.permission.request', payload, {
-			timeoutMs: req.ttlMs ?? RELAY_REQUEST_TIMEOUT_MS,
-		});
+		>('relay.permission.request', payload, overallTimeoutMs);
 	}
 
 	async relayQuestion(
 		req: SessionBridgeQuestionRequest,
 	): Promise<RelayQuestionResponsePayload> {
-		const client = await this.requireConnectedClient();
+		const channelRequestId = req.channelRequestId ?? generateChannelRequestId();
 		const payload: RelayQuestionRequestPayload = {
-			...(req.channelRequestId !== undefined
-				? {channelRequestId: req.channelRequestId}
-				: {}),
+			channelRequestId,
 			title: req.title,
 			questions: req.questions,
 			...(req.ttlMs !== undefined ? {ttlMs: req.ttlMs} : {}),
 		};
-		return client.request<
+		const overallTimeoutMs = req.ttlMs ?? RELAY_REQUEST_TIMEOUT_MS;
+		return this.requestWithReconnect<
 			RelayQuestionRequestPayload,
 			RelayQuestionResponsePayload
-		>('relay.question.request', payload, {
-			timeoutMs: req.ttlMs ?? RELAY_REQUEST_TIMEOUT_MS,
-		});
+		>('relay.question.request', payload, overallTimeoutMs);
+	}
+
+	/**
+	 * Wraps `client.request(...)` for relay RPCs so an in-flight relay
+	 * survives a transient WS disconnect: on `connection closed`, wait for
+	 * the bridge's reconnect to settle, then re-issue the same payload. The
+	 * server attaches the replay to the existing pending entry by
+	 * `channelRequestId`, so adapters are not re-prompted. Bounded by the
+	 * caller-provided overall timeout so a long outage still surfaces.
+	 */
+	private async requestWithReconnect<TPayload, TResponse>(
+		kind: string,
+		payload: TPayload,
+		overallTimeoutMs: number,
+	): Promise<TResponse> {
+		const deadline = Date.now() + overallTimeoutMs;
+		// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- bounded by deadline + thrown errors below
+		while (true) {
+			const client = await this.requireConnectedClient();
+			const remaining = deadline - Date.now();
+			if (remaining <= 0) {
+				throw new GatewayProtocolError(`request ${kind} timed out`);
+			}
+			try {
+				return await client.request<TPayload, TResponse>(kind, payload, {
+					timeoutMs: remaining,
+				});
+			} catch (err) {
+				if (
+					err instanceof GatewayProtocolError &&
+					err.message === 'connection closed' &&
+					!this.stopped &&
+					Date.now() < deadline
+				) {
+					writeGatewayTrace(
+						`sessionBridge relay retry kind=${kind} runtimeId=${this.opts.runtimeId}`,
+					);
+					continue;
+				}
+				throw err;
+			}
+		}
 	}
 
 	async cancelRelayPermission(

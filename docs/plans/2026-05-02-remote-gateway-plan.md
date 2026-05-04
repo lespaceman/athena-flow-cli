@@ -78,7 +78,11 @@ Follow-up priorities after this merge:
    - Done in `feat(gateway): show runtime status for remote links` and `feat(gateway): print runtime in status output`.
 3. Decide whether `tool.pre` events should ever relay remotely; currently only `permission.request` is relayed.
 4. Continue with the remaining R4/R5/R6/R7 items: reconnecting WS client loop, TLS/mTLS, token rotation, rate limits, and in-flight relay replay.
-   - SessionBridge now reconnects and re-registers before the next bridge RPC after a WS disconnect (`feat(gateway): reconnect session bridge before RPCs`). Full background reconnect loop, heartbeat, and relay replay remain.
+   - SessionBridge now reconnects and re-registers before the next bridge RPC after a WS disconnect (`feat(gateway): reconnect session bridge before RPCs`).
+   - R4 background reconnect + native WS heartbeat + rebind status all landed (`feat(gateway): background WS reconnect, heartbeat, rebind status`, `fix(gateway): tighten reconnect/heartbeat lifecycles`).
+   - R5 landed as `feat(gateway): r5 public-bind safety — tls, rate limit, exposure docs` plus the `--tls-cert`/`--tls-key`/`--insecure` flag plumbing in `docs(gateway): surface tls flags in gateway help and fix daemon shape`. Connect rate limit (10/min/IP) lives in `gateway/transport/tlsWs.ts`.
+   - R6 token rotation landed as `feat(gateway): r6 token rotation command` (+ `docs(gateway): flag rotate-token stdout as sensitive`). **mTLS is explicitly deferred** out of v1: `--tls-client-ca` is documented as a future flag but not implemented in the current daemon.
+   - R7 (relay replay on reconnect) is the next milestone — design notes are below.
 
 Post-merge continuation:
 
@@ -87,6 +91,64 @@ Post-merge continuation:
 - Human status output includes `runtime=<id> binding=<state> pid=<pid>` for quick smoke verification.
 - `RuntimeProvider` has a deterministic test proving permission relay wiring through `SessionBridge`, and bridge startup now retries every 2s after an initial gateway connection failure.
 - `SessionBridge` now observes control-client close events, marks itself disconnected, and reconnects/re-registers before the next bridge RPC. A WS integration test covers completing a previously dispatched turn after disconnect/reconnect inside the daemon grace window.
+
+## R7 design notes (added 2026-05-04)
+
+R7 is "relay replay on reconnect": an in-flight `relay.permission.request` (or `relay.question.request`) must survive a brief WS blip without losing the verdict that the human is about to send back. Before any code lands, the control surface is classified.
+
+### Control request classification
+
+| Kind                                                | Class                                                      | Notes                                                                                                                                                                                                                               |
+| --------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ping`                                              | non-replayable (cheap to re-issue)                         | Read-only, side-effect free. Caller, if it cares, just sends a fresh ping.                                                                                                                                                          |
+| `status`                                            | non-replayable                                             | Same as ping. Snapshots are not worth replaying.                                                                                                                                                                                    |
+| `session.register`                                  | replayable, idempotent by `runtimeId`                      | Already replayed by `SessionBridge` on reconnect. The grace window in `SessionRegistry` rebinds the connection without re-dispatching anything. `already_registered` is the only terminal failure mode (different runtimeId taken). |
+| `session.unregister`                                | non-replayable                                             | Issued only at `bridge.stop()`; if the connection is gone, the daemon will GC the registration after the grace window. No replay value.                                                                                             |
+| `session.turn.complete`                             | replayable, deduped by `idempotencyKey`                    | Outbox already dedupes by idempotency key, so a replay after reconnect is safe. R7 does **not** need to add anything here — `SessionBridge` already retries via the user-driven `completeTurn` call after reconnect.                |
+| `channel.send`                                      | replayable, deduped by `idempotencyKey`                    | Same as `turn.complete`; not currently invoked directly from runtime, but if it ever is, the outbox dedupe holds.                                                                                                                   |
+| `relay.permission.request`                          | **replayable, deduped by `(runtimeId, channelRequestId)`** | The whole point of R7. Long-blocking. The caller must reuse the same `channelRequestId` on replay so the gateway can deliver the existing pending broadcast's verdict instead of starting a new one.                                |
+| `relay.question.request`                            | same as permission                                         | Same shape, same semantics; R7 covers both via the coordinator.                                                                                                                                                                     |
+| `relay.permission.cancel` / `relay.question.cancel` | idempotent, no replay needed                               | Cancels are cheap and naturally idempotent: re-cancelling a missing entry returns `cancelled: false`. Stale cancels are dropped on the server (see "Connection epochs" below).                                                      |
+
+The classification is consumed by `SessionBridge`: only `relay.*.request` actually needs new replay machinery. Everything else either auto-resumes (`session.register`) or is the caller's job to re-issue (`turn.complete` already is, and is dedupe-safe by key).
+
+### `relay.permission.request` replay keyed by `(runtimeId, request_id)`
+
+Today: when the WS drops mid-request, `ControlClient` rejects every entry in `pending` with `"connection closed"`. `SessionBridge.relayPermission()` then surfaces that to the caller — the user-facing prompt fails even though the human's verdict may already be on its way from Telegram.
+
+Target shape:
+
+1. **Caller-supplied stable id.** `SessionBridge.relayPermission()` mints `channelRequestId` up-front (single short id, e.g. via `relay/ids.generateChannelRequestId`) and passes it to the gateway in the request payload. The bridge already accepts `channelRequestId`; today it is undefined, so the coordinator generates one server-side. R7 makes the bridge always set it, so the same id can be used on replay.
+2. **Server-side replay table.** `RelayCoordinator` already maps `channelRequestId → PendingEntry`. On a fresh `relay.permission.request` whose `channelRequestId` is **already pending** for the **same runtime**, the handler does not throw (today it does, with `channelRequestId collision`) — instead it **attaches the new request envelope to the existing pending entry**, returning the existing broadcast's promise. The handler resolves once the original verdict (or cancel) arrives. No second adapter broadcast is started.
+3. **Identity scope.** Replay attachment is keyed by `(runtimeId, channelRequestId)`. Cross-runtime replay is forbidden — if a different runtime sends the same id (impossible in v1, but cheap to enforce), the coordinator returns `error: 'channel_request_owner_mismatch'`. This keeps the door open for multi-tenant.
+4. **Connection-bridge replay.** Inside `SessionBridge`, `relayPermission()` wraps the underlying `client.request(...)` in a small loop: on `GatewayProtocolError('connection closed')` (and only that), wait for the next reconnect (`requireConnectedClient()` already does this), then re-issue the same payload (same `channelRequestId`). The loop bounds itself by the user-provided `ttlMs` — once the TTL window has elapsed, it surfaces the error like today. A handful of retries is enough for a 5 s blip and bounded for a long outage.
+5. **Cancel still works.** A user-initiated cancel during the blip simply queues against the same `channelRequestId` and is resolved on the next reconnect.
+
+### Connection epochs and stale cancels / stale verdicts
+
+The gateway already tracks `binding.lastRebindAt` per runtime. R7 adds an **epoch counter** on the registry binding, incremented on every `bindConnection` rebind (both initial and re-bind). The coordinator stamps each pending entry with the epoch at which it was opened.
+
+- **Stale cancel:** `relay.*.cancel` carries an implicit epoch (the connection it arrives on). If the pending entry's epoch is **older** than the current binding epoch, the cancel is still honored — same runtime, same logical request, the runtime just had a connection blip. This is the common, expected case after replay.
+- **Stale verdict:** A verdict landing from an adapter after the request has already settled (either via a peer adapter winning the race, or via cancel) is silently dropped — already today's behavior in `settlePermission` (`if (entry.settled) return`). Replay does not change this.
+- **Cross-runtime cancel:** If a cancel arrives but the pending entry's `runtimeId` does not match the connection's bound runtime, the coordinator returns `cancelled: false`. Defends against the (currently impossible) cross-tenant case.
+- **Pending entries on full unregister.** When the grace window expires and the runtime is fully unregistered, all pending relays for that runtime are cancelled with `reason: 'connection_lost'`. New adapters and new runtimes start fresh. `RelayCoordinator.disposeAll('connection_lost')` already exists; the daemon needs to call it from the unregister path. Today it does not — that wiring is part of R7.
+
+### Integration test (added in R7)
+
+`src/app/channels/sessionBridge.integration.test.ts` (or a new `relay-replay.integration.test.ts`) gets a case that:
+
+1. Starts daemon + WS listener + a `FakeAdapter` that holds the permission promise open until told to resolve.
+2. Starts `SessionBridge` over remote WS, calls `relayPermission(...)` and awaits adapter pickup.
+3. Forcibly closes the underlying WS (`(bridge as any).client.close()`), parking the adapter promise.
+4. Asserts the bridge reconnects (`getConnectionState() === 'connected'`, binding `lastRebindAt` set) without the adapter being re-prompted.
+5. Resolves the adapter promise; the original `relayPermission()` await **completes successfully** (verdict propagates through the rebound connection) and the result carries the original `channelRequestId`.
+6. Asserts the adapter received exactly one `requestPermissionVerdict` call across the whole scenario — proving "rebroadcast" means "deliver the existing pending verdict", not "broadcast twice".
+
+### Out of scope for R7
+
+- Persisting pending relays through a daemon restart. The grace window is process-lifetime only; a daemon crash drops pending relays. Documented under "Risks #7" in the original plan.
+- Multi-runtime cross-talk on relays. v1 stays single-runtime; the runtime-scoping above is forward-compatible only.
+- Replaying `relay.*.cancel` after a full unregister. Once the grace window expires, relays are gone and cancels return `cancelled: false`.
 
 ## Status (original plan, 2026-05-02)
 

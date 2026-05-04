@@ -58,6 +58,7 @@ class FakeAdapter implements ChannelAdapter {
 	private ctx: AdapterContext | null = null;
 	sentMessages: OutboundMessage[] = [];
 	pendingPermission: ((res: PermissionRelayResult) => void) | null = null;
+	permissionCallCount = 0;
 
 	async start(ctx: AdapterContext): Promise<void> {
 		this.ctx = ctx;
@@ -77,6 +78,7 @@ class FakeAdapter implements ChannelAdapter {
 		_req: PermissionRelayRequest,
 		signal: AbortSignal,
 	): Promise<PermissionRelayResult> {
+		this.permissionCallCount += 1;
 		return new Promise(resolve => {
 			this.pendingPermission = resolve;
 			signal.addEventListener('abort', () => {
@@ -458,6 +460,64 @@ describe('SessionBridge integration', () => {
 				idempotencyKey: 'k1',
 			}),
 		).rejects.toThrow(/already_registered/);
+	}, 15_000);
+
+	it('rebroadcasts an in-flight permission relay across a WS reconnect', async () => {
+		daemon = await startDaemon({
+			foreground: true,
+			silent: true,
+			paths,
+			skipSignalHandlers: true,
+			skipChannelLoad: true,
+			disconnectGracePeriodMs: 5_000,
+			listenSpec: {
+				kind: 'tcp',
+				host: '127.0.0.1',
+				port: 0,
+				insecure: false,
+			},
+		});
+		const adapter = new FakeAdapter();
+		await daemon.channelManager.register(adapter);
+		const token = fs.readFileSync(paths.tokenPath, 'utf-8').trim();
+
+		bridge = new SessionBridge({
+			runtimeId: 'relay-replay-1',
+			defaultAgentId: 'main',
+			endpoint: {mode: 'remote', url: daemon.listener.url!, token},
+			backoffMs: [50, 100],
+		});
+		await bridge.start();
+
+		const relayPromise = bridge.relayPermission({
+			toolName: 'Bash',
+			description: 'list files',
+			inputPreview: 'ls',
+			ttlMs: 30_000,
+		});
+
+		// Wait for the adapter to receive the prompt — the relay broadcast has
+		// reached the server side.
+		await waitUntil(() => adapter.pendingPermission !== null);
+		expect(adapter.permissionCallCount).toBe(1);
+
+		// Drop the WS mid-relay. The server-side broadcast survives in the
+		// coordinator (within the grace window); the bridge must reconnect and
+		// re-attach to the existing pending entry by reusing channelRequestId.
+		(bridge as unknown as {client: {close: () => void}}).client.close();
+		await waitUntil(() => {
+			const b = daemon!.registry.getBinding();
+			return b?.state === 'active' && b.lastRebindAt !== undefined;
+		}, 3_000);
+
+		// Verdict arrives now (after reconnect). Original relayPromise must
+		// resolve with it; adapter must not have been re-prompted.
+		adapter.pendingPermission!({kind: 'verdict', behavior: 'allow'});
+		const res = await relayPromise;
+
+		expect(res.result).toMatchObject({kind: 'verdict', behavior: 'allow'});
+		expect(res.channelRequestId).toMatch(/^[a-km-z]{5}$/);
+		expect(adapter.permissionCallCount).toBe(1);
 	}, 15_000);
 
 	it('cancelRelayPermission short-circuits a pending request', async () => {

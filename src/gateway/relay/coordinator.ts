@@ -51,6 +51,7 @@ type PendingPermissionEntry = {
 	controllers: AbortController[];
 	timer: NodeJS.Timeout;
 	resolve: (result: PermissionRelayResult) => void;
+	result: Promise<PermissionRelayResult>;
 	settled: boolean;
 };
 
@@ -60,6 +61,7 @@ type PendingQuestionEntry = {
 	controllers: AbortController[];
 	timer: NodeJS.Timeout;
 	resolve: (result: QuestionRelayResult) => void;
+	result: Promise<QuestionRelayResult>;
 	settled: boolean;
 };
 
@@ -108,10 +110,14 @@ export class RelayCoordinator {
 				result: Promise.resolve({kind: 'no_relay'}),
 			};
 		}
-		if (this.pending.has(channelRequestId)) {
-			throw new Error(
-				`relay coordinator: channelRequestId collision: ${channelRequestId}`,
-			);
+		const existing = this.pending.get(channelRequestId);
+		if (existing) {
+			if (existing.kind !== 'permission') {
+				throw new Error(
+					`relay coordinator: channelRequestId ${channelRequestId} is bound to a question relay`,
+				);
+			}
+			return {channelRequestId, result: existing.result};
 		}
 
 		const controllers = targets.map(() => new AbortController());
@@ -130,10 +136,12 @@ export class RelayCoordinator {
 				controllers,
 				timer,
 				resolve,
+				result: undefined as unknown as Promise<PermissionRelayResult>,
 				settled: false,
 			};
 			this.pending.set(channelRequestId, entry);
 		});
+		entry!.result = result;
 
 		const fullReq: PermissionRelayRequest = {
 			channelRequestId,
@@ -186,10 +194,14 @@ export class RelayCoordinator {
 				result: Promise.resolve({kind: 'no_relay'}),
 			};
 		}
-		if (this.pending.has(channelRequestId)) {
-			throw new Error(
-				`relay coordinator: channelRequestId collision: ${channelRequestId}`,
-			);
+		const existing = this.pending.get(channelRequestId);
+		if (existing) {
+			if (existing.kind !== 'question') {
+				throw new Error(
+					`relay coordinator: channelRequestId ${channelRequestId} is bound to a permission relay`,
+				);
+			}
+			return {channelRequestId, result: existing.result};
 		}
 
 		const controllers = targets.map(() => new AbortController());
@@ -208,10 +220,12 @@ export class RelayCoordinator {
 				controllers,
 				timer,
 				resolve,
+				result: undefined as unknown as Promise<QuestionRelayResult>,
 				settled: false,
 			};
 			this.pending.set(channelRequestId, entry);
 		});
+		entry!.result = result;
 
 		const fullReq: QuestionRelayRequest = {
 			channelRequestId,
