@@ -270,6 +270,9 @@ export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 						} catch {
 							// already unregistered
 						}
+						// Single-runtime v1: blanket dispose is safe. Multi-runtime
+						// must scope this to the disconnecting runtime via
+						// disposeAllForRuntime(runtimeId, reason).
 						relayCoordinator.disposeAll('connection_lost');
 						return;
 					}
@@ -286,6 +289,8 @@ export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 							} catch {
 								// already unregistered
 							}
+							// Single-runtime v1: blanket dispose is safe. Multi-runtime
+							// must scope this to runtimeId.
 							relayCoordinator.disposeAll('connection_lost');
 						}
 					}, disconnectGracePeriodMs);

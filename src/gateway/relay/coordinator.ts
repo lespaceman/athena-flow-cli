@@ -128,6 +128,11 @@ export class RelayCoordinator {
 					`channel_request_id_collision: ${channelRequestId} payload mismatch`,
 				);
 			}
+			if (existing.runtimeId !== req.runtimeId) {
+				throw new Error(
+					`channel_request_owner_mismatch: ${channelRequestId} owned by a different runtime`,
+				);
+			}
 			return {channelRequestId, result: existing.result};
 		}
 
@@ -219,6 +224,11 @@ export class RelayCoordinator {
 			if (existing.fingerprint !== fingerprint) {
 				throw new Error(
 					`channel_request_id_collision: ${channelRequestId} payload mismatch`,
+				);
+			}
+			if (existing.runtimeId !== req.runtimeId) {
+				throw new Error(
+					`channel_request_owner_mismatch: ${channelRequestId} owned by a different runtime`,
 				);
 			}
 			return {channelRequestId, result: existing.result};

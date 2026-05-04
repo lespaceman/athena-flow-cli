@@ -227,6 +227,139 @@ describe('RelayCoordinator', () => {
 		).toThrow(/channel_request_id_collision/);
 	});
 
+	it('duplicate attach with matching runtime ownership succeeds', async () => {
+		const adapter = makeAdapter('a', {
+			permission: (_req, signal) =>
+				new Promise(resolve =>
+					signal.addEventListener('abort', () =>
+						resolve({kind: 'cancelled', reason: 'resolved_locally'}),
+					),
+				),
+		});
+		const coord = new RelayCoordinator({adapters: () => [adapter]});
+		const first = coord.requestPermission({
+			channelRequestId: 'abcde',
+			runtimeId: 'r1',
+			toolName: 'Bash',
+			description: 'ls',
+			inputPreview: 'ls',
+		});
+		await Promise.resolve();
+		const second = coord.requestPermission({
+			channelRequestId: 'abcde',
+			runtimeId: 'r1',
+			toolName: 'Bash',
+			description: 'ls',
+			inputPreview: 'ls',
+		});
+		expect(second.result).toBe(first.result);
+		expect(coord.pendingCount()).toBe(1);
+	});
+
+	it('duplicate attach rejects when caller runtime differs', async () => {
+		const adapter = makeAdapter('a', {
+			permission: (_req, _signal) => new Promise(() => {}),
+		});
+		const coord = new RelayCoordinator({adapters: () => [adapter]});
+		coord.requestPermission({
+			channelRequestId: 'abcde',
+			runtimeId: 'r1',
+			toolName: 'Bash',
+			description: 'ls',
+			inputPreview: 'ls',
+		});
+		expect(() =>
+			coord.requestPermission({
+				channelRequestId: 'abcde',
+				runtimeId: 'r2',
+				toolName: 'Bash',
+				description: 'ls',
+				inputPreview: 'ls',
+			}),
+		).toThrow(/channel_request_owner_mismatch/);
+	});
+
+	it('duplicate attach rejects when caller runtime is missing on a runtime-owned entry', async () => {
+		const adapter = makeAdapter('a', {
+			permission: (_req, _signal) => new Promise(() => {}),
+		});
+		const coord = new RelayCoordinator({adapters: () => [adapter]});
+		coord.requestPermission({
+			channelRequestId: 'abcde',
+			runtimeId: 'r1',
+			toolName: 'Bash',
+			description: 'ls',
+			inputPreview: 'ls',
+		});
+		expect(() =>
+			coord.requestPermission({
+				channelRequestId: 'abcde',
+				toolName: 'Bash',
+				description: 'ls',
+				inputPreview: 'ls',
+			}),
+		).toThrow(/channel_request_owner_mismatch/);
+	});
+
+	it('duplicate attach rejects when entry has no runtime but caller does', async () => {
+		const adapter = makeAdapter('a', {
+			permission: (_req, _signal) => new Promise(() => {}),
+		});
+		const coord = new RelayCoordinator({adapters: () => [adapter]});
+		coord.requestPermission({
+			channelRequestId: 'abcde',
+			toolName: 'Bash',
+			description: 'ls',
+			inputPreview: 'ls',
+		});
+		expect(() =>
+			coord.requestPermission({
+				channelRequestId: 'abcde',
+				runtimeId: 'r1',
+				toolName: 'Bash',
+				description: 'ls',
+				inputPreview: 'ls',
+			}),
+		).toThrow(/channel_request_owner_mismatch/);
+	});
+
+	it('duplicate question attach rejects when runtime ownership mismatches', async () => {
+		const adapter = makeAdapter('a', {
+			question: (_req, _signal) => new Promise(() => {}),
+		});
+		const coord = new RelayCoordinator({adapters: () => [adapter]});
+		coord.requestQuestion({
+			channelRequestId: 'qzzz',
+			runtimeId: 'r1',
+			title: 'pick',
+			questions: [
+				{
+					key: 'q',
+					header: 'h',
+					question: 'q?',
+					multi_select: false,
+					options: [],
+				},
+			],
+		});
+		expect(() =>
+			coord.requestQuestion({
+				channelRequestId: 'qzzz',
+				runtimeId: 'r2',
+				title: 'pick',
+				questions: [
+					{
+						key: 'q',
+						header: 'h',
+						question: 'q?',
+						multi_select: false,
+						options: [],
+					},
+				],
+			}),
+		).toThrow(/channel_request_owner_mismatch/);
+	});
+
 	it('duplicate channelRequestId across kinds rejects', async () => {
 		const dualAdapter = makeAdapter('a', {
 			permission: (_req, _signal) => new Promise(() => {}),

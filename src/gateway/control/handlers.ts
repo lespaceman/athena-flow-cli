@@ -226,6 +226,14 @@ export function createDispatcher(deps: DispatcherDeps): RequestHandler {
 				const callerRuntimeId =
 					deps.registry?.getRuntimeIdByConnection(connection.connectionId) ??
 					undefined;
+				if (deps.registry && callerRuntimeId === undefined) {
+					return error(
+						envelope,
+						ts,
+						'not_registered',
+						'relay.permission.request requires a registered runtime connection',
+					);
+				}
 				const broadcast = deps.relayCoordinator.requestPermission({
 					...(req.channelRequestId !== undefined
 						? {channelRequestId: req.channelRequestId}
@@ -257,6 +265,14 @@ export function createDispatcher(deps: DispatcherDeps): RequestHandler {
 				const callerRuntimeId =
 					deps.registry?.getRuntimeIdByConnection(connection.connectionId) ??
 					undefined;
+				if (deps.registry && callerRuntimeId === undefined) {
+					return error(
+						envelope,
+						ts,
+						'not_registered',
+						'relay.permission.cancel requires a registered runtime connection',
+					);
+				}
 				const cancelled = deps.relayCoordinator.cancel(
 					req.channelRequestId,
 					req.reason,
@@ -277,6 +293,14 @@ export function createDispatcher(deps: DispatcherDeps): RequestHandler {
 				const callerRuntimeId =
 					deps.registry?.getRuntimeIdByConnection(connection.connectionId) ??
 					undefined;
+				if (deps.registry && callerRuntimeId === undefined) {
+					return error(
+						envelope,
+						ts,
+						'not_registered',
+						'relay.question.request requires a registered runtime connection',
+					);
+				}
 				const broadcast = deps.relayCoordinator.requestQuestion({
 					...(req.channelRequestId !== undefined
 						? {channelRequestId: req.channelRequestId}
@@ -307,6 +331,14 @@ export function createDispatcher(deps: DispatcherDeps): RequestHandler {
 				const callerRuntimeId =
 					deps.registry?.getRuntimeIdByConnection(connection.connectionId) ??
 					undefined;
+				if (deps.registry && callerRuntimeId === undefined) {
+					return error(
+						envelope,
+						ts,
+						'not_registered',
+						'relay.question.cancel requires a registered runtime connection',
+					);
+				}
 				const cancelled = deps.relayCoordinator.cancel(
 					req.channelRequestId,
 					req.reason,
