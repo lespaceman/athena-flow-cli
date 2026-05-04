@@ -41,6 +41,7 @@ import {resolveInteractiveSession} from './interactiveSession';
 import {runWorkflowCommand} from './workflowCommand';
 import {runMarketplaceCommand} from './marketplaceCommand';
 import {runChannelCommand} from './channelCommand';
+import {runDashboardCommand} from './dashboardCommand';
 import {runGatewayCommand} from './gatewayCommand';
 import {runDoctorCommand} from './doctorCommand';
 import {resolveWorkflowInstall} from '../../infra/plugins/marketplace';
@@ -82,6 +83,7 @@ const KNOWN_COMMANDS = new Set([
 	'marketplace',
 	'channel',
 	'gateway',
+	'dashboard',
 	'telemetry',
 	'doctor',
 ]);
@@ -224,6 +226,7 @@ const cli = meow(
 			workflow <sub>        Manage workflows (install, list, search, remove, upgrade, use)
 			marketplace <sub>     Manage marketplace sources (add, remove, list)
 			channel <sub>         Manage external channels
+			dashboard <sub>       Manage dashboard remote-instance pairing (pair, status, refresh, unpair)
 			telemetry [action]    Manage anonymous telemetry (enable/disable/status)
 			doctor                Diagnose Claude headless setup (use with --harness=claude)
 
@@ -251,6 +254,8 @@ const cli = meow(
 			--user-id       Telegram allowed user id (channel telegram configure)
 			--chat-id       Telegram destination chat id (defaults to --user-id)
 			--token         Gateway link token (gateway link)
+			--url           Dashboard origin (dashboard pair)
+			--name          Friendly machine name (dashboard pair)
 			--tls-ca        Gateway custom CA path (gateway link)
 			--tls-cert      Gateway TLS certificate path (gateway start)
 			--tls-key       Gateway TLS private key path (gateway start)
@@ -361,6 +366,12 @@ const cli = meow(
 				type: 'string',
 			},
 			token: {
+				type: 'string',
+			},
+			url: {
+				type: 'string',
+			},
+			name: {
 				type: 'string',
 			},
 			tlsCa: {
@@ -543,6 +554,22 @@ async function main(): Promise<void> {
 			subcommandArgs.push('--grace-period-ms', String(cli.flags.gracePeriodMs));
 		}
 		await exitWith(await runGatewayCommand({subcommand, subcommandArgs}));
+		return;
+	}
+
+	if (command === 'dashboard') {
+		const [subcommand = '', ...subcommandArgs] = commandArgs;
+		await exitWith(
+			await runDashboardCommand({
+				subcommand,
+				subcommandArgs,
+				flags: {
+					url: typeof cli.flags.url === 'string' ? cli.flags.url : undefined,
+					name: typeof cli.flags.name === 'string' ? cli.flags.name : undefined,
+					json: Boolean(cli.flags.json),
+				},
+			}),
+		);
 		return;
 	}
 

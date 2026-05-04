@@ -2,6 +2,7 @@ import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 const renderMock = vi.fn();
 const runExecMock = vi.fn();
+const runDashboardMock = vi.fn();
 const bootstrapRuntimeConfigMock = vi.fn();
 const readConfigMock = vi.fn();
 const readGlobalConfigMock = vi.fn();
@@ -83,6 +84,10 @@ vi.mock('../../infra/sessions/index', () => ({
 
 vi.mock('../../setup/shouldShowSetup', () => ({
 	shouldShowSetup: shouldShowSetupMock,
+}));
+
+vi.mock('./dashboardCommand', () => ({
+	runDashboardCommand: runDashboardMock,
 }));
 
 vi.mock('../exec', () => ({
@@ -212,6 +217,8 @@ describe('cli exec mode', () => {
 		bootstrapRuntimeConfigMock.mockReturnValue(BASE_RUNTIME_BOOTSTRAP);
 		resolveThemeMock.mockReturnValue({name: 'dark'});
 		runExecMock.mockResolvedValue({exitCode: EXEC_EXIT_CODE.SUCCESS});
+		runDashboardMock.mockReset();
+		runDashboardMock.mockResolvedValue(0);
 	});
 
 	afterEach(() => {
@@ -483,6 +490,46 @@ describe('cli exec mode', () => {
 			expect(cli.errorSpy).toHaveBeenCalledWith(
 				expect.stringContaining('--dry-run is only supported in exec mode'),
 			);
+		} finally {
+			cli.restore();
+		}
+	});
+
+	it('routes dashboard pair through runDashboardCommand with url/name flags', async () => {
+		const cli = await runCli([
+			'dashboard',
+			'pair',
+			'tok_1',
+			'--url',
+			'http://localhost:5173',
+			'--name',
+			'macbook',
+		]);
+		try {
+			expect(runDashboardMock).toHaveBeenCalledTimes(1);
+			expect(runDashboardMock).toHaveBeenCalledWith({
+				subcommand: 'pair',
+				subcommandArgs: ['tok_1'],
+				flags: {
+					url: 'http://localhost:5173',
+					name: 'macbook',
+					json: false,
+				},
+			});
+			expect(cli.exitSpy).toHaveBeenCalledWith(0);
+		} finally {
+			cli.restore();
+		}
+	});
+
+	it('forwards --json to runDashboardCommand', async () => {
+		const cli = await runCli(['dashboard', 'status', '--json']);
+		try {
+			expect(runDashboardMock).toHaveBeenCalledWith({
+				subcommand: 'status',
+				subcommandArgs: [],
+				flags: {url: undefined, name: undefined, json: true},
+			});
 		} finally {
 			cli.restore();
 		}
