@@ -121,27 +121,27 @@ export class RelayCoordinator {
 		}
 
 		const controllers = targets.map(() => new AbortController());
-		let entry: PendingPermissionEntry;
+		let resolveFn!: (result: PermissionRelayResult) => void;
 		const result = new Promise<PermissionRelayResult>(resolve => {
-			const timer = setTimeout(() => {
-				this.settlePermission(channelRequestId, {
-					kind: 'cancelled',
-					reason: 'timeout',
-				});
-			}, ttlMs);
-			if (typeof timer.unref === 'function') timer.unref();
-			entry = {
-				kind: 'permission',
-				channelRequestId,
-				controllers,
-				timer,
-				resolve,
-				result: undefined as unknown as Promise<PermissionRelayResult>,
-				settled: false,
-			};
-			this.pending.set(channelRequestId, entry);
+			resolveFn = resolve;
 		});
-		entry!.result = result;
+		const timer = setTimeout(() => {
+			this.settlePermission(channelRequestId, {
+				kind: 'cancelled',
+				reason: 'timeout',
+			});
+		}, ttlMs);
+		if (typeof timer.unref === 'function') timer.unref();
+		const entry: PendingPermissionEntry = {
+			kind: 'permission',
+			channelRequestId,
+			controllers,
+			timer,
+			resolve: resolveFn,
+			result,
+			settled: false,
+		};
+		this.pending.set(channelRequestId, entry);
 
 		const fullReq: PermissionRelayRequest = {
 			channelRequestId,
@@ -205,27 +205,27 @@ export class RelayCoordinator {
 		}
 
 		const controllers = targets.map(() => new AbortController());
-		let entry: PendingQuestionEntry;
+		let resolveFn!: (result: QuestionRelayResult) => void;
 		const result = new Promise<QuestionRelayResult>(resolve => {
-			const timer = setTimeout(() => {
-				this.settleQuestion(channelRequestId, {
-					kind: 'cancelled',
-					reason: 'timeout',
-				});
-			}, ttlMs);
-			if (typeof timer.unref === 'function') timer.unref();
-			entry = {
-				kind: 'question',
-				channelRequestId,
-				controllers,
-				timer,
-				resolve,
-				result: undefined as unknown as Promise<QuestionRelayResult>,
-				settled: false,
-			};
-			this.pending.set(channelRequestId, entry);
+			resolveFn = resolve;
 		});
-		entry!.result = result;
+		const timer = setTimeout(() => {
+			this.settleQuestion(channelRequestId, {
+				kind: 'cancelled',
+				reason: 'timeout',
+			});
+		}, ttlMs);
+		if (typeof timer.unref === 'function') timer.unref();
+		const entry: PendingQuestionEntry = {
+			kind: 'question',
+			channelRequestId,
+			controllers,
+			timer,
+			resolve: resolveFn,
+			result,
+			settled: false,
+		};
+		this.pending.set(channelRequestId, entry);
 
 		const fullReq: QuestionRelayRequest = {
 			channelRequestId,

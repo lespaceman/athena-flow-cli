@@ -133,7 +133,9 @@ export async function connect(
 	connection.onClose(() => {
 		for (const [, p] of pending) {
 			clearTimeout(p.timer);
-			p.reject(new GatewayProtocolError('connection closed'));
+			p.reject(
+				new GatewayProtocolError('connection closed', 'connection_closed'),
+			);
 		}
 		pending.clear();
 		for (const cb of closeSubs) {

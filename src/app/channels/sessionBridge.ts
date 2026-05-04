@@ -312,13 +312,17 @@ export class SessionBridge {
 			} catch (err) {
 				if (
 					err instanceof GatewayProtocolError &&
-					err.message === 'connection closed' &&
+					err.code === 'connection_closed' &&
 					!this.stopped &&
 					Date.now() < deadline
 				) {
 					writeGatewayTrace(
 						`sessionBridge relay retry kind=${kind} runtimeId=${this.opts.runtimeId}`,
 					);
+					// Yield so the client's onClose handler runs and primes
+					// `this.reconnecting` before the next requireConnectedClient call;
+					// otherwise we could spin against a stale closed client.
+					await new Promise(r => setImmediate(r));
 					continue;
 				}
 				throw err;

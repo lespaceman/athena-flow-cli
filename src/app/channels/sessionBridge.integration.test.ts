@@ -496,22 +496,15 @@ describe('SessionBridge integration', () => {
 			ttlMs: 30_000,
 		});
 
-		// Wait for the adapter to receive the prompt — the relay broadcast has
-		// reached the server side.
 		await waitUntil(() => adapter.pendingPermission !== null);
 		expect(adapter.permissionCallCount).toBe(1);
 
-		// Drop the WS mid-relay. The server-side broadcast survives in the
-		// coordinator (within the grace window); the bridge must reconnect and
-		// re-attach to the existing pending entry by reusing channelRequestId.
 		(bridge as unknown as {client: {close: () => void}}).client.close();
 		await waitUntil(() => {
 			const b = daemon!.registry.getBinding();
 			return b?.state === 'active' && b.lastRebindAt !== undefined;
 		}, 3_000);
 
-		// Verdict arrives now (after reconnect). Original relayPromise must
-		// resolve with it; adapter must not have been re-prompted.
 		adapter.pendingPermission!({kind: 'verdict', behavior: 'allow'});
 		const res = await relayPromise;
 
