@@ -171,6 +171,91 @@ describe('RelayCoordinator', () => {
 		});
 	});
 
+	it('duplicate channelRequestId with matching payload attaches and does not rebroadcast', async () => {
+		let calls = 0;
+		const adapter = makeAdapter('a', {
+			permission: (_req, signal) => {
+				calls += 1;
+				return new Promise(resolve => {
+					signal.addEventListener('abort', () =>
+						resolve({kind: 'cancelled', reason: 'resolved_locally'}),
+					);
+				});
+			},
+		});
+		const coord = new RelayCoordinator({adapters: () => [adapter]});
+		const first = coord.requestPermission({
+			channelRequestId: 'abcde',
+			toolName: 'Bash',
+			description: 'ls',
+			inputPreview: 'ls',
+		});
+		// Allow the first broadcast to dispatch to the adapter before the
+		// duplicate attaches; the adapter callback is invoked via a
+		// Promise.resolve().then(...) hop.
+		await Promise.resolve();
+		const second = coord.requestPermission({
+			channelRequestId: 'abcde',
+			toolName: 'Bash',
+			description: 'ls',
+			inputPreview: 'ls',
+		});
+		expect(second.channelRequestId).toBe('abcde');
+		expect(second.result).toBe(first.result);
+		expect(calls).toBe(1);
+		expect(coord.pendingCount()).toBe(1);
+	});
+
+	it('duplicate channelRequestId with different payload throws collision', async () => {
+		const adapter = makeAdapter('a', {
+			permission: (_req, _signal) => new Promise(() => {}),
+		});
+		const coord = new RelayCoordinator({adapters: () => [adapter]});
+		coord.requestPermission({
+			channelRequestId: 'abcde',
+			toolName: 'Bash',
+			description: 'ls',
+			inputPreview: 'ls',
+		});
+		expect(() =>
+			coord.requestPermission({
+				channelRequestId: 'abcde',
+				toolName: 'Bash',
+				description: 'rm',
+				inputPreview: 'rm -rf /',
+			}),
+		).toThrow(/channel_request_id_collision/);
+	});
+
+	it('duplicate channelRequestId across kinds rejects', async () => {
+		const dualAdapter = makeAdapter('a', {
+			permission: (_req, _signal) => new Promise(() => {}),
+			question: (_req, _signal) => new Promise(() => {}),
+		});
+		const coord = new RelayCoordinator({adapters: () => [dualAdapter]});
+		coord.requestPermission({
+			channelRequestId: 'abcde',
+			toolName: 'Bash',
+			description: 'ls',
+			inputPreview: 'ls',
+		});
+		expect(() =>
+			coord.requestQuestion({
+				channelRequestId: 'abcde',
+				title: 'pick',
+				questions: [
+					{
+						key: 'q',
+						header: 'h',
+						question: 'q?',
+						multi_select: false,
+						options: [],
+					},
+				],
+			}),
+		).toThrow(/channel_request_id_collision/);
+	});
+
 	it('disposeAll cancels every pending entry', async () => {
 		const adapter = makeAdapter('a', {
 			permission: (_req, signal) =>

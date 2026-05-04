@@ -48,6 +48,7 @@ export type RelayCoordinatorOptions = {
 type PendingPermissionEntry = {
 	kind: 'permission';
 	channelRequestId: string;
+	fingerprint: string;
 	controllers: AbortController[];
 	timer: NodeJS.Timeout;
 	resolve: (result: PermissionRelayResult) => void;
@@ -58,6 +59,7 @@ type PendingPermissionEntry = {
 type PendingQuestionEntry = {
 	kind: 'question';
 	channelRequestId: string;
+	fingerprint: string;
 	controllers: AbortController[];
 	timer: NodeJS.Timeout;
 	resolve: (result: QuestionRelayResult) => void;
@@ -110,11 +112,17 @@ export class RelayCoordinator {
 				result: Promise.resolve({kind: 'no_relay'}),
 			};
 		}
+		const fingerprint = permissionFingerprint(req);
 		const existing = this.pending.get(channelRequestId);
 		if (existing) {
 			if (existing.kind !== 'permission') {
 				throw new Error(
-					`relay coordinator: channelRequestId ${channelRequestId} is bound to a question relay`,
+					`channel_request_id_collision: ${channelRequestId} is bound to a question relay`,
+				);
+			}
+			if (existing.fingerprint !== fingerprint) {
+				throw new Error(
+					`channel_request_id_collision: ${channelRequestId} payload mismatch`,
 				);
 			}
 			return {channelRequestId, result: existing.result};
@@ -135,6 +143,7 @@ export class RelayCoordinator {
 		const entry: PendingPermissionEntry = {
 			kind: 'permission',
 			channelRequestId,
+			fingerprint,
 			controllers,
 			timer,
 			resolve: resolveFn,
@@ -194,11 +203,17 @@ export class RelayCoordinator {
 				result: Promise.resolve({kind: 'no_relay'}),
 			};
 		}
+		const fingerprint = questionFingerprint(req);
 		const existing = this.pending.get(channelRequestId);
 		if (existing) {
 			if (existing.kind !== 'question') {
 				throw new Error(
-					`relay coordinator: channelRequestId ${channelRequestId} is bound to a permission relay`,
+					`channel_request_id_collision: ${channelRequestId} is bound to a permission relay`,
+				);
+			}
+			if (existing.fingerprint !== fingerprint) {
+				throw new Error(
+					`channel_request_id_collision: ${channelRequestId} payload mismatch`,
 				);
 			}
 			return {channelRequestId, result: existing.result};
@@ -219,6 +234,7 @@ export class RelayCoordinator {
 		const entry: PendingQuestionEntry = {
 			kind: 'question',
 			channelRequestId,
+			fingerprint,
 			controllers,
 			timer,
 			resolve: resolveFn,
@@ -308,4 +324,19 @@ export class RelayCoordinator {
 		}
 		entry.resolve(result);
 	}
+}
+
+function permissionFingerprint(req: {
+	toolName: string;
+	description: string;
+	inputPreview: string;
+}): string {
+	return JSON.stringify([req.toolName, req.description, req.inputPreview]);
+}
+
+function questionFingerprint(req: {
+	title: string;
+	questions: QuestionRelayRequest['questions'];
+}): string {
+	return JSON.stringify([req.title, req.questions]);
 }
