@@ -130,6 +130,55 @@ describe('runGatewayCommand', () => {
 		expect(cap.err.join('\n')).toContain('--tls-ca requires a path');
 	});
 
+	it('rotate-token rejects extra positional arguments', async () => {
+		const cap = captureLogs();
+		const code = await runGatewayCommand(
+			{subcommand: 'rotate-token', subcommandArgs: ['oops']},
+			cap.baseDeps,
+		);
+		expect(code).toBe(2);
+		expect(cap.err.join('\n')).toContain('unexpected argument');
+	});
+
+	it('rotate-token writes a new 0600 token file and prints it', async () => {
+		const cap = captureLogs();
+		const paths = tmpPaths();
+		fs.mkdirSync(paths.configDir, {recursive: true, mode: 0o700});
+		fs.writeFileSync(paths.tokenPath, 'old-token-1234567890123456\n', {
+			mode: 0o600,
+		});
+		const code = await runGatewayCommand(
+			{subcommand: 'rotate-token', subcommandArgs: []},
+			{...cap.baseDeps, resolveTokenPath: () => paths.tokenPath},
+		);
+		expect(code).toBe(0);
+		const fileContents = fs.readFileSync(paths.tokenPath, 'utf-8').trim();
+		expect(fileContents).not.toEqual('old-token-1234567890123456');
+		expect(fileContents.length).toBeGreaterThanOrEqual(16);
+		expect(cap.out.join('\n')).toContain(fileContents);
+		expect(cap.out.join('\n')).toContain('Restart the daemon');
+		if (process.platform !== 'win32') {
+			expect(fs.statSync(paths.tokenPath).mode & 0o777).toBe(0o600);
+		}
+		fs.rmSync(path.dirname(paths.runDir), {recursive: true, force: true});
+	});
+
+	it('rotate-token --json emits structured payload', async () => {
+		const cap = captureLogs();
+		const paths = tmpPaths();
+		const code = await runGatewayCommand(
+			{subcommand: 'rotate-token', subcommandArgs: ['--json']},
+			{...cap.baseDeps, resolveTokenPath: () => paths.tokenPath},
+		);
+		expect(code).toBe(0);
+		const parsed = JSON.parse(cap.out[0]!);
+		expect(parsed.ok).toBe(true);
+		expect(parsed.tokenPath).toBe(paths.tokenPath);
+		expect(typeof parsed.token).toBe('string');
+		expect(parsed.token.length).toBeGreaterThanOrEqual(16);
+		fs.rmSync(path.dirname(paths.runDir), {recursive: true, force: true});
+	});
+
 	it('unlink rewrites gateway endpoint config to local mode', async () => {
 		const cap = captureLogs();
 		let written: RuntimeEndpoint | undefined;

@@ -9,6 +9,7 @@ import {
 	GatewayUnauthorizedError,
 	GatewayUnreachableError,
 } from '../../gateway/control/client';
+import {rotateGatewayToken} from '../../gateway/auth';
 import {resolveGatewayPaths} from '../../gateway/paths';
 import {
 	createWsClientTransport,
@@ -37,6 +38,9 @@ Subcommands:
   probe     Send a ping RPC and report reachability + latency.
   link      Store a remote WS/WSS gateway endpoint for this user.
   unlink    Restore local UDS gateway mode for this user.
+  rotate-token  Regenerate the gateway token file (server-side).
+                Restart the daemon to drop existing connections; clients
+                must re-run "athena gateway link --token <new>".
 `;
 
 export type GatewayCommandInput = {
@@ -148,6 +152,36 @@ export async function runGatewayCommand(
 		});
 		logOut(`gateway: linked remote endpoint ${parsed.url}`);
 		return 0;
+	}
+
+	if (subcommand === 'rotate-token') {
+		const json = flagJson(subcommandArgs);
+		const extras = subcommandArgs.filter(a => a !== '--json');
+		if (extras.length > 0) {
+			logError(`gateway rotate-token: unexpected argument ${extras[0]}`);
+			return 2;
+		}
+		const tokenPath = resolveTokenPath();
+		try {
+			const newToken = rotateGatewayToken(tokenPath);
+			if (json) {
+				logOut(JSON.stringify({ok: true, token: newToken, tokenPath}));
+			} else {
+				logOut(newToken);
+				logOut(
+					`gateway: rotated token at ${tokenPath}. Restart the daemon to drop existing connections, then re-run "athena gateway link --token <new>" on each client.`,
+				);
+			}
+			return 0;
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			if (json) {
+				logOut(JSON.stringify({ok: false, message}));
+			} else {
+				logError(`gateway rotate-token: ${message}`);
+			}
+			return 1;
+		}
 	}
 
 	if (subcommand === 'unlink') {

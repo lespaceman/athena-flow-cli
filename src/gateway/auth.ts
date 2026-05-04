@@ -28,11 +28,33 @@ export function loadOrCreateToken(tokenPath: string): string {
 		if (code !== 'ENOENT') throw err;
 	}
 
-	fs.mkdirSync(path.dirname(tokenPath), {recursive: true, mode: 0o700});
+	return writeNewToken(tokenPath);
+}
+
+export function rotateGatewayToken(tokenPath: string): string {
+	return writeNewToken(tokenPath);
+}
+
+function writeNewToken(tokenPath: string): string {
+	const dir = path.dirname(tokenPath);
+	fs.mkdirSync(dir, {recursive: true, mode: 0o700});
 	const token = crypto.randomBytes(TOKEN_BYTES).toString('base64url');
-	fs.writeFileSync(tokenPath, token + '\n', {mode: 0o600});
+	const tmpPath = `${tokenPath}.tmp-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
+	fs.writeFileSync(tmpPath, token + '\n', {mode: 0o600});
+	try {
+		fs.renameSync(tmpPath, tokenPath);
+	} catch (err) {
+		try {
+			fs.unlinkSync(tmpPath);
+		} catch {
+			// best-effort
+		}
+		throw err;
+	}
+	// mkdirSync/writeFileSync modes are umask-masked; enforce perms even if
+	// the dir or file already existed with looser bits.
 	if (process.platform !== 'win32') {
-		fs.chmodSync(path.dirname(tokenPath), 0o700);
+		fs.chmodSync(dir, 0o700);
 		fs.chmodSync(tokenPath, 0o600);
 	}
 	return token;
