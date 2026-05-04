@@ -329,31 +329,120 @@ export class ConsoleAdapter implements ChannelAdapter {
 		// Most frame kinds (hello/ready/error/ack/cancel/outbound/request) are
 		// not produced broker→adapter, or are consumed by the broker client
 		// itself before reaching this handler. We intentionally only react to
-		// the handful of kinds that drive adapter state.
+		// the handful of kinds that drive adapter state — and validate each
+		// one at this trust boundary. The broker is partially trusted
+		// (authenticated WSS), but a buggy or compromised broker must not be
+		// able to inject malformed verdicts/answers into the relay
+		// coordinator.
 		// eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check
 		switch (frame.kind) {
-			case 'console.message.in': {
-				const inbound = normalizeInbound(frame, this.opts.runnerId);
-				if (!inbound || !this.ctx) return;
-				try {
-					this.ctx.emitInbound(inbound);
-				} catch (err) {
-					this.ctx.log(
-						'warn',
-						`console emitInbound threw: ${err instanceof Error ? err.message : String(err)}`,
-					);
-				}
+			case 'console.message.in':
+				this.handleInboundMessage(frame);
 				return;
-			}
 			case 'console.permission.response':
-				this.settlePermissionResponse(frame.channelRequestId, frame.decision);
+				this.handlePermissionResponse(frame);
 				return;
 			case 'console.question.response':
-				this.settleQuestionResponse(frame.channelRequestId, frame.answers);
+				this.handleQuestionResponse(frame);
 				return;
 			default:
 				return;
 		}
+	}
+
+	private handleInboundMessage(frame: AthenaConsoleFrame): void {
+		if (frame.kind !== 'console.message.in') return;
+		if (!isValidConsoleAddress(frame.address)) {
+			this.ctx?.log('warn', 'console.message.in dropped: invalid address');
+			return;
+		}
+		// v1 is one adapter socket = one runner identity. The broker
+		// authenticated this connection against opts.runnerId; if a frame
+		// claims a different runner, drop it loudly. Forward-compatible with
+		// multi-runtime by relaxing this check at the routing boundary later.
+		if (frame.address.runnerId !== this.opts.runnerId) {
+			this.ctx?.log(
+				'warn',
+				`console.message.in dropped: runner mismatch (claimed ${frame.address.runnerId}, expected ${this.opts.runnerId})`,
+			);
+			return;
+		}
+		if (typeof frame.messageId !== 'string' || frame.messageId.length === 0) {
+			this.ctx?.log('warn', 'console.message.in dropped: missing messageId');
+			return;
+		}
+		const inbound = normalizeInbound(frame, this.opts.runnerId);
+		if (!inbound || !this.ctx) return;
+		try {
+			this.ctx.emitInbound(inbound);
+		} catch (err) {
+			this.ctx.log(
+				'warn',
+				`console emitInbound threw: ${err instanceof Error ? err.message : String(err)}`,
+			);
+		}
+	}
+
+	private handlePermissionResponse(frame: AthenaConsoleFrame): void {
+		if (frame.kind !== 'console.permission.response') return;
+		if (
+			typeof frame.channelRequestId !== 'string' ||
+			frame.channelRequestId.length === 0
+		) {
+			this.ctx?.log(
+				'warn',
+				'console.permission.response dropped: missing channelRequestId',
+			);
+			return;
+		}
+		// Trust-boundary check: the static type narrows `decision` to
+		// `'allow' | 'deny'`, but the broker is partially-trusted JSON. A
+		// buggy broker can send anything; the runtime guard catches it.
+		// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+		if (frame.decision !== 'allow' && frame.decision !== 'deny') {
+			this.ctx?.log(
+				'warn',
+				`console.permission.response dropped: invalid decision ${String(frame.decision)}`,
+			);
+			return;
+		}
+		this.settlePermissionResponse(frame.channelRequestId, frame.decision);
+	}
+
+	private handleQuestionResponse(frame: AthenaConsoleFrame): void {
+		if (frame.kind !== 'console.question.response') return;
+		if (
+			typeof frame.channelRequestId !== 'string' ||
+			frame.channelRequestId.length === 0
+		) {
+			this.ctx?.log(
+				'warn',
+				'console.question.response dropped: missing channelRequestId',
+			);
+			return;
+		}
+		// Trust-boundary check (see permission response): the static type
+		// promises Record<string, string>, but the broker can send anything.
+		/* eslint-disable @typescript-eslint/no-unnecessary-condition */
+		if (
+			typeof frame.answers !== 'object' ||
+			frame.answers === null ||
+			Array.isArray(frame.answers)
+		) {
+			this.ctx?.log(
+				'warn',
+				'console.question.response dropped: answers must be a record',
+			);
+			return;
+		}
+		const cleaned: Record<string, string> = {};
+		for (const [key, value] of Object.entries(frame.answers)) {
+			if (typeof key !== 'string' || key.length === 0) continue;
+			if (typeof value !== 'string') continue;
+			cleaned[key] = value;
+		}
+		/* eslint-enable @typescript-eslint/no-unnecessary-condition */
+		this.settleQuestionResponse(frame.channelRequestId, cleaned);
 	}
 }
 
@@ -392,6 +481,29 @@ let frameCounter = 0;
 function makeFrameId(): string {
 	frameCounter = (frameCounter + 1) % 1_000_000;
 	return `f${Date.now().toString(36)}-${frameCounter.toString(36)}`;
+}
+
+function isValidConsoleAddress(value: unknown): value is {
+	runnerId: string;
+	workspaceId?: string;
+	conversationId?: string;
+	threadId?: string;
+	userId?: string;
+} {
+	if (typeof value !== 'object' || value === null) return false;
+	const v = value as Record<string, unknown>;
+	if (typeof v['runnerId'] !== 'string' || v['runnerId'].length === 0) {
+		return false;
+	}
+	for (const key of [
+		'workspaceId',
+		'conversationId',
+		'threadId',
+		'userId',
+	] as const) {
+		if (v[key] !== undefined && typeof v[key] !== 'string') return false;
+	}
+	return true;
 }
 
 function normalizeInbound(

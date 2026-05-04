@@ -361,6 +361,115 @@ describe('ConsoleAdapter — permission relay', () => {
 	});
 });
 
+describe('ConsoleAdapter — frame validation', () => {
+	it('drops console.message.in claiming a different runnerId', async () => {
+		const {adapter, fake} = makeAdapter();
+		const logs: Array<[string, string]> = [];
+		const handle = await startAdapter(adapter, (lvl, msg) =>
+			logs.push([lvl, msg]),
+		);
+		fake.deliver({
+			kind: 'console.message.in',
+			frameId: 'f',
+			sentAt: 0,
+			address: {runnerId: 'someone-else', userId: 'u1'},
+			messageId: 'm-1',
+			idempotencyKey: 'k',
+			text: 'hi',
+		});
+		await new Promise(r => setTimeout(r, 10));
+		expect(handle.inbound).toEqual([]);
+		expect(
+			logs.some(([lvl, msg]) => lvl === 'warn' && /runner mismatch/.test(msg)),
+		).toBe(true);
+		await adapter.stop('shutdown');
+	});
+
+	it('drops console.message.in with malformed address', async () => {
+		const {adapter, fake} = makeAdapter();
+		const handle = await startAdapter(adapter);
+		fake.deliver({
+			kind: 'console.message.in',
+			frameId: 'f',
+			sentAt: 0,
+			// runnerId missing — pretend a buggy broker sent this
+			address: {runnerId: ''} as unknown as {runnerId: string},
+			messageId: 'm-1',
+			idempotencyKey: 'k',
+			text: 'hi',
+		});
+		await new Promise(r => setTimeout(r, 10));
+		expect(handle.inbound).toEqual([]);
+		await adapter.stop('shutdown');
+	});
+
+	it('drops console.permission.response with invalid decision', async () => {
+		const {adapter, fake} = makeAdapter();
+		await startAdapter(adapter);
+		const abort = new AbortController();
+		const p = adapter.requestPermissionVerdict(
+			{
+				channelRequestId: 'pvalid',
+				toolName: 't',
+				description: 'd',
+				inputPreview: 'i',
+			},
+			abort.signal,
+		);
+		await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
+		// Buggy broker — decision is neither 'allow' nor 'deny'
+		fake.deliver({
+			kind: 'console.permission.response',
+			frameId: 'r',
+			sentAt: 0,
+			channelRequestId: 'pvalid',
+			decision: 'maybe' as unknown as 'allow',
+		});
+		// Pending entry must remain — invalid response is dropped
+		await new Promise(r => setTimeout(r, 10));
+		// Now resolve cleanly via cancellation.
+		abort.abort();
+		const result = await p;
+		expect(result.kind).toBe('cancelled');
+		await adapter.stop('shutdown');
+	});
+
+	it('strips non-string answer values from question.response', async () => {
+		const {adapter, fake} = makeAdapter();
+		await startAdapter(adapter);
+		const abort = new AbortController();
+		const p = adapter.requestQuestionAnswer(
+			{
+				channelRequestId: 'qbad',
+				title: 't',
+				questions: [
+					{
+						key: 'k',
+						header: 'h',
+						question: 'q',
+						multi_select: false,
+						options: [{label: 'a', description: ''}],
+					},
+				],
+			},
+			abort.signal,
+		);
+		await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
+		fake.deliver({
+			kind: 'console.question.response',
+			frameId: 'r',
+			sentAt: 0,
+			channelRequestId: 'qbad',
+			// k=42 is not a string — must be dropped
+			answers: {k: 42 as unknown as string, other: 'ignored'},
+		});
+		const result = await p;
+		// k was dropped, other doesn't match question keys, so cancelled
+		expect(result.kind).toBe('cancelled');
+		await adapter.stop('shutdown');
+	});
+});
+
 describe('ConsoleAdapter — reconnect health + relay disposal', () => {
 	it('emits transportOk:false then transportOk:true on a broker reconnect', async () => {
 		const {adapter, fake} = makeAdapter();
