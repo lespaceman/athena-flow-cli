@@ -90,8 +90,37 @@ export class ConsoleAdapter implements ChannelAdapter {
 		this.ctx = null;
 	}
 
-	async send(_msg: OutboundMessage): Promise<SendResult> {
-		throw new Error('console adapter: send not yet implemented');
+	async send(msg: OutboundMessage): Promise<SendResult> {
+		const client = this.client;
+		if (!client || !client.isReady()) {
+			throw new Error('console adapter: send called before broker is ready');
+		}
+		const messageId = makeOutboundMessageId();
+		const frame: AthenaConsoleFrame = {
+			kind: 'console.message.out',
+			frameId: makeFrameId(),
+			sentAt: Date.now(),
+			address: {
+				runnerId: this.opts.runnerId,
+				...(this.opts.workspaceId !== undefined
+					? {workspaceId: this.opts.workspaceId}
+					: {}),
+				...(msg.location.peer?.id !== undefined
+					? {userId: msg.location.peer.id}
+					: {}),
+				...(msg.location.thread?.id !== undefined
+					? {threadId: msg.location.thread.id}
+					: {}),
+			},
+			messageId,
+			idempotencyKey: msg.idempotencyKey,
+			text: msg.text,
+		};
+		client.sendFrame(frame);
+		return {
+			providerMessageId: messageId,
+			deliveredAt: Date.now(),
+		};
 	}
 
 	async probe(): Promise<ProbeResult> {
@@ -157,6 +186,18 @@ function resolvePairingToken(opts: ConsoleAdapterOptions): string {
 		}
 	}
 	throw new Error('console adapter: no pairing_token or token_path configured');
+}
+
+let outboundCounter = 0;
+function makeOutboundMessageId(): string {
+	outboundCounter = (outboundCounter + 1) % 1_000_000;
+	return `console-out-${Date.now().toString(36)}-${outboundCounter.toString(36)}`;
+}
+
+let frameCounter = 0;
+function makeFrameId(): string {
+	frameCounter = (frameCounter + 1) % 1_000_000;
+	return `f${Date.now().toString(36)}-${frameCounter.toString(36)}`;
 }
 
 function normalizeInbound(

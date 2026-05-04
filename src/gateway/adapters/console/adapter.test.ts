@@ -174,3 +174,46 @@ describe('ConsoleAdapter — inbound', () => {
 		await expect(startAdapter(adapter)).rejects.toThrow(/token_path/);
 	});
 });
+
+describe('ConsoleAdapter — outbound', () => {
+	it('sends console.message.out with idempotency key and address derived from location', async () => {
+		const {adapter, fake} = makeAdapter();
+		await startAdapter(adapter);
+
+		const result = await adapter.send({
+			location: {
+				channelId: 'console',
+				accountId: 'ws1',
+				peer: {id: 'u42', kind: 'user'},
+				thread: {id: 't1'},
+			},
+			text: 'reply text',
+			idempotencyKey: 'turn-abc',
+		});
+
+		expect(fake.sent).toHaveLength(1);
+		const frame = fake.sent[0]!;
+		expect(frame.kind).toBe('console.message.out');
+		if (frame.kind !== 'console.message.out') return;
+		expect(frame.text).toBe('reply text');
+		expect(frame.idempotencyKey).toBe('turn-abc');
+		expect(frame.address.runnerId).toBe('r1');
+		expect(frame.address.workspaceId).toBe('ws1');
+		expect(frame.address.userId).toBe('u42');
+		expect(frame.address.threadId).toBe('t1');
+		expect(result.providerMessageId).toBe(frame.messageId);
+
+		await adapter.stop('shutdown');
+	});
+
+	it('throws if send is called before start', async () => {
+		const {adapter} = makeAdapter();
+		await expect(
+			adapter.send({
+				location: {channelId: 'console', accountId: 'ws1'},
+				text: 't',
+				idempotencyKey: 'k',
+			}),
+		).rejects.toThrow(/before start|not connected|before broker/);
+	});
+});
