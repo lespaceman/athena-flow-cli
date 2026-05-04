@@ -150,6 +150,23 @@ The gateway already tracks `binding.lastRebindAt` per runtime. R7 adds an **epoc
 - Multi-runtime cross-talk on relays. v1 stays single-runtime; the runtime-scoping above is forward-compatible only.
 - Replaying `relay.*.cancel` after a full unregister. Once the grace window expires, relays are gone and cancels return `cancelled: false`.
 
+### R7 status (2026-05-04)
+
+R7 is complete. Landed slices:
+
+1. `feat(gateway): r7 relay replay across reconnect` — bridge mints a stable `channelRequestId`, retries on `connection_closed` bounded by `ttlMs`; coordinator attaches duplicate ids to the existing pending broadcast.
+2. `refactor(gateway): simplify r7 relay replay` — typed `connection_closed` error code, microtask yield to avoid retry tight-loop, dropped the placeholder cast in the coordinator.
+3. `fix(gateway): guard relay attach by request fingerprint` — duplicate attach checks kind + payload fingerprint to prevent collision-driven verdict cross-talk.
+4. `feat(gateway): r7 binding epoch + connection_lost relay disposal` — bindings carry an epoch counter; full unregister disposes pending relays with `connection_lost`.
+5. `feat(gateway): r7 runtime-scoped relay cancels` — relay pending entries carry their caller `runtimeId`; cancels reject when the caller's bound runtime differs. Same-runtime cancels succeed across reconnect epochs (which was the original "stale cancel" worry — solved by runtime identity, not epoch comparison).
+
+Carryover for the future multi-tenancy plan:
+
+- `daemon.ts` calls `relayCoordinator.disposeAll('connection_lost')` globally on full unregister. Under multi-runtime this must become runtime-scoped (e.g. `disposeAllForRuntime(runtimeId, reason)`); single-runtime today makes the global call equivalent.
+- The binding `epoch` field is internal-only; if multi-runtime introduces cross-epoch verdict races that runtime identity alone cannot resolve, expose the epoch on the wire and stamp pending entries with it.
+
+Next milestone: R8 — telemetry + status polishing.
+
 ## Status (original plan, 2026-05-02)
 
 Working branch: TBD (suggest `remote-gateway`, branched from `gateway-integration`).

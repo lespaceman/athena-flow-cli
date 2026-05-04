@@ -256,6 +256,56 @@ describe('RelayCoordinator', () => {
 		).toThrow(/channel_request_id_collision/);
 	});
 
+	it('cancel honors same-runtime caller across an epoch (older entry, newer cancel)', async () => {
+		const adapter = makeAdapter('a', {
+			permission: (_req, signal) =>
+				new Promise(resolve =>
+					signal.addEventListener('abort', () =>
+						resolve({kind: 'cancelled', reason: 'resolved_locally'}),
+					),
+				),
+		});
+		const coord = new RelayCoordinator({adapters: () => [adapter]});
+		const {channelRequestId, result} = coord.requestPermission({
+			runtimeId: 'r1',
+			toolName: 'Bash',
+			description: 'ls',
+			inputPreview: '',
+		});
+		// Cancel arrives on a fresh connection — same runtime, different epoch.
+		expect(coord.cancel(channelRequestId, 'resolved_locally', 'r1')).toBe(true);
+		await expect(result).resolves.toMatchObject({
+			kind: 'cancelled',
+			reason: 'resolved_locally',
+		});
+	});
+
+	it('cancel rejects a different runtime caller', async () => {
+		const adapter = makeAdapter('a', {
+			permission: (_req, _signal) => new Promise(() => {}),
+		});
+		const coord = new RelayCoordinator({adapters: () => [adapter]});
+		const {channelRequestId} = coord.requestPermission({
+			runtimeId: 'r1',
+			toolName: 'Bash',
+			description: 'ls',
+			inputPreview: '',
+		});
+		expect(coord.cancel(channelRequestId, 'resolved_locally', 'r2')).toBe(
+			false,
+		);
+		expect(coord.pendingCount()).toBe(1);
+	});
+
+	it('cancel returns false for an unknown channelRequestId', () => {
+		const adapter = makeAdapter('a', {
+			permission: (_req, _signal) => new Promise(() => {}),
+		});
+		const coord = new RelayCoordinator({adapters: () => [adapter]});
+		expect(coord.cancel('zzzzz', 'resolved_locally')).toBe(false);
+		expect(coord.cancel('zzzzz', 'resolved_locally', 'r1')).toBe(false);
+	});
+
 	it('disposeAll(connection_lost) propagates the reason on pending entries', async () => {
 		const adapter = makeAdapter('a', {
 			permission: (_req, signal) =>

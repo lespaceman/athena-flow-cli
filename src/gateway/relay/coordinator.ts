@@ -49,6 +49,7 @@ type PendingPermissionEntry = {
 	kind: 'permission';
 	channelRequestId: string;
 	fingerprint: string;
+	runtimeId?: string;
 	controllers: AbortController[];
 	timer: NodeJS.Timeout;
 	resolve: (result: PermissionRelayResult) => void;
@@ -60,6 +61,7 @@ type PendingQuestionEntry = {
 	kind: 'question';
 	channelRequestId: string;
 	fingerprint: string;
+	runtimeId?: string;
 	controllers: AbortController[];
 	timer: NodeJS.Timeout;
 	resolve: (result: QuestionRelayResult) => void;
@@ -97,6 +99,7 @@ export class RelayCoordinator {
 		req: Omit<PermissionRelayRequest, 'channelRequestId'> & {
 			channelRequestId?: string;
 			ttlMs?: number;
+			runtimeId?: string;
 		},
 	): PermissionBroadcast {
 		const channelRequestId = req.channelRequestId ?? this.idFactory();
@@ -144,6 +147,7 @@ export class RelayCoordinator {
 			kind: 'permission',
 			channelRequestId,
 			fingerprint,
+			...(req.runtimeId !== undefined ? {runtimeId: req.runtimeId} : {}),
 			controllers,
 			timer,
 			resolve: resolveFn,
@@ -188,6 +192,7 @@ export class RelayCoordinator {
 		req: Omit<QuestionRelayRequest, 'channelRequestId'> & {
 			channelRequestId?: string;
 			ttlMs?: number;
+			runtimeId?: string;
 		},
 	): QuestionBroadcast {
 		const channelRequestId = req.channelRequestId ?? this.idFactory();
@@ -235,6 +240,7 @@ export class RelayCoordinator {
 			kind: 'question',
 			channelRequestId,
 			fingerprint,
+			...(req.runtimeId !== undefined ? {runtimeId: req.runtimeId} : {}),
 			controllers,
 			timer,
 			resolve: resolveFn,
@@ -274,9 +280,20 @@ export class RelayCoordinator {
 		return {channelRequestId, result};
 	}
 
-	cancel(channelRequestId: string, reason: RelayCancelReason): boolean {
+	cancel(
+		channelRequestId: string,
+		reason: RelayCancelReason,
+		expectedRuntimeId?: string,
+	): boolean {
 		const entry = this.pending.get(channelRequestId);
 		if (!entry) return false;
+		if (
+			expectedRuntimeId !== undefined &&
+			entry.runtimeId !== undefined &&
+			entry.runtimeId !== expectedRuntimeId
+		) {
+			return false;
+		}
 		if (entry.kind === 'permission') {
 			this.settlePermission(channelRequestId, {kind: 'cancelled', reason});
 		} else {

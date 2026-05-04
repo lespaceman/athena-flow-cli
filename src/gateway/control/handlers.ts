@@ -223,6 +223,9 @@ export function createDispatcher(deps: DispatcherDeps): RequestHandler {
 						'relay coordinator not configured',
 					);
 				const req = envelope.payload as RelayPermissionRequestPayload;
+				const callerRuntimeId =
+					deps.registry?.getRuntimeIdByConnection(connection.connectionId) ??
+					undefined;
 				const broadcast = deps.relayCoordinator.requestPermission({
 					...(req.channelRequestId !== undefined
 						? {channelRequestId: req.channelRequestId}
@@ -231,6 +234,9 @@ export function createDispatcher(deps: DispatcherDeps): RequestHandler {
 					description: req.description,
 					inputPreview: req.inputPreview,
 					...(req.ttlMs !== undefined ? {ttlMs: req.ttlMs} : {}),
+					...(callerRuntimeId !== undefined
+						? {runtimeId: callerRuntimeId}
+						: {}),
 				});
 				const result = await broadcast.result;
 				const payload: RelayPermissionResponsePayload = {
@@ -248,9 +254,13 @@ export function createDispatcher(deps: DispatcherDeps): RequestHandler {
 						'relay coordinator not configured',
 					);
 				const req = envelope.payload as RelayPermissionCancelRequestPayload;
+				const callerRuntimeId =
+					deps.registry?.getRuntimeIdByConnection(connection.connectionId) ??
+					undefined;
 				const cancelled = deps.relayCoordinator.cancel(
 					req.channelRequestId,
 					req.reason,
+					callerRuntimeId,
 				);
 				const payload: RelayPermissionCancelResponsePayload = {cancelled};
 				return ok(envelope, ts, payload);
@@ -264,6 +274,9 @@ export function createDispatcher(deps: DispatcherDeps): RequestHandler {
 						'relay coordinator not configured',
 					);
 				const req = envelope.payload as RelayQuestionRequestPayload;
+				const callerRuntimeId =
+					deps.registry?.getRuntimeIdByConnection(connection.connectionId) ??
+					undefined;
 				const broadcast = deps.relayCoordinator.requestQuestion({
 					...(req.channelRequestId !== undefined
 						? {channelRequestId: req.channelRequestId}
@@ -271,6 +284,9 @@ export function createDispatcher(deps: DispatcherDeps): RequestHandler {
 					title: req.title,
 					questions: req.questions,
 					...(req.ttlMs !== undefined ? {ttlMs: req.ttlMs} : {}),
+					...(callerRuntimeId !== undefined
+						? {runtimeId: callerRuntimeId}
+						: {}),
 				});
 				const result = await broadcast.result;
 				const payload: RelayQuestionResponsePayload = {
@@ -288,9 +304,13 @@ export function createDispatcher(deps: DispatcherDeps): RequestHandler {
 						'relay coordinator not configured',
 					);
 				const req = envelope.payload as RelayQuestionCancelRequestPayload;
+				const callerRuntimeId =
+					deps.registry?.getRuntimeIdByConnection(connection.connectionId) ??
+					undefined;
 				const cancelled = deps.relayCoordinator.cancel(
 					req.channelRequestId,
 					req.reason,
+					callerRuntimeId,
 				);
 				const payload: RelayQuestionCancelResponsePayload = {cancelled};
 				return ok(envelope, ts, payload);

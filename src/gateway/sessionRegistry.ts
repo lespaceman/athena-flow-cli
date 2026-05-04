@@ -164,6 +164,13 @@ export class SessionRegistry {
 		return this.binding;
 	}
 
+	getRuntimeIdByConnection(connectionId: string): string | null {
+		if (!this.current || !this.binding) return null;
+		return this.binding.connectionId === connectionId
+			? this.current.runtimeId
+			: null;
+	}
+
 	unregister(runtimeId: string): void {
 		if (!this.current || this.current.runtimeId !== runtimeId) {
 			throw new NotRegisteredError();
