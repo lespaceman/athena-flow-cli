@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -71,10 +72,30 @@ export function writeDashboardClientConfig(
 	const configPath = dashboardClientConfigPath(env);
 	const dir = path.dirname(configPath);
 	fs.mkdirSync(dir, {recursive: true, mode: 0o700});
-	fs.writeFileSync(configPath, JSON.stringify(validated, null, 2) + '\n', {
-		encoding: 'utf-8',
-		mode: 0o600,
-	});
+	// Atomic write: stage to a sibling tempfile, fsync, then rename. A crash
+	// mid-write leaves either the previous content intact (rename never ran)
+	// or the new content in full. Without this, a concurrent crash could
+	// truncate the file and orphan the pairing.
+	const tmpPath = `${configPath}.${process.pid}.${crypto
+		.randomBytes(4)
+		.toString('hex')}.tmp`;
+	const fd = fs.openSync(tmpPath, 'w', 0o600);
+	try {
+		fs.writeSync(fd, JSON.stringify(validated, null, 2) + '\n');
+		fs.fsyncSync(fd);
+	} finally {
+		fs.closeSync(fd);
+	}
+	try {
+		fs.renameSync(tmpPath, configPath);
+	} catch (err) {
+		try {
+			fs.unlinkSync(tmpPath);
+		} catch {
+			// best-effort cleanup; original error is what matters
+		}
+		throw err;
+	}
 	if (process.platform !== 'win32') {
 		try {
 			fs.chmodSync(dir, 0o700);

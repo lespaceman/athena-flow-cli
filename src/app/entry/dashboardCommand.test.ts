@@ -22,17 +22,6 @@ function jsonResponse(status: number, body: unknown): Response {
 	} as unknown as Response;
 }
 
-function textResponse(status: number, text: string): Response {
-	return {
-		ok: status >= 200 && status < 300,
-		status,
-		json: async () => {
-			throw new Error('not json');
-		},
-		text: async () => text,
-	} as unknown as Response;
-}
-
 const STATIC_FINGERPRINT = 'fp-static';
 
 function makeDeps(overrides: {
@@ -306,75 +295,76 @@ describe('runDashboardCommand: refresh', () => {
 		expect(cap.err.join('\n')).toContain('not paired');
 	});
 
-	it('rotates the refresh token in storage', async () => {
-		const fetchMock = vi.fn().mockResolvedValue(
-			jsonResponse(200, {
+	it('delegates to refreshDashboardAccessToken and rotates stored refresh token', async () => {
+		const performRefresh = vi.fn().mockImplementation(async () => {
+			// The shared helper rotates the on-disk refresh token before
+			// returning. Mirror that here so the JSON output sees the new value.
+			return {
 				instanceId: 'inst_1',
 				accessToken: 'access-1',
-				refreshToken: 'new-refresh',
 				expiresInSec: 900,
-			}),
-		);
-		const {deps, writes} = makeDeps({
-			fetchMock,
-			stored,
-			now: 5_000,
+			};
 		});
-
+		const {deps, writes, stored: storedRef} = makeDeps({stored, now: 5_000});
+		// Pretend the helper rotated the on-disk value.
+		const rotateStored = () => {
+			storedRef.value = {...storedRef.value!, refreshToken: 'new-refresh'};
+			writes.push(storedRef.value!);
+		};
 		const code = await runDashboardCommand(
 			{subcommand: 'refresh', subcommandArgs: [], flags: {}},
-			deps,
+			{
+				...deps,
+				performRefresh: async label => {
+					rotateStored();
+					return performRefresh(label);
+				},
+			},
 		);
 		expect(code).toBe(0);
-		const [url, init] = fetchMock.mock.calls[0]!;
-		expect(url).toBe('https://example.com/api/instances/refresh');
-		expect(JSON.parse((init as RequestInit).body as string)).toEqual({
-			refreshToken: 'old-refresh',
-			fingerprint: 'fp-stored',
-		});
+		expect(performRefresh).toHaveBeenCalledTimes(1);
+		expect(performRefresh.mock.calls[0]![0]).toBe('refresh');
 		expect(writes).toHaveLength(1);
 		expect(writes[0]?.refreshToken).toBe('new-refresh');
-		expect(writes[0]?.lastRefreshAt).toBe(5_000);
 	});
 
 	it('does not print tokens in human output', async () => {
-		const fetchMock = vi.fn().mockResolvedValue(
-			jsonResponse(200, {
-				instanceId: 'inst_1',
-				accessToken: 'super-access',
-				refreshToken: 'super-rotated',
-				expiresInSec: 900,
-			}),
-		);
-		const {deps, cap} = makeDeps({fetchMock, stored});
-
+		const {deps, cap} = makeDeps({stored});
 		await runDashboardCommand(
 			{subcommand: 'refresh', subcommandArgs: [], flags: {}},
-			deps,
+			{
+				...deps,
+				performRefresh: async () => ({
+					instanceId: 'inst_1',
+					accessToken: 'super-access',
+					expiresInSec: 900,
+				}),
+			},
 		);
-
 		const out = cap.out.join('\n');
 		expect(out).not.toContain('super-access');
-		expect(out).not.toContain('super-rotated');
 		expect(out).toContain('refreshed access token for instance inst_1');
 	});
 
-	it('emits access token only when --json is set', async () => {
-		const fetchMock = vi.fn().mockResolvedValue(
-			jsonResponse(200, {
-				instanceId: 'inst_1',
-				accessToken: 'access-1',
-				refreshToken: 'new-refresh',
-				expiresInSec: 900,
-			}),
-		);
-		const {deps, cap} = makeDeps({fetchMock, stored});
-
+	it('emits access token and rotated refresh token only when --json is set', async () => {
+		const {deps, cap, stored: storedRef} = makeDeps({stored});
 		await runDashboardCommand(
 			{subcommand: 'refresh', subcommandArgs: [], flags: {json: true}},
-			deps,
+			{
+				...deps,
+				performRefresh: async () => {
+					storedRef.value = {
+						...storedRef.value!,
+						refreshToken: 'new-refresh',
+					};
+					return {
+						instanceId: 'inst_1',
+						accessToken: 'access-1',
+						expiresInSec: 900,
+					};
+				},
+			},
 		);
-
 		const parsed = JSON.parse(cap.out.join('\n'));
 		expect(parsed).toMatchObject({
 			ok: true,
@@ -385,15 +375,19 @@ describe('runDashboardCommand: refresh', () => {
 		});
 	});
 
-	it('reports plaintext error bodies safely', async () => {
-		const fetchMock = vi.fn().mockResolvedValue(textResponse(503, 'broken'));
-		const {deps, cap} = makeDeps({fetchMock, stored});
-
+	it('reports refresh errors and exits 1', async () => {
+		const {deps, cap} = makeDeps({stored});
 		const code = await runDashboardCommand(
 			{subcommand: 'refresh', subcommandArgs: [], flags: {}},
-			deps,
+			{
+				...deps,
+				performRefresh: async () => {
+					throw new Error(
+						'dashboard refresh: https://example.com returned 503',
+					);
+				},
+			},
 		);
-
 		expect(code).toBe(1);
 		expect(cap.err.join('\n')).toContain('503');
 	});
@@ -467,6 +461,12 @@ describe('runDashboardCommand: connect', () => {
 		pairedAt: 1,
 	};
 
+	const happyRefresh = async () => ({
+		instanceId: 'inst_1',
+		accessToken: 'fresh-access',
+		expiresInSec: 900,
+	});
+
 	function makeFakeSocket() {
 		const calls = {
 			connect: 0,
@@ -518,20 +518,13 @@ describe('runDashboardCommand: connect', () => {
 	});
 
 	it('refreshes an access token before opening the socket', async () => {
-		const fetchMock = vi.fn().mockResolvedValue(
-			jsonResponse(200, {
-				instanceId: 'inst_1',
-				accessToken: 'fresh-access',
-				refreshToken: 'rotated-refresh',
-				expiresInSec: 900,
-			}),
-		);
 		const fakeSocket = makeFakeSocket();
-		const {deps, cap, writes} = makeDeps({fetchMock, stored});
+		const {deps, cap} = makeDeps({stored});
 		const code = await runDashboardCommand(
 			{subcommand: 'connect', subcommandArgs: [], flags: {}},
 			{
 				...deps,
+				performRefresh: happyRefresh,
 				makeInstanceSocketClient: fakeSocket.factory,
 				waitForShutdown: async () => 'SIGINT',
 			},
@@ -545,21 +538,20 @@ describe('runDashboardCommand: connect', () => {
 			accessToken: 'fresh-access',
 			log: expect.any(Function),
 		});
-		expect(writes[0]?.refreshToken).toBe('rotated-refresh');
 		expect(cap.out.join('\n')).toContain('connected instance inst_1');
 		expect(cap.out.join('\n')).toContain('disconnected (SIGINT)');
 	});
 
 	it('exits 1 when refresh fails and never opens socket', async () => {
-		const fetchMock = vi
-			.fn()
-			.mockResolvedValue(jsonResponse(401, {error: 'expired'}));
 		const fakeSocket = makeFakeSocket();
-		const {deps} = makeDeps({fetchMock, stored});
+		const {deps} = makeDeps({stored});
 		const code = await runDashboardCommand(
 			{subcommand: 'connect', subcommandArgs: [], flags: {}},
 			{
 				...deps,
+				performRefresh: async () => {
+					throw new Error('expired');
+				},
 				makeInstanceSocketClient: fakeSocket.factory,
 				waitForShutdown: async () => 'SIGINT',
 			},
@@ -569,28 +561,19 @@ describe('runDashboardCommand: connect', () => {
 	});
 
 	it('exits 1 when the socket closes before the shutdown signal', async () => {
-		const fetchMock = vi.fn().mockResolvedValue(
-			jsonResponse(200, {
-				instanceId: 'inst_1',
-				accessToken: 'fresh-access',
-				refreshToken: 'rotated-refresh',
-				expiresInSec: 900,
-			}),
-		);
 		const fakeSocket = makeFakeSocket();
-		const {deps, cap} = makeDeps({fetchMock, stored});
+		const {deps, cap} = makeDeps({stored});
 
 		const pending = runDashboardCommand(
 			{subcommand: 'connect', subcommandArgs: [], flags: {}},
 			{
 				...deps,
+				performRefresh: happyRefresh,
 				makeInstanceSocketClient: fakeSocket.factory,
 				waitForShutdown: () => new Promise<string>(() => {}),
 			},
 		);
-		// Yield until runDashboardCommand has subscribed to onClose. Two
-		// macrotask ticks cover the await chain through performRefresh +
-		// client.connect (both resolve synchronously here).
+		// Yield until runDashboardCommand has subscribed to onClose.
 		await new Promise(r => setTimeout(r, 0));
 		await new Promise(r => setTimeout(r, 0));
 		fakeSocket.emitClose('server gone');
@@ -602,19 +585,12 @@ describe('runDashboardCommand: connect', () => {
 	});
 
 	it('reports socket connect failure and exits 1', async () => {
-		const fetchMock = vi.fn().mockResolvedValue(
-			jsonResponse(200, {
-				instanceId: 'inst_1',
-				accessToken: 'fresh-access',
-				refreshToken: 'rotated-refresh',
-				expiresInSec: 900,
-			}),
-		);
-		const {deps, cap} = makeDeps({fetchMock, stored});
+		const {deps, cap} = makeDeps({stored});
 		const code = await runDashboardCommand(
 			{subcommand: 'connect', subcommandArgs: [], flags: {}},
 			{
 				...deps,
+				performRefresh: happyRefresh,
 				makeInstanceSocketClient: () => ({
 					connect: async () => {
 						throw new Error('refused');

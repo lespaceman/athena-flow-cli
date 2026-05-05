@@ -110,6 +110,139 @@ describe('refreshDashboardAccessToken', () => {
 		}
 	});
 
+	it('does not echo response body for 401/403 (refresh-token reflection guard)', async () => {
+		const env = withTempHome();
+		writeDashboardClientConfig(
+			{
+				dashboardUrl: 'https://example.com',
+				instanceId: 'inst_1',
+				refreshToken: 'super-secret-refresh',
+				fingerprint: 'fp-1',
+				pairedAt: 1,
+			},
+			env,
+		);
+		// Server reflects the request body, including the refresh token.
+		const reflectedBody = JSON.stringify({
+			error: 'invalid_token',
+			received: {refreshToken: 'super-secret-refresh', fingerprint: 'fp-1'},
+		});
+		const fetchMock = vi.fn().mockResolvedValue({
+			ok: false,
+			status: 401,
+			text: async () => reflectedBody,
+			json: async () => JSON.parse(reflectedBody),
+		} as unknown as Response);
+
+		try {
+			await refreshDashboardAccessToken({
+				env,
+				fetch: fetchMock as unknown as typeof fetch,
+			});
+			throw new Error('expected refresh to fail');
+		} catch (err) {
+			const msg = (err as Error).message;
+			expect(msg).toMatch(/401/);
+			expect(msg).not.toContain('super-secret-refresh');
+		}
+	});
+
+	it('serializes concurrent refresh calls via the on-disk lock', async () => {
+		const env = withTempHome();
+		writeDashboardClientConfig(
+			{
+				dashboardUrl: 'https://example.com',
+				instanceId: 'inst_1',
+				refreshToken: 'r0',
+				fingerprint: 'fp-1',
+				pairedAt: 1,
+			},
+			env,
+		);
+
+		let counter = 0;
+		const seenTokens: string[] = [];
+		const fetchMock = vi
+			.fn()
+			.mockImplementation(async (_url: string, init: RequestInit) => {
+				const body = JSON.parse(init.body as string) as {refreshToken: string};
+				seenTokens.push(body.refreshToken);
+				// Force interleaving by yielding before responding.
+				await new Promise(r => setTimeout(r, 5));
+				counter += 1;
+				return jsonResponse(200, {
+					instanceId: 'inst_1',
+					accessToken: `access-${counter}`,
+					refreshToken: `r${counter}`,
+					expiresInSec: 900,
+				});
+			});
+
+		const [a, b] = await Promise.all([
+			refreshDashboardAccessToken({
+				env,
+				fetch: fetchMock as unknown as typeof fetch,
+				lockTimeoutMs: 2_000,
+				lockPollMs: 5,
+			}),
+			refreshDashboardAccessToken({
+				env,
+				fetch: fetchMock as unknown as typeof fetch,
+				lockTimeoutMs: 2_000,
+				lockPollMs: 5,
+			}),
+		]);
+
+		// Both calls succeeded → neither saw the burned token. The second
+		// call must have read the rotated value written by the first.
+		expect(seenTokens).toEqual(['r0', 'r1']);
+		expect([a.accessToken, b.accessToken].sort()).toEqual([
+			'access-1',
+			'access-2',
+		]);
+	});
+
+	it('reaps a stale lock file', async () => {
+		const env = withTempHome();
+		writeDashboardClientConfig(
+			{
+				dashboardUrl: 'https://example.com',
+				instanceId: 'inst_1',
+				refreshToken: 'r0',
+				fingerprint: 'fp-1',
+				pairedAt: 1,
+			},
+			env,
+		);
+		// Plant a stale lock with a deliberately old mtime.
+		const configPath = path.join(
+			env.HOME!,
+			'.config',
+			'athena',
+			'dashboard.json',
+		);
+		const lockPath = `${configPath}.lock`;
+		fs.writeFileSync(lockPath, '');
+		const oldMtime = new Date(Date.now() - 120_000);
+		fs.utimesSync(lockPath, oldMtime, oldMtime);
+
+		const fetchMock = vi.fn().mockResolvedValue(
+			jsonResponse(200, {
+				instanceId: 'inst_1',
+				accessToken: 'access-1',
+				refreshToken: 'r1',
+				expiresInSec: 900,
+			}),
+		);
+		const result = await refreshDashboardAccessToken({
+			env,
+			fetch: fetchMock as unknown as typeof fetch,
+			staleLockMs: 30_000,
+			lockTimeoutMs: 200,
+		});
+		expect(result.accessToken).toBe('access-1');
+	});
+
 	it('throws when fetch rejects with a connection error', async () => {
 		const env = withTempHome();
 		writeDashboardClientConfig(
