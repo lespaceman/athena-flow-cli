@@ -119,6 +119,7 @@ import {
 	trackSessionStarted,
 	trackSessionEnded,
 } from '../../infra/telemetry/index';
+import {writeGatewayTrace} from '../../infra/gatewayTrace';
 import {toSessionPickerEntries} from './sessionPickerEntries';
 import {
 	createPendingStartupDiagnosticsEvent,
@@ -127,6 +128,7 @@ import {
 	shouldDismissPendingStartupDiagnostics,
 	shouldTrackStartupDiagnostics,
 } from './startupDiagnostics';
+import {findChannelDispatchReply} from './channelDispatchCompletion';
 import {
 	accumulateSessionTelemetryCarry,
 	buildSessionTelemetrySummary,
@@ -895,6 +897,7 @@ function AppContent({
 	const pendingDispatchRef = useRef<{
 		dispatchId: string;
 		location: import('../../shared/gateway-protocol').ChannelLocation;
+		feedEventCountAtDispatch: number;
 	} | null>(null);
 	const queuedDispatchRef = useRef<
 		| import('../../shared/gateway-protocol').SessionDispatchTurnPushPayload
@@ -918,7 +921,11 @@ function AppContent({
 			pendingDispatchRef.current = {
 				dispatchId: payload.dispatchId,
 				location: payload.inbound.location,
+				feedEventCountAtDispatch: feedEvents.length,
 			};
+			writeGatewayTrace(
+				`AppShell dispatch received dispatchId=${payload.dispatchId} channel=${payload.inbound.location.channelId} account=${payload.inbound.location.accountId} thread=${payload.inbound.location.thread?.id ?? ''} feedCount=${feedEvents.length}`,
+			);
 			addMessage('user', text);
 			const sessionToResume = currentSessionId ?? initialSessionRef.current;
 			const continuation: TurnContinuation = sessionToResume
@@ -972,17 +979,20 @@ function AppContent({
 		const pending = pendingDispatchRef.current;
 		if (!pending) return;
 		// Find a root agent.message that arrived after the dispatch was parked.
-		// We use a simple "latest qualifying event wins" rule — any tool calls
-		// or sub-agent messages between the user input and the root reply are
-		// not posted to the channel.
-		const reply = [...feedEvents]
-			.reverse()
-			.find(fe => fe.kind === 'agent.message' && fe.data.scope === 'root');
-		if (!reply || reply.kind !== 'agent.message') return;
+		// Any tool calls or sub-agent messages between the user input and the
+		// root reply are not posted to the channel.
+		const reply = findChannelDispatchReply(
+			feedEvents,
+			pending.feedEventCountAtDispatch,
+		);
+		if (!reply) return;
 		const text = reply.data.message;
 		if (!text || text.length === 0) return;
 		pendingDispatchRef.current = null;
 		const idempotencyKey = `dispatch:${pending.dispatchId}`;
+		writeGatewayTrace(
+			`AppShell completing dispatchId=${pending.dispatchId} channel=${pending.location.channelId} account=${pending.location.accountId} thread=${pending.location.thread?.id ?? ''} replySeq=${reply.seq} replyLength=${text.length}`,
+		);
 		void sessionBridge
 			.completeTurn({
 				dispatchId: pending.dispatchId,

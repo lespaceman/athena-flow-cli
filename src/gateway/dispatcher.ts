@@ -32,6 +32,7 @@ import type {
 import {deriveSessionKey} from './router/sessionKey';
 import {SessionRegistry, UnknownDispatchError} from './sessionRegistry';
 import type {InboundQueue} from './state/inboundQueue';
+import {writeGatewayTrace} from '../infra/gatewayTrace';
 
 export type AgentResolver = (input: {
 	sessionKey: string;
@@ -199,6 +200,9 @@ export class Dispatcher {
 		payload: SessionTurnCompleteRequestPayload,
 	): Promise<SessionTurnCompleteResponsePayload> {
 		const current = this.registry.getCurrent();
+		writeGatewayTrace(
+			`dispatcher turn.complete received runtimeId=${payload.runtimeId} dispatchId=${payload.dispatchId} channel=${payload.location.channelId} account=${payload.location.accountId} thread=${payload.location.thread?.id ?? ''} textLength=${payload.text.length}`,
+		);
 		if (!current || current.runtimeId !== payload.runtimeId) {
 			throw new Error('runtime mismatch on session.turn.complete');
 		}
@@ -207,15 +211,24 @@ export class Dispatcher {
 			entry = this.registry.completeDispatch(payload.dispatchId);
 		} catch (err) {
 			if (err instanceof UnknownDispatchError) {
+				writeGatewayTrace(
+					`dispatcher turn.complete unknown dispatchId=${payload.dispatchId}`,
+				);
 				return {delivered: false};
 			}
 			throw err;
 		}
+		writeGatewayTrace(
+			`dispatcher sendOutbound channel=${entry.location.channelId} dispatchId=${payload.dispatchId} parkedAccount=${entry.location.accountId} parkedThread=${entry.location.thread?.id ?? ''}`,
+		);
 		const result = await this.sendOutbound(entry.location.channelId, {
 			location: payload.location,
 			text: payload.text,
 			idempotencyKey: payload.idempotencyKey,
 		});
+		writeGatewayTrace(
+			`dispatcher sendOutbound delivered dispatchId=${payload.dispatchId} providerMessageId=${result.providerMessageId}`,
+		);
 		return {
 			delivered: true,
 			providerMessageId: result.providerMessageId,

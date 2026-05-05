@@ -235,6 +235,29 @@ describe('ConsoleAdapter — outbound', () => {
 		expect(frame.address.workspaceId).toBe('ws-from-inbound');
 		await adapter.stop('shutdown');
 	});
+
+	it('preserves conversation routing on outbound replies', async () => {
+		const {adapter, fake} = makeAdapter();
+		await startAdapter(adapter);
+
+		await adapter.send({
+			location: {
+				channelId: 'console',
+				accountId: 'ws1',
+				peer: {id: 'u42', kind: 'user'},
+				thread: {id: 'conversation-1'},
+			},
+			text: 'reply text',
+			idempotencyKey: 'turn-abc',
+		});
+
+		const frame = fake.sent[0]!;
+		expect(frame.kind).toBe('console.message.out');
+		if (frame.kind !== 'console.message.out') return;
+		expect(frame.address.conversationId).toBe('conversation-1');
+		expect(frame.address.threadId).toBe('conversation-1');
+		await adapter.stop('shutdown');
+	});
 });
 
 describe('ConsoleAdapter — permission relay', () => {

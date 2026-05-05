@@ -15,6 +15,7 @@
 
 import {readFileSync} from 'node:fs';
 import {refreshDashboardAccessToken} from '../../../infra/config/dashboardAuth';
+import {writeGatewayTrace} from '../../../infra/gatewayTrace';
 import type {PairingTokenProvider} from './client';
 import type {
 	AdapterContext,
@@ -151,13 +152,19 @@ export class ConsoleAdapter implements ChannelAdapter {
 					? {userId: msg.location.peer.id}
 					: {}),
 				...(msg.location.thread?.id !== undefined
-					? {threadId: msg.location.thread.id}
+					? {
+							conversationId: msg.location.thread.id,
+							threadId: msg.location.thread.id,
+						}
 					: {}),
 			},
 			messageId,
 			idempotencyKey: msg.idempotencyKey,
 			text: msg.text,
 		};
+		writeGatewayTrace(
+			`consoleAdapter send message.out runner=${this.opts.runnerId} workspace=${frame.address.workspaceId ?? ''} conversation=${frame.address.conversationId ?? ''} thread=${frame.address.threadId ?? ''} user=${frame.address.userId ?? ''} textLength=${msg.text.length} idempotencyKey=${msg.idempotencyKey}`,
+		);
 		client.sendFrame(frame);
 		return {
 			providerMessageId: messageId,

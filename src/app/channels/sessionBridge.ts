@@ -265,6 +265,9 @@ export class SessionBridge {
 		input: SessionBridgeTurnComplete,
 	): Promise<SessionTurnCompleteResponsePayload> {
 		const client = await this.requireConnectedClient();
+		writeGatewayTrace(
+			`sessionBridge completeTurn request runtimeId=${this.opts.runtimeId} dispatchId=${input.dispatchId} channel=${input.location.channelId} account=${input.location.accountId} thread=${input.location.thread?.id ?? ''} textLength=${input.text.length}`,
+		);
 		const req: SessionTurnCompleteRequestPayload = {
 			runtimeId: this.opts.runtimeId,
 			dispatchId: input.dispatchId,
@@ -272,10 +275,14 @@ export class SessionBridge {
 			text: input.text,
 			idempotencyKey: input.idempotencyKey,
 		};
-		return client.request<
+		const res = await client.request<
 			SessionTurnCompleteRequestPayload,
 			SessionTurnCompleteResponsePayload
 		>('session.turn.complete', req);
+		writeGatewayTrace(
+			`sessionBridge completeTurn response runtimeId=${this.opts.runtimeId} dispatchId=${input.dispatchId} delivered=${res.delivered} providerMessageId=${res.providerMessageId ?? ''}`,
+		);
+		return res;
 	}
 
 	async relayPermission(
