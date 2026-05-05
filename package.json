@@ -17,7 +17,7 @@
 		"hooks",
 		"dashboard"
 	],
-	"version": "0.3.39",
+	"version": "0.4.0",
 	"license": "MIT",
 	"bin": {
 		"drisp": "dist/cli.js",

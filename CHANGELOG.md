@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/drisplabs/cli/compare/cli-v0.3.39...cli-v0.4.0) (2026-05-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* package renamed from `@athenaflow/cli` to `@drisp/cli`; binary renamed to `drisp` (with `drisp-hook-forwarder` replacing the previous hook forwarder bin). Update install instructions and any scripts that invoke the old binary name. ([e54fd0c](https://github.com/drisplabs/cli/commit/e54fd0c))
+
+
+### Bug Fixes
+
+* **channels:** scope dispatch replies to post-dispatch events and preserve conversation routing ([fc8dcf2](https://github.com/drisplabs/cli/commit/fc8dcf2))
+
 ## [0.3.39](https://github.com/lespaceman/athena-flow-cli/compare/cli-v0.3.38...cli-v0.3.39) (2026-04-28)
 
 
