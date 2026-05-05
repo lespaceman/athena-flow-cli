@@ -18,8 +18,17 @@ export type InstanceSocketClientOptions = {
 	instanceId: string;
 	accessToken: string;
 	heartbeatIntervalMs?: number;
+	connectTimeoutMs?: number;
 	log?: InstanceSocketLogger;
-	makeWebSocket?: (url: string, headers: Record<string, string>) => WebSocket;
+	/**
+	 * Test seam. Production code uses the default factory which constructs a
+	 * `ws` `WebSocket` with the access token sent as the first
+	 * `Sec-WebSocket-Protocol` value. The dashboard's instance-socket
+	 * extractor accepts the token via subprotocol or `?token=` query — we
+	 * use subprotocol so browser clients (which cannot set arbitrary
+	 * headers, including `Authorization`) follow the same contract.
+	 */
+	makeWebSocket?: (url: string, accessToken: string) => WebSocket;
 	now?: () => number;
 };
 
@@ -31,6 +40,7 @@ export type InstanceSocketClient = {
 };
 
 const DEFAULT_HEARTBEAT_MS = 30_000;
+const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 
 export function instanceSocketUrl(
 	dashboardUrl: string,
@@ -48,12 +58,13 @@ export function createInstanceSocketClient(
 	opts: InstanceSocketClientOptions,
 ): InstanceSocketClient {
 	const heartbeatMs = opts.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_MS;
+	const connectTimeoutMs = opts.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
 	const log = opts.log ?? (() => {});
 	const now = opts.now ?? (() => Date.now());
 	const makeWebSocket =
 		opts.makeWebSocket ??
-		((url: string, headers: Record<string, string>): WebSocket =>
-			new WebSocket(url, {headers}));
+		((url: string, accessToken: string): WebSocket =>
+			new WebSocket(url, [accessToken]));
 
 	const frameHandlers = new Set<(frame: InstanceSocketFrame) => void>();
 	const closeHandlers = new Set<(reason: string) => void>();
@@ -123,24 +134,55 @@ export function createInstanceSocketClient(
 	async function connect(): Promise<void> {
 		if (ws) throw new Error('instance socket already connected');
 		const url = instanceSocketUrl(opts.dashboardUrl, opts.instanceId);
-		const next = makeWebSocket(url, {
-			Authorization: `Bearer ${opts.accessToken}`,
-		});
+		const next = makeWebSocket(url, opts.accessToken);
+
+		try {
+			await new Promise<void>((resolve, reject) => {
+				let settled = false;
+				const cleanup = (): void => {
+					next.off('open', onOpen);
+					next.off('error', onError);
+					clearTimeout(timer);
+				};
+				const onOpen = (): void => {
+					if (settled) return;
+					settled = true;
+					cleanup();
+					resolve();
+				};
+				const onError = (err: Error): void => {
+					if (settled) return;
+					settled = true;
+					cleanup();
+					reject(new Error(`instance socket connect failed: ${err.message}`));
+				};
+				const timer = setTimeout(() => {
+					if (settled) return;
+					settled = true;
+					cleanup();
+					reject(
+						new Error(
+							`instance socket connect failed: timed out after ${connectTimeoutMs}ms`,
+						),
+					);
+				}, connectTimeoutMs);
+				next.once('open', onOpen);
+				next.once('error', onError);
+			});
+		} catch (err) {
+			// Swallow any late 'error' events emitted by terminate() so they
+			// don't surface as unhandled — `ws` re-emits an error when the
+			// underlying socket is torn down before the upgrade completes.
+			next.on('error', () => {});
+			try {
+				next.terminate();
+			} catch {
+				// best-effort
+			}
+			throw err;
+		}
+
 		ws = next;
-
-		await new Promise<void>((resolve, reject) => {
-			const onOpen = (): void => {
-				next.off('error', onError);
-				resolve();
-			};
-			const onError = (err: Error): void => {
-				next.off('open', onOpen);
-				reject(new Error(`instance socket connect failed: ${err.message}`));
-			};
-			next.once('open', onOpen);
-			next.once('error', onError);
-		});
-
 		startHeartbeat();
 
 		next.on('message', data => {

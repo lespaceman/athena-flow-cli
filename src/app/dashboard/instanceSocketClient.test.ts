@@ -1,5 +1,9 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-import {WebSocketServer, type WebSocket as ServerWebSocket} from 'ws';
+import {
+	WebSocketServer,
+	type WebSocket as ServerWebSocket,
+	type WebSocket as WS,
+} from 'ws';
 import {
 	createInstanceSocketClient,
 	instanceSocketUrl,
@@ -84,9 +88,19 @@ describe('createInstanceSocketClient', () => {
 		expect(received[1]).toEqual({type: 'ping', ts: 42});
 	});
 
-	it('sends Authorization: Bearer header on the upgrade request', async () => {
+	it('sends the access token via Sec-WebSocket-Protocol (browser-compatible auth)', async () => {
+		let proto: string | string[] | undefined;
 		let auth: string | string[] | undefined;
+		// Echo the requested subprotocol so the handshake completes (the dashboard
+		// instance-socket extractor enforces this contract too).
+		server.options.handleProtocols = (
+			protocols: Set<string>,
+		): string | false => {
+			const first = [...protocols][0];
+			return first ?? false;
+		};
 		server.once('connection', (_ws, req) => {
+			proto = req.headers['sec-websocket-protocol'];
 			auth = req.headers['authorization'];
 		});
 
@@ -97,9 +111,33 @@ describe('createInstanceSocketClient', () => {
 			heartbeatIntervalMs: 60_000,
 		});
 		await client.connect();
-		await vi.waitFor(() => expect(auth).toBeDefined(), {timeout: 1_000});
-		expect(auth).toBe('Bearer super-access-token');
+		await vi.waitFor(() => expect(proto).toBeDefined(), {timeout: 1_000});
+		expect(proto).toBe('super-access-token');
+		expect(auth).toBeUndefined();
 		client.close('done');
+	});
+
+	it('rejects connect when neither open nor error fires within connectTimeoutMs', async () => {
+		const {EventEmitter} = await import('node:events');
+		// Fake WebSocket that never emits open or error and tolerates terminate().
+		const fakeWs = new EventEmitter() as EventEmitter & {
+			terminate: () => void;
+			readyState: number;
+			OPEN: number;
+		};
+		fakeWs.terminate = () => {};
+		fakeWs.readyState = 0;
+		fakeWs.OPEN = 1;
+
+		const client = createInstanceSocketClient({
+			dashboardUrl: 'http://127.0.0.1:1',
+			instanceId: 'inst_1',
+			accessToken: 'access-1',
+			heartbeatIntervalMs: 60_000,
+			connectTimeoutMs: 80,
+			makeWebSocket: () => fakeWs as unknown as WS,
+		});
+		await expect(client.connect()).rejects.toThrow(/timed out after 80ms/);
 	});
 
 	it('acks job_assignment with assignment_accepted', async () => {

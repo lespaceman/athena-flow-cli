@@ -472,6 +472,7 @@ describe('runDashboardCommand: connect', () => {
 			connect: 0,
 			closed: [] as string[],
 		};
+		const closeHandlers: Array<(reason: string) => void> = [];
 		let lastOpts: {
 			dashboardUrl: string;
 			instanceId: string;
@@ -491,13 +492,18 @@ describe('runDashboardCommand: connect', () => {
 					calls.closed.push(reason ?? '');
 				},
 				onFrame: () => {},
-				onClose: () => {},
+				onClose: (handler: (reason: string) => void) => {
+					closeHandlers.push(handler);
+				},
 			};
 		};
 		return {
 			factory,
 			calls,
 			lastOpts: () => lastOpts,
+			emitClose: (reason: string) => {
+				for (const h of closeHandlers) h(reason);
+			},
 		};
 	}
 
@@ -560,6 +566,39 @@ describe('runDashboardCommand: connect', () => {
 		);
 		expect(code).toBe(1);
 		expect(fakeSocket.calls.connect).toBe(0);
+	});
+
+	it('exits 1 when the socket closes before the shutdown signal', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			jsonResponse(200, {
+				instanceId: 'inst_1',
+				accessToken: 'fresh-access',
+				refreshToken: 'rotated-refresh',
+				expiresInSec: 900,
+			}),
+		);
+		const fakeSocket = makeFakeSocket();
+		const {deps, cap} = makeDeps({fetchMock, stored});
+
+		const pending = runDashboardCommand(
+			{subcommand: 'connect', subcommandArgs: [], flags: {}},
+			{
+				...deps,
+				makeInstanceSocketClient: fakeSocket.factory,
+				waitForShutdown: () => new Promise<string>(() => {}),
+			},
+		);
+		// Yield until runDashboardCommand has subscribed to onClose. Two
+		// macrotask ticks cover the await chain through performRefresh +
+		// client.connect (both resolve synchronously here).
+		await new Promise(r => setTimeout(r, 0));
+		await new Promise(r => setTimeout(r, 0));
+		fakeSocket.emitClose('server gone');
+
+		const code = await pending;
+		expect(code).toBe(1);
+		expect(cap.err.join('\n')).toContain('socket closed unexpectedly');
+		expect(cap.err.join('\n')).toContain('server gone');
 	});
 
 	it('reports socket connect failure and exits 1', async () => {
