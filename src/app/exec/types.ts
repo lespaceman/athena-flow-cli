@@ -52,6 +52,7 @@ export type ExecRunOptions = {
 	outputLastMessagePath?: string;
 	ephemeral?: boolean;
 	timeoutMs?: number;
+	signal?: AbortSignal;
 	onPermission: ExecPermissionPolicy;
 	onQuestion: ExecQuestionPolicy;
 	stdout?: Pick<Writable, 'write'>;

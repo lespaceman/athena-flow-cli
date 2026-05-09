@@ -63,6 +63,11 @@ function makeDeps(overrides: {
 				stored.value = null;
 				removed.count += 1;
 			},
+			startRuntimeDaemon: vi.fn(async () => ({
+				ok: true,
+				connected: true,
+				message: 'connected',
+			})),
 			configPath: () => '/tmp/athena/dashboard.json',
 			logOut: cap.logOut,
 			logError: cap.logError,
@@ -172,6 +177,7 @@ describe('runDashboardCommand: pair', () => {
 			capabilities: {
 				instanceSocket: true,
 				consoleAdapter: true,
+				runtimeDaemon: true,
 				version: '9.9.9-test',
 			},
 		});
@@ -183,6 +189,44 @@ describe('runDashboardCommand: pair', () => {
 			fingerprint: STATIC_FINGERPRINT,
 			pairedAt: 1_700_000_000_000,
 		});
+	});
+
+	it('starts the runtime daemon after pairing and reports bound runners', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			jsonResponse(200, {
+				instanceId: 'inst_1',
+				refreshToken: 'refresh_1',
+				runners: [
+					{
+						runnerId: 'runner_1',
+						name: 'Nightly QA',
+						executionTarget: 'remote',
+						remoteInstanceId: 'inst_1',
+					},
+				],
+			}),
+		);
+		const startRuntimeDaemon = vi.fn(async () => ({
+			ok: true,
+			alreadyRunning: false,
+			connected: true,
+			message: 'connected',
+		}));
+		const {deps, cap} = makeDeps({fetchMock});
+
+		const code = await runDashboardCommand(
+			{
+				subcommand: 'pair',
+				subcommandArgs: ['tok_1'],
+				flags: {url: 'http://localhost:5173'},
+			},
+			{...deps, startRuntimeDaemon},
+		);
+
+		expect(code).toBe(0);
+		expect(startRuntimeDaemon).toHaveBeenCalledTimes(1);
+		expect(cap.out.join('\n')).toContain('runtime daemon connected');
+		expect(cap.out.join('\n')).toContain('bound runner Nightly QA (runner_1)');
 	});
 
 	it('does not log refresh token in human output', async () => {

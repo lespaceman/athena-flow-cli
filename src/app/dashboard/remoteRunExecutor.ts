@@ -29,6 +29,7 @@ export type ExecuteRemoteAssignmentInput = {
 	runExecFn?: (options: ExecRunOptions) => Promise<ExecRunResult>;
 	bootstrapRuntimeConfigFn?: typeof bootstrapRuntimeConfig;
 	now?: () => number;
+	abortSignal?: AbortSignal;
 };
 
 type JsonExecEvent = {
@@ -142,6 +143,7 @@ export async function executeRemoteAssignment({
 	runExecFn = runExec,
 	bootstrapRuntimeConfigFn = bootstrapRuntimeConfig,
 	now = Date.now,
+	abortSignal,
 }: ExecuteRemoteAssignmentInput): Promise<void> {
 	let seq = 0;
 	let lastTerminalFailureMessage: string | null = null;
@@ -249,6 +251,7 @@ export async function executeRemoteAssignment({
 				verbose: false,
 				ephemeral: false,
 				timeoutMs: spec.timeoutSec ? spec.timeoutSec * 1000 : undefined,
+				signal: abortSignal,
 				onPermission: 'fail',
 				onQuestion: 'fail',
 				stdout,

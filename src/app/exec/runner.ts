@@ -210,6 +210,18 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 		void sessionController.kill();
 	}
 
+	const abortListener = (): void => {
+		registerFailure({
+			kind: 'process',
+			message: 'Execution cancelled.',
+		});
+	};
+	if (options.signal?.aborted) {
+		abortListener();
+	} else {
+		options.signal?.addEventListener('abort', abortListener, {once: true});
+	}
+
 	const hasFailure = (): boolean => failure !== undefined;
 	const currentAdapterSessionId = (): string | null => adapterSessionId;
 
@@ -436,6 +448,7 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 			message: error instanceof Error ? error.message : String(error),
 		});
 	} finally {
+		options.signal?.removeEventListener('abort', abortListener);
 		if (timeoutTimer) {
 			clearTimeout(timeoutTimer);
 		}

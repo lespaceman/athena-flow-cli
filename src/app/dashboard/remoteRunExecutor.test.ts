@@ -311,4 +311,91 @@ describe('executeRemoteAssignment', () => {
 			}),
 		);
 	});
+
+	it('passes cancellation through to exec and reports a terminal error', async () => {
+		const sent: unknown[] = [];
+		const controller = new AbortController();
+		let resolveExec: (value: ExecRunOptions) => void = () => {};
+		const execOptions = new Promise<ExecRunOptions>(resolve => {
+			resolveExec = resolve;
+		});
+		const runExecFn = vi.fn(async (options: ExecRunOptions) => {
+			resolveExec(options);
+			await new Promise<void>(resolve => {
+				options.signal?.addEventListener('abort', () => resolve(), {
+					once: true,
+				});
+			});
+			return {
+				success: false,
+				exitCode: 4,
+				athenaSessionId: options.athenaSessionId ?? null,
+				adapterSessionId: null,
+				finalMessage: null,
+				tokens: {
+					input: null,
+					output: null,
+					cacheRead: null,
+					cacheWrite: null,
+					total: null,
+					contextSize: null,
+					contextWindowSize: null,
+				},
+				durationMs: 1,
+				failure: {
+					kind: 'process',
+					message: 'Execution cancelled.',
+				},
+			};
+		});
+
+		const pending = executeRemoteAssignment({
+			frame: {
+				type: 'job_assignment',
+				runId: 'run_cancel',
+				runSpec: {prompt: 'hello'},
+			},
+			client: {
+				sendRunEvent: frame => sent.push(frame),
+			},
+			runExecFn,
+			bootstrapRuntimeConfigFn: () => ({
+				globalConfig: {
+					plugins: [],
+					additionalDirectories: [],
+					workflowMarketplaceSources: [],
+					workflowSelections: {},
+				},
+				projectConfig: {
+					plugins: [],
+					additionalDirectories: [],
+					workflowMarketplaceSources: [],
+					workflowSelections: {},
+				},
+				harness: 'openai-codex',
+				isolationConfig: {preset: 'minimal', additionalDirectories: []},
+				workflowRef: undefined,
+				workflow: undefined,
+				workflowPlan: undefined,
+				modelName: null,
+				warnings: [],
+			}),
+			abortSignal: controller.signal,
+		});
+
+		const options = await execOptions;
+		expect(options.signal).toBe(controller.signal);
+		controller.abort();
+		await pending;
+
+		expect(sent).toContainEqual(
+			expect.objectContaining({
+				runId: 'run_cancel',
+				kind: 'error',
+				payload: expect.objectContaining({
+					message: 'Execution cancelled.',
+				}),
+			}),
+		);
+	});
 });
