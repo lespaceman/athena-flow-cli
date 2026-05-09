@@ -1,4 +1,15 @@
 // src/feed/mapper.ts
+//
+// Orchestrator over four internal seams:
+//   - RunLifecycle: session/run identity, sequence allocation, counters
+//   - DecisionCorrelation: request_id → originating event indexes
+//   - ToolCorrelation: tool_use_id → pre event + streamed delta state
+//   - AgentMessageStream: assistant message buffering, dedup, transcript replay
+//
+// Bookkeeping that didn't earn its own seam stays inline here:
+//   - active subagent stack (LIFO), subagent descriptions, last task description
+//   - last root tasks (todo list)
+//   - actor registry
 
 import type {RuntimeEvent, RuntimeDecision} from '../runtime/types';
 import type {RuntimeEventDataMap} from '../runtime/events';
@@ -15,6 +26,10 @@ import {type TodoItem, type TodoWriteInput, isSubagentTool} from './todo';
 import {ActorRegistry} from './entities';
 import {composeTitle, generateTitle} from './titleGen';
 import {createTranscriptReader} from './transcript';
+import {createRunLifecycle} from './internals/runLifecycle';
+import {createDecisionCorrelation} from './internals/decisionCorrelation';
+import {createToolCorrelation} from './internals/toolCorrelation';
+import {createAgentMessageStream} from './internals/agentMessageStream';
 
 export type FeedMapper = {
 	mapEvent(event: RuntimeEvent): FeedEvent[];
@@ -26,148 +41,34 @@ export type FeedMapper = {
 	allocateSeq(): number;
 };
 
+function extractTodoItems(toolInput: unknown): TodoItem[] {
+	const input = toolInput as TodoWriteInput | undefined;
+	return Array.isArray(input?.todos) ? input.todos : [];
+}
+
+function mapPlanStepStatus(status: string | undefined): TodoItem['status'] {
+	switch (status) {
+		case 'inProgress':
+			return 'in_progress';
+		case 'completed':
+			return 'completed';
+		case undefined:
+		default:
+			return 'pending';
+	}
+}
+
 export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
-	const MAX_STREAMED_TOOL_OUTPUT_CHARS = 64_000;
-	const STREAMED_TOOL_OUTPUT_TRUNCATED_NOTICE =
-		'[streaming output truncated to recent content]\n';
-	let currentSession: Session | null = null;
-	let currentRun: Run | null = null;
-	let lastRootTasks: TodoItem[] = [];
+	const runLifecycle = createRunLifecycle();
+	const decisionCorrelation = createDecisionCorrelation();
+	const toolCorrelation = createToolCorrelation();
+	const transcriptReader = createTranscriptReader();
 	const actors = new ActorRegistry();
-	let seq = 0;
-	let runSeq = 0;
 
-	// Correlation indexes — keyed on undocumented request_id (best-effort).
-	// mapDecision() returns null when requestId is missing from the index.
-	//
-	// NOTE: These indexes are NOT rebuilt from stored session data on restore.
-	// This is intentional: a new run (triggered by SessionStart or UserPromptSubmit)
-	// clears all indexes via ensureRunArray(), and old adapter session request IDs
-	// won't recur in the new adapter session. The brief window between restore and
-	// first new event has empty indexes, which is benign — no decisions can arrive
-	// for events from the old adapter session.
-	const toolPreIndex = new Map<string, string>(); // tool_use_id → feed event_id
-	const toolDeltaTextByUseId = new Map<string, string>(); // tool_use_id → cumulative streamed output
-	const truncatedToolDeltaUseIds = new Set<string>();
-	const eventIdByRequestId = new Map<string, string>(); // runtime id → feed event_id
-	const eventKindByRequestId = new Map<string, string>(); // runtime id → feed kind
-	const resolvedRequestById = new Map<
-		string,
-		{event_id: string; kind: FeedEventKind}
-	>();
-
-	// Bootstrap from stored session
-	if (bootstrap) {
-		// Restore seq, runSeq, and tasks from stored events (single pass)
-		for (const e of bootstrap.feedEvents) {
-			if (e.seq > seq) seq = e.seq;
-			const m = e.run_id.match(/:R(\d+)$/);
-			if (m) {
-				const n = parseInt(m[1]!, 10);
-				if (n > runSeq) runSeq = n;
-			}
-			if (
-				e.kind === 'tool.pre' &&
-				e.actor_id === 'agent:root' &&
-				e.data.tool_name === 'TodoWrite'
-			) {
-				lastRootTasks = extractTodoItems(e.data.tool_input);
-			}
-		}
-
-		// Restore session identity from last adapter session
-		const lastAdapterId = bootstrap.adapterSessionIds.at(-1);
-		if (lastAdapterId) {
-			currentSession = {
-				session_id: lastAdapterId,
-				started_at: bootstrap.createdAt,
-				source: 'resume',
-			};
-		}
-
-		// Rebuild currentRun from last open run
-		let lastRunStart: FeedEvent | undefined;
-		let lastRunEnd: FeedEvent | undefined;
-		for (const e of bootstrap.feedEvents) {
-			if (e.kind === 'run.start') lastRunStart = e;
-			if (e.kind === 'run.end') lastRunEnd = e;
-		}
-		if (lastRunStart && (!lastRunEnd || lastRunEnd.seq < lastRunStart.seq)) {
-			const triggerData = lastRunStart.data as {
-				trigger: {type: string; prompt_preview?: string};
-			};
-			currentRun = {
-				run_id: lastRunStart.run_id,
-				session_id: lastRunStart.session_id,
-				started_at: lastRunStart.ts,
-				trigger: triggerData.trigger as Run['trigger'],
-				status: 'running',
-				actors: {root_agent_id: 'agent:root', subagent_ids: []},
-				counters: {
-					tool_uses: 0,
-					tool_failures: 0,
-					permission_requests: 0,
-					blocks: 0,
-				},
-			};
-			// Rebuild counters from events in this run
-			for (const e of bootstrap.feedEvents) {
-				if (e.run_id !== currentRun.run_id) continue;
-				if (e.kind === 'tool.pre') currentRun.counters.tool_uses++;
-				if (e.kind === 'tool.failure') currentRun.counters.tool_failures++;
-				if (e.kind === 'permission.request')
-					currentRun.counters.permission_requests++;
-			}
-		}
-	}
-
-	function extractTodoItems(toolInput: unknown): TodoItem[] {
-		const input = toolInput as TodoWriteInput | undefined;
-		return Array.isArray(input?.todos) ? input.todos : [];
-	}
-
-	function mapPlanStepStatus(status: string | undefined): TodoItem['status'] {
-		switch (status) {
-			case 'inProgress':
-				return 'in_progress';
-			case 'completed':
-				return 'completed';
-			case undefined:
-			default:
-				return 'pending';
-		}
-	}
-
-	function nextSeq(): number {
-		return ++seq;
-	}
-
-	function appendToolDelta(
-		toolUseId: string | undefined,
-		chunk: string,
-	): string {
-		if (!toolUseId) {
-			return chunk;
-		}
-
-		const cumulative = `${toolDeltaTextByUseId.get(toolUseId) ?? ''}${chunk}`;
-		if (cumulative.length <= MAX_STREAMED_TOOL_OUTPUT_CHARS) {
-			toolDeltaTextByUseId.set(toolUseId, cumulative);
-			return truncatedToolDeltaUseIds.has(toolUseId)
-				? `${STREAMED_TOOL_OUTPUT_TRUNCATED_NOTICE}${cumulative}`
-				: cumulative;
-		}
-
-		const tail = cumulative.slice(-MAX_STREAMED_TOOL_OUTPUT_CHARS);
-		toolDeltaTextByUseId.set(toolUseId, tail);
-		truncatedToolDeltaUseIds.add(toolUseId);
-		return `${STREAMED_TOOL_OUTPUT_TRUNCATED_NOTICE}${tail}`;
-	}
-
-	function getRunId(): string {
-		const sessId = currentSession?.session_id ?? 'unknown';
-		return `${sessId}:R${runSeq}`;
-	}
+	let lastRootTasks: TodoItem[] = [];
+	const activeSubagentStack: string[] = []; // LIFO of active subagent actor IDs
+	let lastTaskDescription: string | undefined;
+	const subagentDescriptions = new Map<string, string>();
 
 	function makeEvent(
 		kind: FeedEventKind,
@@ -177,8 +78,9 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 		runtimeEvent: RuntimeEvent,
 		cause?: Partial<FeedEventCause>,
 	): FeedEvent {
-		const s = nextSeq();
-		const eventId = `${getRunId()}:E${s}`;
+		const s = runLifecycle.allocateSeq();
+		const runId = runLifecycle.getRunId();
+		const eventId = `${runId}:E${s}`;
 
 		const baseCause: FeedEventCause = {
 			hook_request_id: runtimeEvent.id,
@@ -191,7 +93,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 			seq: s,
 			ts: runtimeEvent.timestamp,
 			session_id: runtimeEvent.sessionId,
-			run_id: getRunId(),
+			run_id: runId,
 			kind,
 			level,
 			actor_id: actorId,
@@ -204,81 +106,76 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 
 		fe.title = composeTitle(fe, runtimeEvent);
 
-		// Index only request-bearing events for later decision/resolution correlation.
 		if (
 			runtimeEvent.interaction.expectsDecision ||
 			kind === 'permission.request' ||
 			kind === 'stop.request'
 		) {
-			eventIdByRequestId.set(runtimeEvent.id, eventId);
-			eventKindByRequestId.set(runtimeEvent.id, kind);
-			resolvedRequestById.set(runtimeEvent.id, {event_id: eventId, kind});
+			decisionCorrelation.recordRequest(runtimeEvent.id, eventId, kind);
 		}
 
 		return fe;
 	}
 
-	function closeRun(
+	const agentMessageStream = createAgentMessageStream(
+		makeEvent,
+		transcriptReader,
+	);
+
+	if (bootstrap) {
+		runLifecycle.restoreFrom(bootstrap);
+		for (const e of bootstrap.feedEvents) {
+			if (
+				e.kind === 'tool.pre' &&
+				e.actor_id === 'agent:root' &&
+				(e.data as {tool_name?: string}).tool_name === 'TodoWrite'
+			) {
+				lastRootTasks = extractTodoItems(
+					(e.data as {tool_input?: unknown}).tool_input,
+				);
+			}
+		}
+	}
+
+	function closeRunIntoEvent(
 		runtimeEvent: RuntimeEvent,
 		status: 'completed' | 'failed' | 'aborted',
 	): FeedEvent | null {
-		if (!currentRun) return null;
-		currentRun.status = status;
-		currentRun.ended_at = runtimeEvent.timestamp;
-		const evt = makeEvent(
+		const closed = runLifecycle.closeRun(runtimeEvent.timestamp, status);
+		if (!closed) return null;
+		return makeEvent(
 			'run.end',
 			'info',
 			'system',
-			{status, counters: {...currentRun.counters}},
+			{status, counters: {...closed.counters}},
 			runtimeEvent,
 		);
-		currentRun = null;
-		return evt;
 	}
 
 	function ensureRunArray(
 		runtimeEvent: RuntimeEvent,
-		triggerType:
-			| 'user_prompt_submit'
-			| 'resume'
-			| 'clear'
-			| 'compact'
-			| 'other' = 'other',
+		triggerType: Run['trigger']['type'] = 'other',
 		promptPreview?: string,
 	): FeedEvent[] {
-		if (currentRun && triggerType === 'other') return [];
+		if (runLifecycle.getCurrentRun() && triggerType === 'other') return [];
 
 		const results: FeedEvent[] = [];
 
-		if (currentRun) {
-			const closeEvt = closeRun(runtimeEvent, 'completed');
-			if (closeEvt) results.push(closeEvt);
-		}
+		const closeEvt = closeRunIntoEvent(runtimeEvent, 'completed');
+		if (closeEvt) results.push(closeEvt);
 
-		runSeq++;
-		toolPreIndex.clear();
-		toolDeltaTextByUseId.clear();
-		truncatedToolDeltaUseIds.clear();
-		reasoningSummaryByKey.clear();
-		eventIdByRequestId.clear();
-		eventKindByRequestId.clear();
-		resolvedRequestById.clear();
-		resetAgentMessageDeduper();
+		// Reset all per-run state across the seams.
+		toolCorrelation.resetForNewRun();
+		decisionCorrelation.resetForNewRun();
+		agentMessageStream.resetForNewRun();
 		activeSubagentStack.length = 0;
-		currentRun = {
-			run_id: getRunId(),
-			session_id: runtimeEvent.sessionId,
-			started_at: runtimeEvent.timestamp,
-			trigger: {type: triggerType, prompt_preview: promptPreview},
-			status: 'running',
-			actors: {root_agent_id: 'agent:root', subagent_ids: []},
-			counters: {
-				tool_uses: 0,
-				tool_failures: 0,
-				permission_requests: 0,
-				blocks: 0,
-			},
-		};
+
+		runLifecycle.openNewRun(
+			runtimeEvent.timestamp,
+			runtimeEvent.sessionId,
+			triggerType,
+			promptPreview,
+		);
 
 		results.push(
 			makeEvent(
@@ -291,111 +188,6 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 		);
 
 		return results;
-	}
-
-	const activeSubagentStack: string[] = []; // LIFO stack of active subagent actor IDs
-	let lastTaskDescription: string | undefined;
-	const subagentDescriptions = new Map<string, string>(); // agent_id → description
-	const pendingMessages = new Map<
-		string,
-		{
-			message: string;
-			actorId: string;
-			scope: 'root' | 'subagent';
-		}
-	>();
-	const lastAgentMessageByActorScope = new Map<string, string>();
-	const reasoningSummaryByKey = new Map<string, string>();
-	const transcriptReader = createTranscriptReader();
-
-	/**
-	 * Read new assistant messages from the transcript and emit agent.message events.
-	 * Called on every hook event that carries a transcript_path.
-	 */
-	function emitTranscriptMessages(
-		transcriptPath: string,
-		runtimeEvent: RuntimeEvent,
-		actorId: string,
-		scope: 'root' | 'subagent',
-	): FeedEvent[] {
-		const msgs = transcriptReader.readNewAssistantMessages(transcriptPath);
-		const results: FeedEvent[] = [];
-		for (const msg of msgs) {
-			const agentMsg = emitAgentMessage(
-				runtimeEvent,
-				actorId,
-				scope,
-				msg.text,
-				'transcript',
-				undefined,
-				msg.model,
-			);
-			if (agentMsg) {
-				results.push(agentMsg);
-			}
-		}
-		return results;
-	}
-
-	function agentMessageKey(
-		actorId: string,
-		scope: 'root' | 'subagent',
-	): string {
-		return `${actorId}\0${scope}`;
-	}
-
-	function normalizeAgentMessage(message: string): string {
-		return message.replace(/\r\n/g, '\n').trimEnd();
-	}
-
-	function resetAgentMessageDeduper(): void {
-		lastAgentMessageByActorScope.clear();
-	}
-
-	function appendReasoningSummary(
-		itemId: string | undefined,
-		index: number | undefined,
-		chunk: string,
-	): string {
-		const key = `${itemId ?? ''}:${index ?? 0}`;
-		const next = `${reasoningSummaryByKey.get(key) ?? ''}${chunk}`;
-		reasoningSummaryByKey.set(key, next);
-		return next;
-	}
-
-	function emitAgentMessage(
-		runtimeEvent: RuntimeEvent,
-		actorId: string,
-		scope: 'root' | 'subagent',
-		message: string,
-		source: 'hook' | 'transcript',
-		cause?: Partial<FeedEventCause>,
-		model?: string,
-	): FeedEvent | null {
-		const normalized = normalizeAgentMessage(message);
-		if (!normalized) return null;
-
-		const key = agentMessageKey(actorId, scope);
-		const previous = lastAgentMessageByActorScope.get(key);
-		if (previous === normalized) {
-			return null;
-		}
-
-		const event = makeEvent(
-			'agent.message',
-			'info',
-			actorId,
-			{
-				message: normalized,
-				source,
-				scope,
-				...(model ? {model} : {}),
-			} satisfies import('./types').AgentMessageData,
-			runtimeEvent,
-			cause,
-		);
-		lastAgentMessageByActorScope.set(key, normalized);
-		return event;
 	}
 
 	function resolveToolActor(): string {
@@ -455,71 +247,8 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 		};
 		const eventKind = event.kind;
 		const results: FeedEvent[] = [];
-		const resolveMessageScope = (): {
-			actorId: string;
-			scope: 'root' | 'subagent';
-		} => {
-			const actorId = resolveToolActor();
-			return {
-				actorId,
-				scope: activeSubagentStack.length > 0 ? 'subagent' : 'root',
-			};
-		};
-		const appendPendingMessageDelta = (
-			itemId: string | undefined,
-			delta: string,
-		): void => {
-			if (!delta) return;
-			const key = itemId ?? '__legacy_root__';
-			const existing = pendingMessages.get(key);
-			if (existing) {
-				existing.message += delta;
-				return;
-			}
-			const scope = resolveMessageScope();
-			pendingMessages.set(key, {
-				message: delta,
-				actorId: scope.actorId,
-				scope: scope.scope,
-			});
-		};
-		const emitCompletedMessage = (
-			itemId: string | undefined,
-			messageText: string | undefined,
-		): void => {
-			const key = itemId ?? '__legacy_root__';
-			const pending = pendingMessages.get(key);
-			const message = messageText ?? pending?.message ?? '';
-			if (!message) return;
-			const scope = pending ?? resolveMessageScope();
-			const agentMsg = emitAgentMessage(
-				event,
-				scope.actorId,
-				scope.scope,
-				message,
-				'hook',
-			);
-			if (agentMsg) {
-				results.push(agentMsg);
-			}
-			pendingMessages.delete(key);
-		};
-		const flushPendingMessages = (): void => {
-			for (const [itemId, pending] of pendingMessages) {
-				if (!pending.message) continue;
-				const agentMsg = emitAgentMessage(
-					event,
-					pending.actorId,
-					pending.scope,
-					pending.message,
-					'hook',
-				);
-				if (agentMsg) {
-					results.push(agentMsg);
-				}
-				pendingMessages.delete(itemId);
-			}
-		};
+		const currentScope = (): 'root' | 'subagent' =>
+			activeSubagentStack.length > 0 ? 'subagent' : 'root';
 
 		// Fallback: emit agent.message from last_assistant_message when transcript yields nothing
 		function emitFallbackMessage(
@@ -531,17 +260,15 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 			const msg = readString(d['last_assistant_message']);
 			if (!msg) return;
 			const parentEvt = results.find(r => r.kind === parentKind);
-			const agentMsg = emitAgentMessage(
-				event,
+			const ev = agentMessageStream.emit({
+				runtimeEvent: event,
 				actorId,
 				scope,
-				msg,
-				'hook',
-				parentEvt ? {parent_event_id: parentEvt.event_id} : undefined,
-			);
-			if (agentMsg) {
-				results.push(agentMsg);
-			}
+				message: msg,
+				source: 'hook',
+				cause: parentEvt ? {parent_event_id: parentEvt.event_id} : undefined,
+			});
+			if (ev) results.push(ev);
 		}
 
 		// Extract new assistant messages from transcript BEFORE processing the
@@ -551,25 +278,26 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 		const isStopEvent =
 			eventKind === 'stop.request' || eventKind === 'subagent.stop';
 		if (transcriptPath && !isStopEvent) {
-			const transcriptMsgs = emitTranscriptMessages(
-				transcriptPath,
-				event,
-				resolveToolActor(),
-				activeSubagentStack.length > 0 ? 'subagent' : 'root',
+			results.push(
+				...agentMessageStream.emitTranscriptMessages(
+					transcriptPath,
+					event,
+					resolveToolActor(),
+					currentScope(),
+				),
 			);
-			results.push(...transcriptMsgs);
 		}
 
 		switch (eventKind) {
 			case 'session.start': {
-				pendingMessages.clear();
+				agentMessageStream.clearPending();
 				const source = readString(d['source']) ?? 'startup';
-				currentSession = {
+				runLifecycle.setSession({
 					session_id: event.sessionId,
 					started_at: event.timestamp,
 					source,
 					agent_type: readString(d['agent_type']),
-				};
+				});
 				if (source === 'resume' || source === 'clear' || source === 'compact') {
 					results.push(
 						...ensureRunArray(event, source as 'resume' | 'clear' | 'compact'),
@@ -592,11 +320,9 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 			}
 
 			case 'session.end': {
-				pendingMessages.clear();
-				if (currentRun) {
-					const closeEvt = closeRun(event, 'completed');
-					if (closeEvt) results.push(closeEvt);
-				}
+				agentMessageStream.clearPending();
+				const closeEvt = closeRunIntoEvent(event, 'completed');
+				if (closeEvt) results.push(closeEvt);
 				results.push(
 					makeEvent(
 						'session.end',
@@ -608,9 +334,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 						event,
 					),
 				);
-				if (currentSession) {
-					currentSession.ended_at = event.timestamp;
-				}
+				runLifecycle.endSession(event.timestamp);
 				break;
 			}
 
@@ -638,7 +362,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 			}
 
 			case 'turn.start': {
-				pendingMessages.clear();
+				agentMessageStream.clearPending();
 				const prompt = readString(d['prompt']);
 				results.push(
 					...ensureRunArray(
@@ -666,25 +390,31 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 			}
 
 			case 'message.delta': {
-				appendPendingMessageDelta(
+				agentMessageStream.appendPendingDelta(
 					readString(d['item_id']),
 					readString(d['delta']) ?? '',
+					resolveToolActor(),
+					currentScope(),
 				);
 				break;
 			}
 
 			case 'message.complete': {
 				results.push(...ensureRunArray(event));
-				emitCompletedMessage(
-					readString(d['item_id']),
-					readString(d['message']),
-				);
+				const ev = agentMessageStream.emitCompleted({
+					itemId: readString(d['item_id']),
+					messageText: readString(d['message']),
+					fallbackActorId: resolveToolActor(),
+					fallbackScope: currentScope(),
+					runtimeEvent: event,
+				});
+				if (ev) results.push(ev);
 				break;
 			}
 
 			case 'turn.complete': {
-				if (!currentRun) {
-					pendingMessages.clear();
+				if (!runLifecycle.getCurrentRun()) {
+					agentMessageStream.clearPending();
 					break;
 				}
 				const stopEvt = makeEvent(
@@ -697,27 +427,22 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 					event,
 				);
 				results.push(stopEvt);
-				const messageCountBeforeFlush = results.length;
-				flushPendingMessages();
-				if (results.length > messageCountBeforeFlush) {
-					for (let i = messageCountBeforeFlush; i < results.length; i++) {
-						results[i]!.cause = {
-							...(results[i]!.cause ?? {}),
-							parent_event_id: stopEvt.event_id,
-						};
-					}
+				const flushed = agentMessageStream.flushPending(event);
+				for (const f of flushed) {
+					f.cause = {
+						...(f.cause ?? {}),
+						parent_event_id: stopEvt.event_id,
+					};
+					results.push(f);
 				}
-				const closeEvt = closeRun(event, 'completed');
-				if (closeEvt) {
-					results.push(closeEvt);
-				}
+				const closeEvt = closeRunIntoEvent(event, 'completed');
+				if (closeEvt) results.push(closeEvt);
 				break;
 			}
 
 			case 'plan.delta': {
 				const planSteps = d['plan'];
 				if (Array.isArray(planSteps) && planSteps.length > 0) {
-					// Compare raw steps against lastRootTasks before allocating.
 					const changed =
 						planSteps.length !== lastRootTasks.length ||
 						planSteps.some(
@@ -737,7 +462,6 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 								status: mapPlanStepStatus(step.status),
 							}),
 						);
-						// Notify UI — useMemo on feedEvents drives task panel updates.
 						results.push(
 							makeEvent(
 								'todo.update',
@@ -784,7 +508,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 							'info',
 							'agent:root',
 							{
-								message: appendReasoningSummary(
+								message: agentMessageStream.appendReasoningSummary(
 									readString(d['item_id']),
 									summaryIndex,
 									readString(d['delta']) ?? '',
@@ -839,9 +563,9 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 				const toolUseId = resolveToolUseId(event, d);
 				const toolName =
 					event.toolName ?? readString(d['tool_name']) ?? 'Unknown';
-				const parentId = toolUseId ? toolPreIndex.get(toolUseId) : undefined;
+				const parentId = toolCorrelation.lookupParent(toolUseId);
 				const chunk = readString(d['delta']) ?? '';
-				const cumulative = appendToolDelta(toolUseId, chunk);
+				const cumulative = toolCorrelation.appendDelta(toolUseId, chunk);
 				results.push(
 					makeEvent(
 						'tool.delta',
@@ -862,7 +586,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 
 			case 'tool.pre': {
 				results.push(...ensureRunArray(event));
-				if (currentRun) currentRun.counters.tool_uses++;
+				runLifecycle.incrementCounter('tool_uses');
 				const toolUseId = resolveToolUseId(event, d);
 				const toolName =
 					event.toolName ?? readString(d['tool_name']) ?? 'Unknown';
@@ -879,7 +603,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 					toolUseId ? {tool_use_id: toolUseId} : undefined,
 				);
 				if (toolUseId) {
-					toolPreIndex.set(toolUseId, fe.event_id);
+					toolCorrelation.recordPre(toolUseId, fe.event_id);
 				}
 				results.push(fe);
 				if (toolName === 'WebSearch') {
@@ -926,11 +650,8 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 			case 'tool.post': {
 				results.push(...ensureRunArray(event));
 				const toolUseId = resolveToolUseId(event, d);
-				if (toolUseId) {
-					toolDeltaTextByUseId.delete(toolUseId);
-					truncatedToolDeltaUseIds.delete(toolUseId);
-				}
-				const parentId = toolUseId ? toolPreIndex.get(toolUseId) : undefined;
+				if (toolUseId) toolCorrelation.forgetTool(toolUseId);
+				const parentId = toolCorrelation.lookupParent(toolUseId);
 				const toolName =
 					event.toolName ?? readString(d['tool_name']) ?? 'Unknown';
 				const postEvent = makeEvent(
@@ -1001,13 +722,10 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 
 			case 'tool.failure': {
 				results.push(...ensureRunArray(event));
-				if (currentRun) currentRun.counters.tool_failures++;
+				runLifecycle.incrementCounter('tool_failures');
 				const toolUseId = resolveToolUseId(event, d);
-				if (toolUseId) {
-					toolDeltaTextByUseId.delete(toolUseId);
-					truncatedToolDeltaUseIds.delete(toolUseId);
-				}
-				const parentId = toolUseId ? toolPreIndex.get(toolUseId) : undefined;
+				if (toolUseId) toolCorrelation.forgetTool(toolUseId);
+				const parentId = toolCorrelation.lookupParent(toolUseId);
 				const toolName =
 					event.toolName ?? readString(d['tool_name']) ?? 'Unknown';
 				results.push(
@@ -1031,7 +749,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 
 			case 'permission.request': {
 				results.push(...ensureRunArray(event));
-				if (currentRun) currentRun.counters.permission_requests++;
+				runLifecycle.incrementCounter('permission_requests');
 				const toolName =
 					event.toolName ?? readString(d['tool_name']) ?? 'Unknown';
 				results.push(
@@ -1091,6 +809,7 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 				const agentType = event.agentType ?? readString(d['agent_type']);
 				if (agentId) {
 					actors.ensureSubagent(agentId, agentType ?? 'unknown');
+					const currentRun = runLifecycle.getCurrentRun();
 					if (currentRun) currentRun.actors.subagent_ids.push(agentId);
 					activeSubagentStack.push(`subagent:${agentId}`);
 				}
@@ -1285,8 +1004,8 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 								? String(data['request_id'])
 								: undefined;
 						const resolved = requestId
-							? resolvedRequestById.get(requestId)
-							: undefined;
+							? decisionCorrelation.lookupResolved(requestId)
+							: null;
 						return [
 							makeEvent(
 								'server.request.resolved',
@@ -1670,16 +1389,12 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 		// Drain the transcript to advance the byte offset and prevent the next event
 		// from re-emitting the same text.
 		if (eventKind === 'stop.request') {
-			if (transcriptPath) {
-				transcriptReader.readNewAssistantMessages(transcriptPath);
-			}
+			if (transcriptPath) agentMessageStream.drainTranscript(transcriptPath);
 			emitFallbackMessage('stop.request', 'agent:root', 'root');
 		}
 		if (eventKind === 'subagent.stop') {
 			const agentId = readString(d['agent_id']) ?? 'unknown';
-			if (transcriptPath) {
-				transcriptReader.readNewAssistantMessages(transcriptPath);
-			}
+			if (transcriptPath) agentMessageStream.drainTranscript(transcriptPath);
 			emitFallbackMessage('subagent.stop', `subagent:${agentId}`, 'subagent');
 		}
 
@@ -1690,23 +1405,20 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 		requestId: string,
 		decision: RuntimeDecision,
 	): FeedEvent | null {
-		const parentEventId = eventIdByRequestId.get(requestId);
-		if (!parentEventId) return null;
-
-		const originalKind = eventKindByRequestId.get(requestId);
-
-		// Consume the correlation entry — prevents duplicate decisions for the same request
-		eventIdByRequestId.delete(requestId);
-		eventKindByRequestId.delete(requestId);
+		const consumed = decisionCorrelation.consumeForDecision(requestId);
+		if (!consumed) return null;
+		const {parentEventId, originalKind} = consumed;
 
 		function makeDecisionEvent(kind: FeedEventKind, data: unknown): FeedEvent {
-			const s = nextSeq();
+			const s = runLifecycle.allocateSeq();
+			const runId = runLifecycle.getRunId();
+			const session = runLifecycle.getSession();
 			const fe = {
-				event_id: `${getRunId()}:E${s}`,
+				event_id: `${runId}:E${s}`,
 				seq: s,
 				ts: Date.now(),
-				session_id: currentSession?.session_id ?? 'unknown',
-				run_id: getRunId(),
+				session_id: session?.session_id ?? 'unknown',
+				run_id: runId,
 				kind,
 				level: 'info' as const,
 				actor_id: decision.source === 'user' ? 'user' : 'system',
@@ -1753,19 +1465,16 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 			} else if (decision.type === 'passthrough') {
 				data = {decision_type: 'no_opinion', reason: decision.source};
 			} else if (d?.decision === 'block') {
-				// Command hook schema: { decision: "block", reason: "..." }
 				data = {
 					decision_type: 'block',
 					reason: decisionReason ?? decision.reason ?? 'Blocked',
 				};
 			} else if (d?.ok === false) {
-				// Prompt/agent hook schema: { ok: false, reason: "..." }
 				data = {
 					decision_type: 'block',
 					reason: decisionReason ?? 'Blocked by hook',
 				};
 			} else {
-				// No blocking signal — treat as allow
 				data = {decision_type: 'allow'};
 			}
 
@@ -1778,10 +1487,10 @@ export function createFeedMapper(bootstrap?: MapperBootstrap): FeedMapper {
 	return {
 		mapEvent,
 		mapDecision,
-		getSession: () => currentSession,
-		getCurrentRun: () => currentRun,
+		getSession: () => runLifecycle.getSession(),
+		getCurrentRun: () => runLifecycle.getCurrentRun(),
 		getActors: () => actors.all(),
 		getTasks: () => lastRootTasks,
-		allocateSeq: nextSeq,
+		allocateSeq: () => runLifecycle.allocateSeq(),
 	};
 }
