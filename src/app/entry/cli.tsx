@@ -29,13 +29,7 @@ import {writeGlobalConfig} from '../../infra/plugins/config';
 import {bootstrapRuntimeConfig} from '../bootstrap/bootstrapConfig';
 import {resolveTheme} from '../../ui/theme/index';
 import {shouldShowSetup} from '../../setup/shouldShowSetup';
-import {
-	EXEC_EXIT_CODE,
-	EXEC_PERMISSION_POLICIES,
-	EXEC_QUESTION_POLICIES,
-	EXEC_DEFAULT_PERMISSION_POLICY,
-	EXEC_DEFAULT_QUESTION_POLICY,
-} from '../exec';
+import {EXEC_EXIT_CODE} from '../exec';
 import {runExecCommand} from './execCommand';
 import {resolveInteractiveSession} from './interactiveSession';
 import {runWorkflowCommand} from './workflowCommand';
@@ -91,8 +85,6 @@ const VALID_ISOLATION_PRESETS = ['strict', 'minimal', 'permissive'] as const;
 const VALID_HARNESSES = listHarnessAdapters()
 	.filter(a => a.enabled)
 	.map(a => a.id);
-const EXEC_PERMISSION_POLICIES_HELP = EXEC_PERMISSION_POLICIES.join(', ');
-const EXEC_QUESTION_POLICIES_HELP = EXEC_QUESTION_POLICIES.join(', ');
 
 function isOneOf<T extends string>(
 	value: string,
@@ -245,11 +237,9 @@ const cli = meow(
 			--json          Emit JSONL events to stdout (exec mode)
 			--output-last-message  Write final assistant message to a file (exec mode)
 			--ephemeral     Do not persist Athena session data (exec mode)
-			--on-permission Policy for permission requests: ${EXEC_PERMISSION_POLICIES_HELP} (default: ${EXEC_DEFAULT_PERMISSION_POLICY}, exec mode)
-			--on-question   Policy for AskUserQuestion: ${EXEC_QUESTION_POLICIES_HELP} (default: ${EXEC_DEFAULT_QUESTION_POLICY}, exec mode)
 			--timeout-ms    Hard timeout for exec run in milliseconds
 			--workflow      Override the active workflow for this run only (no config change)
-			--channel       Attach a channel for permission relay (interactive only, repeatable). Built-in: telegram
+			--channel       Attach a channel for permission/question relay (repeatable). Built-in: telegram
 			--bot-token     Telegram bot token (channel telegram configure)
 			--user-id       Telegram allowed user id (channel telegram configure)
 			--chat-id       Telegram destination chat id (defaults to --user-id)
@@ -287,7 +277,8 @@ const cli = meow(
 		  $ athena-flow resume
 		  $ athena-flow resume <sessionId>
 		  $ athena-flow exec "summarize current repo status"
-		  $ athena-flow exec "run tests" --json --on-permission=deny --on-question=empty
+		  $ athena-flow exec "run tests" --json
+		  $ athena-flow exec "delete /tmp/foo" --channel telegram
 		  $ athena-flow --project-dir=/my/project
 		  $ athena-flow --plugin=/path/to/my-plugin
 		  $ athena-flow --isolation=minimal
@@ -337,14 +328,6 @@ const cli = meow(
 			ephemeral: {
 				type: 'boolean',
 				default: false,
-			},
-			onPermission: {
-				type: 'string',
-				default: EXEC_DEFAULT_PERMISSION_POLICY,
-			},
-			onQuestion: {
-				type: 'string',
-				default: EXEC_DEFAULT_QUESTION_POLICY,
 			},
 			timeoutMs: {
 				type: 'number',
@@ -449,16 +432,6 @@ async function main(): Promise<void> {
 
 	if (command === 'exec' && commandArgs.length !== 1) {
 		console.error('Usage: athena-flow exec "<prompt>" [options]');
-		await exitWith(EXEC_EXIT_CODE.USAGE);
-		return;
-	}
-
-	if (command === 'exec' && (cli.flags.channel?.length ?? 0) > 0) {
-		const list = (cli.flags.channel ?? []).join(', ');
-		console.error(
-			`Error: --channel is not supported in exec mode (got: ${list}). ` +
-				'Use --on-permission to govern unattended permission handling.',
-		);
 		await exitWith(EXEC_EXIT_CODE.USAGE);
 		return;
 	}
@@ -728,10 +701,9 @@ async function main(): Promise<void> {
 				json: cli.flags.json,
 				outputLastMessage: cli.flags.outputLastMessage,
 				ephemeral: cli.flags.ephemeral,
-				onPermission: cli.flags.onPermission,
-				onQuestion: cli.flags.onQuestion,
 				timeoutMs: cli.flags.timeoutMs,
 				verbose: cli.flags.verbose,
+				channels: cli.flags.channel ?? [],
 			},
 			runtimeConfig,
 		});

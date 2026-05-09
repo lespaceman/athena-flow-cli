@@ -19,10 +19,13 @@ import {
 import {resolveHarnessAdapter} from '../../harnesses/registry';
 import type {TokenUsage} from '../../shared/types/headerMetrics';
 import {createRuntime} from '../runtime/createRuntime';
+import {
+	createRelayPermissionCallback,
+	createRelayQuestionCallback,
+} from '../channels/relayAdapter';
+import {startSessionBridge} from '../channels/sessionBridgeLifecycle';
 import {findLastMappedAgentMessage, resolveFinalMessage} from './finalMessage';
 import {createExecOutputWriter} from './output';
-import {resolvePermissionPolicy} from './policies';
-import {resolveQuestionPolicy, type PolicyResolution} from './policies';
 import type {
 	ExecRunFailure,
 	ExecRunOptions,
@@ -40,17 +43,6 @@ const NULL_TOKENS: TokenUsage = {
 	contextSize: null,
 	contextWindowSize: null,
 };
-
-function policyFailure(
-	resolution: PolicyResolution,
-	fallbackMessage: string,
-): ExecRunFailure | null {
-	if (resolution.action === 'respond') return null;
-	return {
-		kind: 'policy',
-		message: resolution.reason || fallbackMessage,
-	};
-}
 
 function workflowFailure(
 	state: ExecWorkflowFailureState,
@@ -119,8 +111,8 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 		now,
 	});
 
-	// Exec mode keeps permission behavior policy-driven. We intentionally do not
-	// pre-seed approval rules from isolation defaults to avoid silent auto-allow.
+	// Exec does not pre-seed rules from isolation defaults; channel relay (or
+	// the absence of one) governs approvals.
 	const rules: import('../../core/controller/rules').HookRule[] = [];
 
 	let failure: ExecRunFailure | undefined;
@@ -225,36 +217,29 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 	const hasFailure = (): boolean => failure !== undefined;
 	const currentAdapterSessionId = (): string | null => adapterSessionId;
 
+	const bridgeFactory = options.bridgeFactory ?? startSessionBridge;
+	const bridge =
+		options.channels && options.channels.length > 0
+			? await bridgeFactory({
+					runtimeId: athenaSessionId,
+					defaultAgentId: 'main',
+					...(options.signal ? {signal: options.signal} : {}),
+				})
+			: null;
+
 	const controllerCallbacks: ControllerCallbacks = {
 		getRules: () => rules,
-		enqueuePermission: (event: RuntimeEvent) => {
-			const resolution = resolvePermissionPolicy(options.onPermission, event);
-			const policyError = policyFailure(
-				resolution,
-				'Permission request cannot be resolved in non-interactive mode.',
-			);
-			if (policyError) {
-				registerFailure(policyError);
-				return;
-			}
-			if (resolution.action === 'respond') {
-				runtime.sendDecision(event.id, resolution.decision);
-			}
-		},
-		enqueueQuestion: (eventId: string) => {
-			const resolution = resolveQuestionPolicy(options.onQuestion);
-			const policyError = policyFailure(
-				resolution,
-				'Question request cannot be resolved in non-interactive mode.',
-			);
-			if (policyError) {
-				registerFailure(policyError);
-				return;
-			}
-			if (resolution.action === 'respond') {
-				runtime.sendDecision(eventId, resolution.decision);
-			}
-		},
+		// No UI queue in exec; with no bridge attached, the runtime never
+		// receives a decision and the request blocks until timeoutMs (or abort).
+		enqueuePermission: () => {},
+		enqueueQuestion: () => {},
+		...(bridge
+			? {
+					relayPermission: createRelayPermissionCallback(bridge, runtime),
+					relayQuestion: createRelayQuestionCallback(bridge, runtime),
+				}
+			: {}),
+		...(options.signal ? {signal: options.signal} : {}),
 	};
 
 	const linkedAdapterSessions = new Set<string>();
@@ -458,6 +443,7 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 		if (runtimeStarted) {
 			runtime.stop();
 		}
+		await bridge?.stop();
 		store.close();
 	}
 
@@ -492,9 +478,7 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 	}
 
 	let exitCode: ExecRunResult['exitCode'] = EXEC_EXIT_CODE.SUCCESS;
-	if (failure?.kind === 'policy') {
-		exitCode = EXEC_EXIT_CODE.POLICY;
-	} else if (failure?.kind === 'timeout') {
+	if (failure?.kind === 'timeout') {
 		exitCode = EXEC_EXIT_CODE.TIMEOUT;
 	} else if (failure?.kind === 'output') {
 		exitCode = EXEC_EXIT_CODE.OUTPUT;

@@ -11,6 +11,7 @@ import type {
 	RuntimeEvent,
 	RuntimeEventHandler,
 } from '../../core/runtime/types';
+import type {SessionBridge} from '../channels/sessionBridge';
 import {runExec} from './runner';
 import {EXEC_EXIT_CODE} from './types';
 
@@ -104,6 +105,30 @@ function createWriteCapture() {
 	};
 }
 
+type FakeBridge = Pick<
+	SessionBridge,
+	'relayPermission' | 'relayQuestion' | 'stop'
+>;
+
+function makeFakeBridge(overrides: Partial<FakeBridge> = {}): SessionBridge {
+	const defaults: FakeBridge = {
+		relayPermission: vi.fn().mockResolvedValue({
+			channelRequestId: 'chan-1',
+			result: {
+				kind: 'verdict',
+				channelId: 'telegram',
+				behavior: 'allow',
+			},
+		}),
+		relayQuestion: vi.fn().mockResolvedValue({
+			channelRequestId: 'chan-q-1',
+			result: {kind: 'no_relay'},
+		}),
+		stop: vi.fn().mockResolvedValue(undefined),
+	};
+	return {...defaults, ...overrides} as unknown as SessionBridge;
+}
+
 describe('runExec', () => {
 	it('returns success and prints final message in human mode', async () => {
 		const runtime = new MockRuntime();
@@ -135,8 +160,6 @@ describe('runExec', () => {
 			projectDir: '/tmp',
 			harness: 'claude-code',
 			isolationConfig: {},
-			onPermission: 'fail',
-			onQuestion: 'fail',
 			ephemeral: true,
 			stdout: stdout.writer,
 			stderr: stderr.writer,
@@ -151,10 +174,12 @@ describe('runExec', () => {
 		expect(stderr.read()).not.toContain('error');
 	});
 
-	it('fails with policy exit code when permission policy is fail', async () => {
+	it('cancels via abort signal while a permission request is pending and returns runtime exit code', async () => {
 		const runtime = new MockRuntime();
 		const stdout = createWriteCapture();
 		const stderr = createWriteCapture();
+
+		const abortController = new AbortController();
 
 		const spawnProcess = (opts: SpawnArgs): ChildProcess => {
 			const child = makeChildProcess(() => {
@@ -164,6 +189,7 @@ describe('runExec', () => {
 			setImmediate(() => {
 				runtime.emit(
 					makeRuntimeEvent({
+						id: 'perm-cancel',
 						kind: 'permission.request',
 						hookName: 'PermissionRequest',
 						toolName: 'Bash',
@@ -171,6 +197,7 @@ describe('runExec', () => {
 						data: {tool_name: 'Bash'},
 					}),
 				);
+				setImmediate(() => abortController.abort());
 			});
 
 			return child;
@@ -181,83 +208,23 @@ describe('runExec', () => {
 			projectDir: '/tmp',
 			harness: 'claude-code',
 			isolationConfig: {},
-			onPermission: 'fail',
-			onQuestion: 'fail',
 			ephemeral: true,
 			stdout: stdout.writer,
 			stderr: stderr.writer,
 			runtimeFactory: () => runtime,
 			spawnProcess,
+			signal: abortController.signal,
 		});
 
 		expect(result.success).toBe(false);
-		expect(result.exitCode).toBe(EXEC_EXIT_CODE.POLICY);
-		expect(result.failure?.kind).toBe('policy');
+		expect(result.exitCode).toBe(EXEC_EXIT_CODE.RUNTIME);
+		expect(result.failure?.kind).toBe('process');
+		expect(result.failure?.message).toBe('Execution cancelled.');
 		expect(runtime.decisions.length).toBe(0);
-		expect(stderr.read()).toContain('error');
 	});
 
-	it('auto-answers AskUserQuestion in empty mode', async () => {
-		const runtime = new MockRuntime();
-		const stdout = createWriteCapture();
-		const stderr = createWriteCapture();
-
-		const spawnProcess = (opts: SpawnArgs): ChildProcess => {
-			const child = makeChildProcess();
-
-			setImmediate(() => {
-				runtime.emit(
-					makeRuntimeEvent({
-						id: 'ask-1',
-						kind: 'tool.pre',
-						hookName: 'PreToolUse',
-						toolName: 'AskUserQuestion',
-						interaction: {expectsDecision: true},
-						data: {
-							tool_name: 'AskUserQuestion',
-							tool_input: {},
-						},
-					}),
-				);
-				opts.onStdout?.(
-					JSON.stringify({
-						type: 'message',
-						role: 'assistant',
-						content: [{type: 'text', text: 'answered'}],
-					}) + '\n',
-				);
-				opts.onExit?.(0);
-			});
-
-			return child;
-		};
-
-		const result = await runExec({
-			prompt: 'hello',
-			projectDir: '/tmp',
-			harness: 'claude-code',
-			isolationConfig: {},
-			onPermission: 'fail',
-			onQuestion: 'empty',
-			ephemeral: true,
-			stdout: stdout.writer,
-			stderr: stderr.writer,
-			runtimeFactory: () => runtime,
-			spawnProcess,
-		});
-
-		expect(result.success).toBe(true);
-		expect(runtime.decisions).toContainEqual(
-			expect.objectContaining({
-				eventId: 'ask-1',
-				decision: expect.objectContaining({
-					intent: {kind: 'question_answer', answers: {}},
-				}),
-			}),
-		);
-	});
-
-	it('fails with policy exit code when AskUserQuestion is configured to fail', async () => {
+	it('times out waiting for a pending permission decision when no bridge is attached', async () => {
+		vi.useFakeTimers();
 		const runtime = new MockRuntime();
 		const stdout = createWriteCapture();
 		const stderr = createWriteCapture();
@@ -266,61 +233,10 @@ describe('runExec', () => {
 			const child = makeChildProcess(() => {
 				opts.onExit?.(null);
 			});
-
 			setImmediate(() => {
 				runtime.emit(
 					makeRuntimeEvent({
-						id: 'ask-fail',
-						kind: 'tool.pre',
-						hookName: 'PreToolUse',
-						toolName: undefined,
-						interaction: {expectsDecision: true},
-						data: {
-							tool_name: 'AskUserQuestion',
-							tool_input: {},
-						},
-					}),
-				);
-			});
-
-			return child;
-		};
-
-		const result = await runExec({
-			prompt: 'hello',
-			projectDir: '/tmp',
-			harness: 'claude-code',
-			isolationConfig: {},
-			onPermission: 'fail',
-			onQuestion: 'fail',
-			ephemeral: true,
-			stdout: stdout.writer,
-			stderr: stderr.writer,
-			runtimeFactory: () => runtime,
-			spawnProcess,
-		});
-
-		expect(result.success).toBe(false);
-		expect(result.exitCode).toBe(EXEC_EXIT_CODE.POLICY);
-		expect(result.failure?.kind).toBe('policy');
-		expect(runtime.decisions.length).toBe(0);
-		expect(stderr.read()).toContain(
-			'AskUserQuestion interaction requires input',
-		);
-	});
-
-	it('applies on-permission=allow policy to permission requests', async () => {
-		const runtime = new MockRuntime();
-		const stdout = createWriteCapture();
-		const stderr = createWriteCapture();
-
-		const spawnProcess = (opts: SpawnArgs): ChildProcess => {
-			const child = makeChildProcess();
-
-			setImmediate(() => {
-				runtime.emit(
-					makeRuntimeEvent({
-						id: 'perm-1',
+						id: 'perm-timeout',
 						kind: 'permission.request',
 						hookName: 'PermissionRequest',
 						toolName: 'Bash',
@@ -328,14 +244,66 @@ describe('runExec', () => {
 						data: {tool_name: 'Bash'},
 					}),
 				);
-				opts.onStdout?.(
-					JSON.stringify({
-						type: 'message',
-						role: 'assistant',
-						content: [{type: 'text', text: 'permission handled'}],
-					}) + '\n',
+			});
+			return child;
+		};
+
+		try {
+			const runPromise = runExec({
+				prompt: 'hello',
+				projectDir: '/tmp',
+				harness: 'claude-code',
+				isolationConfig: {},
+				timeoutMs: 50,
+				ephemeral: true,
+				stdout: stdout.writer,
+				stderr: stderr.writer,
+				runtimeFactory: () => runtime,
+				spawnProcess,
+			});
+
+			await vi.advanceTimersByTimeAsync(60);
+			const result = await runPromise;
+
+			expect(result.success).toBe(false);
+			expect(result.exitCode).toBe(EXEC_EXIT_CODE.TIMEOUT);
+			expect(result.failure?.kind).toBe('timeout');
+			expect(runtime.decisions.length).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('relays a permission request through the bridge and applies the verdict', async () => {
+		const runtime = new MockRuntime();
+		const stdout = createWriteCapture();
+		const stderr = createWriteCapture();
+		const bridge = makeFakeBridge();
+
+		const spawnProcess = (opts: SpawnArgs): ChildProcess => {
+			const child = makeChildProcess();
+
+			setImmediate(() => {
+				runtime.emit(
+					makeRuntimeEvent({
+						id: 'perm-bridge',
+						kind: 'permission.request',
+						hookName: 'PermissionRequest',
+						toolName: 'Bash',
+						interaction: {expectsDecision: true},
+						data: {tool_name: 'Bash', tool_input: {command: 'pwd'}},
+					}),
 				);
-				opts.onExit?.(0);
+				setImmediate(() => {
+					opts.onStdout?.(
+						JSON.stringify({
+							type: 'message',
+							role: 'assistant',
+							content: [{type: 'text', text: 'permission granted'}],
+						}) + '\n',
+					);
+					opts.onExit?.(0);
+				});
 			});
 
 			return child;
@@ -346,19 +314,23 @@ describe('runExec', () => {
 			projectDir: '/tmp',
 			harness: 'claude-code',
 			isolationConfig: {},
-			onPermission: 'allow',
-			onQuestion: 'fail',
+			channels: ['telegram'],
 			ephemeral: true,
 			stdout: stdout.writer,
 			stderr: stderr.writer,
 			runtimeFactory: () => runtime,
 			spawnProcess,
+			bridgeFactory: () => Promise.resolve(bridge),
 		});
 
 		expect(result.success).toBe(true);
+		expect(bridge.relayPermission).toHaveBeenCalledWith(
+			expect.objectContaining({toolName: 'Bash'}),
+		);
+		expect(bridge.stop).toHaveBeenCalledTimes(1);
 		expect(runtime.decisions).toContainEqual(
 			expect.objectContaining({
-				eventId: 'perm-1',
+				eventId: 'perm-bridge',
 				decision: expect.objectContaining({
 					intent: {kind: 'permission_allow'},
 				}),
@@ -385,8 +357,6 @@ describe('runExec', () => {
 				projectDir: '/tmp',
 				harness: 'claude-code',
 				isolationConfig: {},
-				onPermission: 'fail',
-				onQuestion: 'fail',
 				timeoutMs: 10,
 				ephemeral: true,
 				stdout: stdout.writer,
@@ -440,8 +410,6 @@ describe('runExec', () => {
 				harness: 'claude-code',
 				athenaSessionId: 'session-1',
 				isolationConfig: {},
-				onPermission: 'fail',
-				onQuestion: 'fail',
 				ephemeral: true,
 				stdout: stdout.writer,
 				stderr: stderr.writer,
@@ -502,8 +470,6 @@ describe('runExec', () => {
 				projectDir,
 				harness: 'claude-code',
 				isolationConfig: {},
-				onPermission: 'fail',
-				onQuestion: 'fail',
 				ephemeral: true,
 				stdout: stdout.writer,
 				stderr: stderr.writer,
@@ -571,8 +537,6 @@ describe('runExec', () => {
 				projectDir: '/tmp',
 				harness: 'claude-code',
 				isolationConfig: {},
-				onPermission: 'fail',
-				onQuestion: 'fail',
 				ephemeral: true,
 				stdout: stdout.writer,
 				stderr: stderr.writer,
@@ -638,8 +602,6 @@ describe('runExec', () => {
 				projectDir: '/tmp',
 				harness: 'claude-code',
 				isolationConfig: {},
-				onPermission: 'fail',
-				onQuestion: 'fail',
 				ephemeral: true,
 				stdout: stdout.writer,
 				stderr: stderr.writer,
@@ -697,8 +659,6 @@ describe('runExec', () => {
 			projectDir: '/tmp',
 			harness: 'claude-code',
 			isolationConfig: {},
-			onPermission: 'fail',
-			onQuestion: 'fail',
 			ephemeral: true,
 			stdout: stdout.writer,
 			stderr: stderr.writer,
@@ -722,8 +682,6 @@ describe('runExec', () => {
 			projectDir: '/tmp',
 			harness: 'claude-code',
 			isolationConfig: {},
-			onPermission: 'fail',
-			onQuestion: 'fail',
 			ephemeral: true,
 			stdout: stdout.writer,
 			stderr: stderr.writer,
@@ -749,8 +707,6 @@ describe('runExec', () => {
 			projectDir: '/tmp',
 			harness: 'claude-code',
 			isolationConfig: {},
-			onPermission: 'fail',
-			onQuestion: 'fail',
 			ephemeral: true,
 			stdout: stdout.writer,
 			stderr: stderr.writer,

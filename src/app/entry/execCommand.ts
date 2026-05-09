@@ -4,24 +4,16 @@ import {
 	getSessionMeta,
 } from '../../infra/sessions/index';
 import type {RuntimeBootstrapOutput} from '../bootstrap/bootstrapConfig';
-import {
-	runExec,
-	EXEC_EXIT_CODE,
-	EXEC_PERMISSION_POLICIES,
-	EXEC_QUESTION_POLICIES,
-	type ExecPermissionPolicy,
-	type ExecQuestionPolicy,
-} from '../exec';
+import {runExec, EXEC_EXIT_CODE} from '../exec';
 
 export type ExecCliFlags = {
 	continueFlag?: string;
 	json: boolean;
 	outputLastMessage?: string;
 	ephemeral: boolean;
-	onPermission: string;
-	onQuestion: string;
 	timeoutMs?: number;
 	verbose: boolean;
+	channels?: readonly string[];
 };
 
 export type ExecRuntimeConfig = Pick<
@@ -47,25 +39,6 @@ export type RunExecCommandDeps = {
 	getMostRecentSessionFn?: typeof getMostRecentAthenaSession;
 	getSessionMetaFn?: typeof getSessionMeta;
 };
-
-function parsePolicy<T extends string>(
-	value: string,
-	allowed: readonly T[],
-): T | undefined {
-	return (allowed as readonly string[]).includes(value)
-		? (value as T)
-		: undefined;
-}
-
-function parsePermissionPolicy(
-	value: string,
-): ExecPermissionPolicy | undefined {
-	return parsePolicy(value, EXEC_PERMISSION_POLICIES);
-}
-
-function parseQuestionPolicy(value: string): ExecQuestionPolicy | undefined {
-	return parsePolicy(value, EXEC_QUESTION_POLICIES);
-}
 
 function isValidTimeout(timeoutMs: number | undefined): boolean {
 	if (timeoutMs === undefined) return true;
@@ -133,22 +106,6 @@ export async function runExecCommand(
 		return EXEC_EXIT_CODE.USAGE;
 	}
 
-	const onPermission = parsePermissionPolicy(input.flags.onPermission);
-	if (!onPermission) {
-		logError(
-			`Error: --on-permission must be one of: ${EXEC_PERMISSION_POLICIES.join(', ')}`,
-		);
-		return EXEC_EXIT_CODE.USAGE;
-	}
-
-	const onQuestion = parseQuestionPolicy(input.flags.onQuestion);
-	if (!onQuestion) {
-		logError(
-			`Error: --on-question must be one of: ${EXEC_QUESTION_POLICIES.join(', ')}`,
-		);
-		return EXEC_EXIT_CODE.USAGE;
-	}
-
 	if (!isValidTimeout(input.flags.timeoutMs)) {
 		logError('Error: --timeout-ms must be a positive number.');
 		return EXEC_EXIT_CODE.USAGE;
@@ -191,8 +148,7 @@ export async function runExecCommand(
 		outputLastMessagePath: input.flags.outputLastMessage,
 		ephemeral: input.flags.ephemeral,
 		timeoutMs: input.flags.timeoutMs,
-		onPermission,
-		onQuestion,
+		channels: input.flags.channels,
 	});
 
 	return result.exitCode;

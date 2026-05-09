@@ -7,13 +7,17 @@ import type {TokenUsage} from '../../shared/types/headerMetrics';
 import type {SessionStore} from '../../infra/sessions/store';
 import type {RuntimeFactory} from '../runtime/createRuntime';
 import type {SpawnClaudeOptions} from '../../harnesses/claude/process/types';
+import type {SessionBridge} from '../channels/sessionBridge';
+import type {StartSessionBridgeOptions} from '../channels/sessionBridgeLifecycle';
 
 export const EXEC_EXIT_CODE = {
 	SUCCESS: 0,
 	USAGE: 2,
 	BOOTSTRAP: 3,
 	RUNTIME: 4,
-	POLICY: 5,
+	// 5 was POLICY (removed when exec dropped --on-permission/--on-question);
+	// the slot is intentionally left as a numeric gap to keep external scripts
+	// that special-case 5 from getting a new meaning.
 	TIMEOUT: 6,
 	OUTPUT: 7,
 	WORKFLOW_BLOCKED: 8,
@@ -21,20 +25,6 @@ export const EXEC_EXIT_CODE = {
 } as const;
 
 export type ExecExitCode = (typeof EXEC_EXIT_CODE)[keyof typeof EXEC_EXIT_CODE];
-
-export const EXEC_PERMISSION_POLICIES = ['allow', 'deny', 'fail'] as const;
-export const EXEC_QUESTION_POLICIES = ['empty', 'fail'] as const;
-
-export type ExecPermissionPolicy = (typeof EXEC_PERMISSION_POLICIES)[number];
-export type ExecQuestionPolicy = (typeof EXEC_QUESTION_POLICIES)[number];
-
-export const EXEC_DEFAULT_PERMISSION_POLICY: ExecPermissionPolicy = 'fail';
-export const EXEC_DEFAULT_QUESTION_POLICY: ExecQuestionPolicy = 'fail';
-
-export type ExecRuntimePolicyOptions = {
-	onPermission: ExecPermissionPolicy;
-	onQuestion: ExecQuestionPolicy;
-};
 
 export type ExecRunOptions = {
 	prompt: string;
@@ -53,8 +43,13 @@ export type ExecRunOptions = {
 	ephemeral?: boolean;
 	timeoutMs?: number;
 	signal?: AbortSignal;
-	onPermission: ExecPermissionPolicy;
-	onQuestion: ExecQuestionPolicy;
+	/**
+	 * Channel ids passed via `--channel`. When non-empty, exec connects to the
+	 * gateway daemon and relays permission/question requests through it. When
+	 * empty, exec runs without a bridge — permission requests block until
+	 * `timeoutMs` (or forever if no timeout).
+	 */
+	channels?: readonly string[];
 	stdout?: Pick<Writable, 'write'>;
 	stderr?: Pick<Writable, 'write'>;
 	runtimeFactory?: RuntimeFactory;
@@ -65,6 +60,10 @@ export type ExecRunOptions = {
 		dbPath: string;
 		label?: string;
 	}) => SessionStore;
+	/** Test seam: override the gateway connect step. */
+	bridgeFactory?: (
+		opts: StartSessionBridgeOptions,
+	) => Promise<SessionBridge | null>;
 	now?: () => number;
 };
 
@@ -75,7 +74,7 @@ export type ExecWorkflowFailureState =
 
 export type ExecRunFailure =
 	| {
-			kind: 'process' | 'policy' | 'timeout' | 'output';
+			kind: 'process' | 'timeout' | 'output';
 			message: string;
 	  }
 	| {

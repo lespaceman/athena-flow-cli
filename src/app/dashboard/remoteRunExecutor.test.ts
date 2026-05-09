@@ -87,8 +87,6 @@ describe('executeRemoteAssignment', () => {
 				athenaSessionId: 'athena-run_42',
 				json: true,
 				timeoutMs: 12_000,
-				onPermission: 'fail',
-				onQuestion: 'fail',
 			}),
 		);
 		expect(sent).toContainEqual(

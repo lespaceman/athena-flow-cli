@@ -252,8 +252,6 @@ export async function executeRemoteAssignment({
 				ephemeral: false,
 				timeoutMs: spec.timeoutSec ? spec.timeoutSec * 1000 : undefined,
 				signal: abortSignal,
-				onPermission: 'fail',
-				onQuestion: 'fail',
 				stdout,
 				stderr,
 			});
