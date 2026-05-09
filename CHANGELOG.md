@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/drisplabs/cli/compare/cli-v0.4.1...cli-v0.4.2) (2026-05-09)
+
+
+### Features
+
+* exec channel-relay parity + dashboard daemon UX ([#3](https://github.com/drisplabs/cli/issues/3)) ([d4beb7b](https://github.com/drisplabs/cli/commit/d4beb7b1ec216bb005efdd8a89f1e76d81fd44ce))
+
 ## [0.4.1](https://github.com/drisplabs/cli/compare/cli-v0.4.0...cli-v0.4.1) (2026-05-06)
 
 
