@@ -83,6 +83,55 @@ describe('runDashboardRuntimeDaemon', () => {
 		await stop.stop('test');
 	});
 
+	it('writes the local attachment mirror when an attachments.changed frame arrives', async () => {
+		const fake = makeFakeSocket();
+		const writeMirror = vi.fn();
+
+		const daemon = await runDashboardRuntimeDaemon({
+			readConfig: () => stored,
+			refreshAccessToken: async () => ({
+				instanceId: 'inst_1',
+				accessToken: 'a',
+				expiresInSec: 900,
+			}),
+			makeInstanceSocketClient: () => fake.client,
+			executeRemoteAssignment: vi.fn(async () => {}),
+			reconnectDelaysMs: [],
+			writeMirror,
+			now: () => 4242,
+		});
+
+		fake.emitFrame({
+			type: 'attachments.changed',
+			attachments: [
+				{
+					runnerId: 'r1',
+					name: 'laptop',
+					executionTarget: 'local',
+					remoteInstanceId: 'inst_1',
+				},
+				{runnerId: 'r2'},
+			],
+		});
+
+		expect(writeMirror).toHaveBeenCalledTimes(1);
+		expect(writeMirror).toHaveBeenCalledWith({
+			instanceId: 'inst_1',
+			fetchedAt: 4242,
+			attachments: [
+				{
+					runnerId: 'r1',
+					name: 'laptop',
+					executionTarget: 'local',
+					remoteInstanceId: 'inst_1',
+				},
+				{runnerId: 'r2'},
+			],
+		});
+
+		await daemon.stop('test');
+	});
+
 	it('aborts an active assignment when a cancel frame arrives', async () => {
 		const fake = makeFakeSocket();
 		let seenSignal: AbortSignal | undefined;

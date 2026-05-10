@@ -15,6 +15,10 @@ import {
 	type DashboardClientConfig,
 	readDashboardClientConfig,
 } from '../../infra/config/dashboardClient';
+import {
+	type AttachmentMirror,
+	writeAttachmentMirror,
+} from '../../infra/config/attachmentMirror';
 
 type RuntimeDaemonAssignmentExecutor = (
 	input: ExecuteRemoteAssignmentInput,
@@ -96,6 +100,12 @@ export type RunDashboardRuntimeDaemonOptions = {
 	 * Cap on the `runs` ring buffer. Default 100.
 	 */
 	runHistoryLimit?: number;
+	/**
+	 * Test seam. Production uses `writeAttachmentMirror`. Called whenever the
+	 * dashboard pushes `attachments.changed` so the local mirror stays in
+	 * sync without requiring a re-pair.
+	 */
+	writeMirror?: (mirror: AttachmentMirror) => void;
 };
 
 const DEFAULT_RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
@@ -144,6 +154,7 @@ export async function runDashboardRuntimeDaemon(
 		options.refreshCooldownMs ?? DEFAULT_REFRESH_COOLDOWN_MS;
 	const runHistoryLimit = options.runHistoryLimit ?? DEFAULT_RUN_HISTORY_LIMIT;
 	const now = options.now ?? (() => Date.now());
+	const writeMirror = options.writeMirror ?? writeAttachmentMirror;
 
 	const startedAt = now();
 	let stopped = false;
@@ -314,6 +325,32 @@ export async function runDashboardRuntimeDaemon(
 		});
 		next.onFrame(frame => {
 			lastFrameAt = now();
+			if (frame.type === 'attachments.changed') {
+				try {
+					writeMirror({
+						instanceId: token.instanceId,
+						fetchedAt: now(),
+						attachments: frame.attachments.map(a => ({
+							runnerId: a.runnerId,
+							...(a.name !== undefined ? {name: a.name} : {}),
+							...(a.executionTarget !== undefined
+								? {executionTarget: a.executionTarget}
+								: {}),
+							...(a.remoteInstanceId !== undefined
+								? {remoteInstanceId: a.remoteInstanceId}
+								: {}),
+						})),
+					});
+				} catch (err) {
+					log(
+						'warn',
+						`runtime daemon: failed to write attachment mirror: ${
+							err instanceof Error ? err.message : String(err)
+						}`,
+					);
+				}
+				return;
+			}
 			if (frame.type === 'cancel') {
 				const entry = active.get(frame.runId);
 				if (entry) {
