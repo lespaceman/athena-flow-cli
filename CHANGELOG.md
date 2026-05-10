@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.5](https://github.com/drisplabs/cli/compare/cli-v0.4.4...cli-v0.4.5) (2026-05-10)
+
+
+### Features
+
+* **dashboard:** attachment mirror + multi-instance channel adapters ([ab52b6f](https://github.com/drisplabs/cli/commit/ab52b6f43e2986f6662a6e949814a4192979d011))
+* **dashboard:** sync attachment mirror on attachments.changed ([9e5b550](https://github.com/drisplabs/cli/commit/9e5b550890c5934e831e32ebc8a02640167336c8))
+
 ## [0.4.4](https://github.com/drisplabs/cli/compare/cli-v0.4.3...cli-v0.4.4) (2026-05-10)
 
 
