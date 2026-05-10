@@ -67,11 +67,10 @@ export type RunStreamClient = {
 	 */
 	connect(): Promise<void>;
 	/**
-	 * Append a frame to the outbound queue. Assigns a sequence number and
-	 * returns it. The frame is delivered with at-least-once semantics: it's
-	 * retransmitted on reconnect until the server ACKs it.
+	 * Append a frame to the outbound queue. Delivered with at-least-once
+	 * semantics: retransmitted on reconnect until the server ACKs it.
 	 */
-	sendEvent(input: RunStreamFrameInput): number;
+	sendEvent(input: RunStreamFrameInput): void;
 	/**
 	 * Resolves when the server has signalled termination (either by sending
 	 * `resume {terminated: true}` or by closing after acking a terminal kind).
@@ -87,8 +86,6 @@ const DEFAULT_RECONNECT_DELAYS_MS = [250, 1_000, 2_000, 5_000, 15_000];
 const DEFAULT_HEARTBEAT_MS = 30_000;
 const DEFAULT_WATCHDOG_MS = 90_000;
 const DEFAULT_MAX_QUEUE_SIZE = 5_000;
-
-const TERMINAL_KINDS = new Set(['completion', 'error']);
 
 type QueuedFrame = {
 	seq: number;
@@ -374,10 +371,9 @@ export function createRunStreamClient(
 				void openSocket();
 			});
 		},
-		sendEvent(input: RunStreamFrameInput): number {
-			const seq = nextSeq++;
+		sendEvent(input: RunStreamFrameInput): void {
 			const frame: QueuedFrame = {
-				seq,
+				seq: nextSeq++,
 				ts: input.ts,
 				kind: input.kind,
 				payload: input.payload ?? null,
@@ -394,7 +390,6 @@ export function createRunStreamClient(
 				try {
 					ws.send(JSON.stringify(frame));
 				} catch (err) {
-					// Reconnect will replay from queue.
 					log(
 						'warn',
 						`run-stream send failed (will replay): ${
@@ -403,14 +398,6 @@ export function createRunStreamClient(
 					);
 				}
 			}
-			if (TERMINAL_KINDS.has(frame.kind)) {
-				// The server closes the socket after acking a terminal frame; we
-				// don't want the close event to trigger a reconnect.
-				// `serverTerminated` flips on the close handler when reason is
-				// `run_terminated`. Until then, leave the connection open so the
-				// ack and close can still happen.
-			}
-			return seq;
 		},
 		whenTerminated() {
 			if (serverTerminated) return Promise.resolve();

@@ -260,119 +260,124 @@ export async function executeRemoteAssignment({
 
 	send('progress', {message: 'assignment received'});
 
-	// Ensure the per-run channel is always closed cleanly, even when the
-	// run takes an early-return path. We wait briefly for the server to ack
-	// the terminal frame (so `finalize` fires on the dashboard) but cap at
-	// 10s — if the server is unreachable we still need to release the
-	// daemon's reference to the socket.
-	const closeRunStream = async (reason: string): Promise<void> => {
-		if (!runStream) return;
-		const drainTimeout = new Promise<void>(resolve => {
-			const t = setTimeout(() => resolve(), 10_000);
-			t.unref?.();
-		});
-		await Promise.race([runStream.whenTerminated(), drainTimeout]);
-		await runStream.close(reason);
-		runStream = null;
-	};
-
-	if (!spec) {
-		send('error', {
-			message: 'remote assignment missing prompt',
-		});
-		await closeRunStream('done');
-		return;
-	}
-
-	const projectDir = spec.projectDir ?? fallbackProjectDir;
-	let runtimeConfig: ReturnType<typeof bootstrapRuntimeConfig>;
 	try {
-		runtimeConfig = bootstrapRuntimeConfigFn({
-			projectDir,
-			showSetup: false,
-			isolationPreset: 'minimal',
-			workflowOverride: workflowNameFromRef(spec.workflow?.ref),
-		});
-	} catch (err) {
-		send('error', {
-			message: err instanceof Error ? err.message : String(err),
-		});
-		await closeRunStream('done');
-		return;
-	}
-	for (const warning of runtimeConfig.warnings) {
-		send('warning', {message: warning});
-	}
+		if (!spec) {
+			send('error', {message: 'remote assignment missing prompt'});
+			return;
+		}
 
-	let buffered = '';
-	const stdout = {
-		write(chunk: string): boolean {
-			buffered += chunk;
-			let newline = buffered.indexOf('\n');
-			while (newline >= 0) {
-				const line = buffered.slice(0, newline).trim();
-				buffered = buffered.slice(newline + 1);
-				if (line.length > 0) {
-					try {
-						const event = JSON.parse(line) as JsonExecEvent;
-						const data = event.data as {success?: unknown} | null;
-						if (event.type === 'exec.completed' && data?.success === false) {
-							deferredFailedCompletion = event;
-							continue;
-						}
-						send(eventKind(event), eventPayload(event), now());
-					} catch (err) {
-						send('progress', {line});
-						log(
-							'warn',
-							`remote run emitted malformed JSONL: ${
-								err instanceof Error ? err.message : String(err)
-							}`,
-						);
-					}
-				}
-				newline = buffered.indexOf('\n');
-			}
-			return true;
-		},
-	};
-	const stderr = {
-		write(chunk: string): boolean {
-			const text = chunk.trim();
-			if (text.length > 0) send('stderr', {text});
-			return true;
-		},
-	};
-
-	try {
-		await withEnv(spec.env, async () => {
-			const result = await runExecFn({
-				prompt: spec.prompt,
+		const projectDir = spec.projectDir ?? fallbackProjectDir;
+		let runtimeConfig: ReturnType<typeof bootstrapRuntimeConfig>;
+		try {
+			runtimeConfig = bootstrapRuntimeConfigFn({
 				projectDir,
-				harness: runtimeConfig.harness,
-				athenaSessionId: spec.sessionId ?? `athena-${frame.runId}`,
-				isolationConfig: runtimeConfig.isolationConfig,
-				pluginMcpConfig: runtimeConfig.pluginMcpConfig,
-				workflow: runtimeConfig.workflow,
-				workflowPlan: runtimeConfig.workflowPlan,
-				json: true,
-				verbose: false,
-				ephemeral: false,
-				timeoutMs: spec.timeoutSec ? spec.timeoutSec * 1000 : undefined,
-				signal: abortSignal,
-				stdout,
-				stderr,
+				showSetup: false,
+				isolationPreset: 'minimal',
+				workflowOverride: workflowNameFromRef(spec.workflow?.ref),
 			});
-			if (deferredFailedCompletion) {
-				const data =
-					typeof deferredFailedCompletion.data === 'object' &&
-					deferredFailedCompletion.data !== null
-						? deferredFailedCompletion.data
-						: {};
-				send(
-					'error',
-					{
-						...data,
+		} catch (err) {
+			send('error', {
+				message: err instanceof Error ? err.message : String(err),
+			});
+			return;
+		}
+		for (const warning of runtimeConfig.warnings) {
+			send('warning', {message: warning});
+		}
+
+		let buffered = '';
+		const stdout = {
+			write(chunk: string): boolean {
+				buffered += chunk;
+				let newline = buffered.indexOf('\n');
+				while (newline >= 0) {
+					const line = buffered.slice(0, newline).trim();
+					buffered = buffered.slice(newline + 1);
+					if (line.length > 0) {
+						try {
+							const event = JSON.parse(line) as JsonExecEvent;
+							const data = event.data as {success?: unknown} | null;
+							if (event.type === 'exec.completed' && data?.success === false) {
+								deferredFailedCompletion = event;
+								continue;
+							}
+							send(eventKind(event), eventPayload(event), now());
+						} catch (err) {
+							send('progress', {line});
+							log(
+								'warn',
+								`remote run emitted malformed JSONL: ${
+									err instanceof Error ? err.message : String(err)
+								}`,
+							);
+						}
+					}
+					newline = buffered.indexOf('\n');
+				}
+				return true;
+			},
+		};
+		const stderr = {
+			write(chunk: string): boolean {
+				const text = chunk.trim();
+				if (text.length > 0) send('stderr', {text});
+				return true;
+			},
+		};
+
+		try {
+			await withEnv(spec.env, async () => {
+				const result = await runExecFn({
+					prompt: spec.prompt,
+					projectDir,
+					harness: runtimeConfig.harness,
+					athenaSessionId: spec.sessionId ?? `athena-${frame.runId}`,
+					isolationConfig: runtimeConfig.isolationConfig,
+					pluginMcpConfig: runtimeConfig.pluginMcpConfig,
+					workflow: runtimeConfig.workflow,
+					workflowPlan: runtimeConfig.workflowPlan,
+					json: true,
+					verbose: false,
+					ephemeral: false,
+					timeoutMs: spec.timeoutSec ? spec.timeoutSec * 1000 : undefined,
+					signal: abortSignal,
+					stdout,
+					stderr,
+				});
+				if (deferredFailedCompletion) {
+					const data =
+						typeof deferredFailedCompletion.data === 'object' &&
+						deferredFailedCompletion.data !== null
+							? deferredFailedCompletion.data
+							: {};
+					send(
+						'error',
+						{
+							...data,
+							success: result.success,
+							exitCode: result.exitCode,
+							athenaSessionId: result.athenaSessionId,
+							adapterSessionId: result.adapterSessionId,
+							finalMessage: result.finalMessage,
+							tokens: result.tokens,
+							durationMs: result.durationMs,
+							message:
+								result.failure?.message ??
+								(eventPayload(deferredFailedCompletion) as {message?: string})
+									.message ??
+								'remote execution failed',
+						},
+						typeof deferredFailedCompletion.ts === 'number'
+							? deferredFailedCompletion.ts
+							: now(),
+					);
+					return;
+				}
+				if (
+					result.failure &&
+					result.failure.message !== lastTerminalFailureMessage
+				) {
+					send('error', {
 						success: result.success,
 						exitCode: result.exitCode,
 						athenaSessionId: result.athenaSessionId,
@@ -380,39 +385,26 @@ export async function executeRemoteAssignment({
 						finalMessage: result.finalMessage,
 						tokens: result.tokens,
 						durationMs: result.durationMs,
-						message:
-							result.failure?.message ??
-							(eventPayload(deferredFailedCompletion) as {message?: string})
-								.message ??
-							'remote execution failed',
-					},
-					typeof deferredFailedCompletion.ts === 'number'
-						? deferredFailedCompletion.ts
-						: now(),
-				);
-				return;
-			}
-			if (
-				result.failure &&
-				result.failure.message !== lastTerminalFailureMessage
-			) {
-				send('error', {
-					success: result.success,
-					exitCode: result.exitCode,
-					athenaSessionId: result.athenaSessionId,
-					adapterSessionId: result.adapterSessionId,
-					finalMessage: result.finalMessage,
-					tokens: result.tokens,
-					durationMs: result.durationMs,
-					message: result.failure.message,
-				});
-			}
-		});
-	} catch (err) {
-		send('error', {
-			message: err instanceof Error ? err.message : String(err),
-		});
+						message: result.failure.message,
+					});
+				}
+			});
+		} catch (err) {
+			send('error', {
+				message: err instanceof Error ? err.message : String(err),
+			});
+		}
 	} finally {
-		await closeRunStream('done');
+		// Wait briefly for the server to ack the terminal frame (so `finalize`
+		// fires on the dashboard) but cap at 10s — if the server is
+		// unreachable we still need to release the daemon's reference.
+		if (runStream) {
+			const drainTimeout = new Promise<void>(resolve => {
+				const t = setTimeout(() => resolve(), 10_000);
+				t.unref?.();
+			});
+			await Promise.race([runStream.whenTerminated(), drainTimeout]);
+			await runStream.close('done');
+		}
 	}
 }
