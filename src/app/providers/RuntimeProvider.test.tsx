@@ -12,6 +12,7 @@ const sessionBridgeRelayPermissionMock = vi.fn();
 const sessionBridgeInstances: Array<{
 	runtimeId: string;
 	defaultAgentId: string;
+	attachmentId?: string;
 }> = [];
 
 vi.mock('./useFeed', () => ({
@@ -28,7 +29,11 @@ vi.mock('../../infra/sessions/registry', () => ({
 
 vi.mock('../channels/sessionBridge', () => ({
 	SessionBridge: class {
-		constructor(opts: {runtimeId: string; defaultAgentId: string}) {
+		constructor(opts: {
+			runtimeId: string;
+			defaultAgentId: string;
+			attachmentId?: string;
+		}) {
 			sessionBridgeInstances.push(opts);
 		}
 		start = sessionBridgeStartMock;
@@ -432,6 +437,35 @@ describe('HookProvider runtime factory wiring', () => {
 						'function',
 				),
 			).toBe(true),
+		);
+	});
+
+	it('forwards attachmentId prop into the SessionBridge constructor', async () => {
+		sessionBridgeStartMock.mockResolvedValueOnce({
+			registeredAt: 1,
+			gatewayStartedAt: 1,
+		});
+		const runtime = makeRuntime();
+
+		render(
+			<HookProvider
+				projectDir="/repo"
+				instanceId={13}
+				harness="claude-code"
+				runtime={runtime}
+				athenaSessionId="athena-attached"
+				attachmentId="r1"
+			>
+				<></>
+			</HookProvider>,
+		);
+
+		await waitFor(() =>
+			expect(sessionBridgeInstances).toContainEqual({
+				runtimeId: 'athena-attached',
+				defaultAgentId: 'main',
+				attachmentId: 'r1',
+			}),
 		);
 	});
 });

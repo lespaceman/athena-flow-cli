@@ -161,4 +161,53 @@ describe('ChannelManager', () => {
 		await expect(mgr.register(adapter)).rejects.toThrow('boom');
 		expect(mgr.listChannels()).toEqual([]);
 	});
+
+	describe('attachment-keyed registration', () => {
+		it('records attachmentId on register and exposes it via getAttachmentId', async () => {
+			const mgr = new ChannelManager();
+			const adapter = new FakeAdapter('console:r1');
+			await mgr.register(adapter, {attachmentId: 'r1'});
+			expect(mgr.getAttachmentId('console:r1')).toBe('r1');
+			await mgr.stop();
+		});
+
+		it('returns undefined for adapters registered without an attachmentId', async () => {
+			const mgr = new ChannelManager();
+			const adapter = new FakeAdapter('legacy');
+			await mgr.register(adapter);
+			expect(mgr.getAttachmentId('legacy')).toBeUndefined();
+			await mgr.stop();
+		});
+
+		it('returns undefined for unknown channel ids', () => {
+			const mgr = new ChannelManager();
+			expect(mgr.getAttachmentId('nope')).toBeUndefined();
+		});
+
+		it('forwards attachmentId to the inbound sink alongside the message', async () => {
+			const mgr = new ChannelManager();
+			const a1 = new FakeAdapter('console:r1');
+			const a2 = new FakeAdapter('legacy');
+			const sink = vi.fn();
+			mgr.setInboundSink(sink);
+			await mgr.register(a1, {attachmentId: 'r1'});
+			await mgr.register(a2);
+
+			a1.emitInbound(inbound('k1'));
+			a2.emitInbound(inbound('k2'));
+
+			expect(sink).toHaveBeenCalledTimes(2);
+			expect(sink.mock.calls[0]?.[1]).toEqual({attachmentId: 'r1'});
+			expect(sink.mock.calls[1]?.[1]).toEqual({attachmentId: undefined});
+			await mgr.stop();
+		});
+
+		it('clears the attachmentId mapping when the channel is unregistered', async () => {
+			const mgr = new ChannelManager();
+			const adapter = new FakeAdapter('console:r1');
+			await mgr.register(adapter, {attachmentId: 'r1'});
+			await mgr.unregister('console:r1', 'shutdown');
+			expect(mgr.getAttachmentId('console:r1')).toBeUndefined();
+		});
+	});
 });

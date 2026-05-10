@@ -166,8 +166,8 @@ export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 	});
 	pipeline.start();
 
-	channelManager.setInboundSink(inbound => {
-		pipeline.handleInbound(inbound);
+	channelManager.setInboundSink((inbound, ctx) => {
+		pipeline.handleInbound(inbound, ctx);
 	});
 
 	const channelConfigHome = opts.env?.HOME;
@@ -234,7 +234,12 @@ export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 				continue;
 			}
 			try {
-				await channelManager.register(built.adapter);
+				await channelManager.register(
+					built.adapter,
+					sidecar.attachmentId !== undefined
+						? {attachmentId: sidecar.attachmentId}
+						: {},
+				);
 				results.push({
 					id: sidecar.instanceId,
 					ok: true,
@@ -274,7 +279,12 @@ export async function startDaemon(opts: DaemonOptions): Promise<DaemonHandle> {
 				continue;
 			}
 			try {
-				await channelManager.register(built.adapter);
+				await channelManager.register(
+					built.adapter,
+					sidecar.attachmentId !== undefined
+						? {attachmentId: sidecar.attachmentId}
+						: {},
+				);
 				if (!opts.silent) {
 					process.stdout.write(
 						`athena-gateway: registered ${sidecar.instanceId}\n`,

@@ -1,4 +1,4 @@
-import {describe, expect, it, beforeEach, afterEach} from 'vitest';
+import {describe, expect, it, beforeEach, afterEach, vi} from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,6 +6,43 @@ import {startDaemon} from './daemon';
 import type {GatewayPaths} from './paths';
 import {connect} from './control/client';
 import {createWsClientTransport} from './transport/wsClient';
+import type {
+	AdapterContext,
+	ChannelAdapter,
+	NormalizedInbound,
+	OutboundMessage,
+	StopReason,
+} from '../shared/gateway-protocol';
+
+class CapturingAdapter implements ChannelAdapter {
+	readonly id: string;
+	readonly capabilities = {
+		chat: true,
+		threads: false,
+		relayPermission: false,
+		relayQuestion: false,
+	} as const;
+	private ctx: AdapterContext | null = null;
+
+	constructor(id: string) {
+		this.id = id;
+	}
+	async start(ctx: AdapterContext): Promise<void> {
+		this.ctx = ctx;
+	}
+	async stop(_reason: StopReason): Promise<void> {
+		this.ctx = null;
+	}
+	async send(_msg: OutboundMessage) {
+		return {providerMessageId: 'm', deliveredAt: 1};
+	}
+	async probe() {
+		return {ok: true, checkedAt: 1};
+	}
+	emitInbound(msg: NormalizedInbound): void {
+		this.ctx?.emitInbound(msg);
+	}
+}
 
 function tmpPaths(): GatewayPaths {
 	const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'athena-gw-test-'));
@@ -168,6 +205,54 @@ describe('startDaemon', () => {
 			},
 		]);
 		client.close();
+		await handle.stop();
+	});
+
+	it('routes inbound from an attachment-keyed channel to the matching attachment runtime slot', async () => {
+		const handle = await startDaemon({
+			foreground: true,
+			silent: true,
+			paths,
+			skipSignalHandlers: true,
+			skipChannelLoad: true,
+		});
+		const adapter = new CapturingAdapter('console:r1');
+		await handle.channelManager.register(adapter, {attachmentId: 'r1'});
+
+		const pushA = vi.fn();
+		const pushFallback = vi.fn();
+		handle.pipeline.registerRuntime({
+			runtimeId: 'rt-a',
+			defaultAgentId: 'main',
+			pid: 1,
+			connectionId: 'conn-a',
+			push: pushA,
+			attachmentId: 'r1',
+		});
+		handle.pipeline.registerRuntime({
+			runtimeId: 'rt-fallback',
+			defaultAgentId: 'main',
+			pid: 2,
+			connectionId: 'conn-fallback',
+			push: pushFallback,
+		});
+
+		adapter.emitInbound({
+			location: {
+				channelId: 'console:r1',
+				accountId: 'acct',
+				peer: {id: 'u', kind: 'user'},
+			},
+			sender: {id: 'u'},
+			text: 'hi',
+			receivedAt: 100,
+			idempotencyKey: 'k1',
+			providerMessageId: 'pm1',
+		});
+
+		expect(pushA).toHaveBeenCalledTimes(1);
+		expect(pushFallback).not.toHaveBeenCalled();
+
 		await handle.stop();
 	});
 });

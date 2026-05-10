@@ -190,6 +190,49 @@ describe('SessionBridge integration', () => {
 		await pipeline.stop();
 	}, 15_000);
 
+	it('registers under the attachmentId slot when the option is provided', async () => {
+		const token = 'attach-token';
+		const channelManager = new ChannelManager();
+		stateDb = openGatewayState(':memory:');
+		const pipeline = new DispatchPipeline({
+			stateDb,
+			send: (channelId, msg) => channelManager.send(channelId, msg),
+			outbox: {tickIntervalMs: 60_000},
+		});
+		pipeline.start();
+		const relayCoordinator = new RelayCoordinator({
+			adapters: () => channelManager.listAdapters(),
+		});
+		const wsTransport = createWsServerTransport({host: '127.0.0.1', port: 0});
+		controlServer = await startControlServer({
+			socketPath: 'unused-for-ws',
+			token,
+			startedAt: Date.now(),
+			handler: createDispatcher({
+				startedAt: Date.now(),
+				pipeline,
+				channelManager,
+				relayCoordinator,
+			}),
+			transport: wsTransport,
+		});
+
+		bridge = new SessionBridge({
+			runtimeId: 'rt-a1',
+			defaultAgentId: 'main',
+			attachmentId: 'r1',
+			endpoint: {mode: 'remote', url: wsTransport.endpoint().url, token},
+		});
+		await bridge.start();
+
+		expect(pipeline.getCurrentRuntimeByAttachment('r1')?.runtimeId).toBe(
+			'rt-a1',
+		);
+		// Legacy fallback slot remains empty.
+		expect(pipeline.getCurrentRuntime()).toBeNull();
+		await pipeline.stop();
+	}, 15_000);
+
 	it('round-trips dispatch.turn → completeTurn → adapter.send', async () => {
 		daemon = await startDaemon({
 			foreground: true,

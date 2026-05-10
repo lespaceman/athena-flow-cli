@@ -80,6 +80,7 @@ export function HookProvider({
 	runtimeFactory = createRuntime,
 	allowedTools,
 	athenaSessionId,
+	attachmentId,
 	children,
 }: HookProviderProps) {
 	// Runtime must be stable (memoized) — useFeed assumes it doesn't change
@@ -137,6 +138,7 @@ export function HookProvider({
 		void startSessionBridge({
 			runtimeId: athenaSessionId,
 			defaultAgentId: 'main',
+			...(attachmentId !== undefined ? {attachmentId} : {}),
 			signal: controller.signal,
 		}).then(bridge => {
 			if (!bridge) return;
@@ -153,7 +155,7 @@ export function HookProvider({
 				return null;
 			});
 		};
-	}, [athenaSessionId]);
+	}, [athenaSessionId, attachmentId]);
 
 	// Separate lifecycle effects: closing sessionStore must only happen when
 	// sessionStore itself is recreated (or on unmount), NOT when runtime changes.

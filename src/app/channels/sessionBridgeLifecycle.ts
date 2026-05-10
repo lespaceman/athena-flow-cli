@@ -14,6 +14,8 @@ const DEFAULT_RETRY_MS = 2_000;
 export type StartSessionBridgeOptions = {
 	runtimeId: string;
 	defaultAgentId: string;
+	/** See SessionBridgeOptions.attachmentId. */
+	attachmentId?: string;
 	signal?: AbortSignal;
 	retryMs?: number;
 };
@@ -36,6 +38,9 @@ export async function startSessionBridge(
 		const bridge = new SessionBridge({
 			runtimeId: opts.runtimeId,
 			defaultAgentId: opts.defaultAgentId,
+			...(opts.attachmentId !== undefined
+				? {attachmentId: opts.attachmentId}
+				: {}),
 		});
 		writeGatewayTrace(`startSessionBridge attempt runtimeId=${opts.runtimeId}`);
 		try {

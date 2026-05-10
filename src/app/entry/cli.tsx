@@ -412,6 +412,9 @@ const cli = meow(
 			apiKey: {
 				type: 'string',
 			},
+			attachmentId: {
+				type: 'string',
+			},
 		},
 	},
 );
@@ -779,6 +782,9 @@ async function main(): Promise<void> {
 			isolationPreset={isolationPreset}
 			ascii={cli.flags.ascii}
 			showSetup={showSetup}
+			{...(cli.flags.attachmentId !== undefined
+				? {attachmentId: cli.flags.attachmentId}
+				: {})}
 			initialTelemetryDiagnosticsConsent={globalConfig.telemetryDiagnostics}
 		/>,
 		inkRenderOptions(),

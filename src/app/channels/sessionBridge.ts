@@ -70,6 +70,13 @@ export type SessionBridgeOptions = {
 	runtimeId: string;
 	defaultAgentId: string;
 	pid?: number;
+	/**
+	 * Optional dashboard-side **Attachment** key (today: runnerId). When set,
+	 * the gateway parks this runtime in the per-attachment slot keyed by
+	 * `attachmentId`; otherwise the legacy single-runtime fallback slot is
+	 * used. See ADR 0001 phases 4–5.
+	 */
+	attachmentId?: string;
 	paths?: GatewayPaths;
 	/** Override token loader for tests. */
 	loadToken?: (tokenPath: string) => string;
@@ -536,6 +543,9 @@ export class SessionBridge {
 			runtimeId: this.opts.runtimeId,
 			defaultAgentId: this.opts.defaultAgentId,
 			pid: this.opts.pid ?? process.pid,
+			...(this.opts.attachmentId !== undefined
+				? {attachmentId: this.opts.attachmentId}
+				: {}),
 		};
 		try {
 			return await client.request<

@@ -155,6 +155,8 @@ type Props = {
 	ascii?: boolean;
 	showSetup?: boolean;
 	athenaSessionId: string;
+	/** Optional supervisor-provided Attachment key. Threads to SessionBridge. */
+	attachmentId?: string;
 	initialTelemetryDiagnosticsConsent?: boolean;
 };
 
@@ -2191,6 +2193,7 @@ export default function App({
 	isolationPreset,
 	ascii,
 	athenaSessionId: initialAthenaSessionId,
+	attachmentId,
 	initialTelemetryDiagnosticsConsent,
 }: Props) {
 	const [clearCount, setClearCount] = useState(0);
@@ -2438,6 +2441,7 @@ export default function App({
 					runtimeState.isolation?.allowedTools,
 				)}
 				athenaSessionId={athenaSessionId}
+				{...(attachmentId !== undefined ? {attachmentId} : {})}
 			>
 				<AppContent
 					key={clearCount}

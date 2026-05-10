@@ -40,6 +40,22 @@ type Entry = {
 	abort: AbortController;
 	startPromise: Promise<void>;
 	lastHealth?: HealthSample;
+	attachmentId?: string;
+};
+
+export type ChannelInboundSink = (
+	msg: NormalizedInbound,
+	ctx: {attachmentId: string | undefined},
+) => void;
+
+export type RegisterChannelOptions = {
+	/**
+	 * Optional dashboard-side **Attachment** key (today: runnerId). When set,
+	 * inbound messages from this adapter are forwarded to the inbound sink
+	 * with this attachmentId so the DispatchPipeline can route to the
+	 * matching registered runtime. See ADR 0001 phase 5.
+	 */
+	attachmentId?: string;
 };
 
 const DEFAULT_DEDUP_WINDOW = 1024;
@@ -64,7 +80,7 @@ export class ChannelManager {
 	private readonly dedupSet = new Set<string>();
 	private readonly dedupMax: number;
 	private readonly log: ChannelManagerOptions['log'];
-	private inboundSink: ChannelInboundListener | null = null;
+	private inboundSink: ChannelInboundSink | null = null;
 	private healthSink: ChannelHealthListener | null = null;
 	private stopped = false;
 
@@ -74,8 +90,16 @@ export class ChannelManager {
 	}
 
 	/** Register the single inbound dispatch target. M5 wires the router here. */
-	setInboundSink(sink: ChannelInboundListener | null): void {
+	setInboundSink(sink: ChannelInboundSink | null): void {
 		this.inboundSink = sink;
+	}
+
+	/**
+	 * Returns the attachmentId associated with `channelId` at registration
+	 * time, or undefined if the channel is unknown or registered without one.
+	 */
+	getAttachmentId(channelId: string): string | undefined {
+		return this.entries.get(channelId)?.attachmentId;
 	}
 
 	setHealthSink(sink: ChannelHealthListener | null): void {
@@ -97,7 +121,10 @@ export class ChannelManager {
 		return [...this.entries.values()].map(e => e.adapter);
 	}
 
-	async register(adapter: ChannelAdapter): Promise<void> {
+	async register(
+		adapter: ChannelAdapter,
+		opts: RegisterChannelOptions = {},
+	): Promise<void> {
 		if (this.stopped) {
 			throw new Error('channel manager already stopped');
 		}
@@ -106,7 +133,7 @@ export class ChannelManager {
 		}
 		const abort = new AbortController();
 		const inboundListener: ChannelInboundListener = msg =>
-			this.handleInbound(msg);
+			this.handleInbound(adapter.id, msg);
 		const healthListener: ChannelHealthListener = sample => {
 			const entry = this.entries.get(adapter.id);
 			if (entry) entry.lastHealth = sample;
@@ -119,11 +146,13 @@ export class ChannelManager {
 			emitInbound: inboundListener,
 			emitHealth: healthListener,
 		});
-		this.entries.set(adapter.id, {
+		const entry: Entry = {
 			adapter,
 			abort,
 			startPromise,
-		});
+		};
+		if (opts.attachmentId !== undefined) entry.attachmentId = opts.attachmentId;
+		this.entries.set(adapter.id, entry);
 		try {
 			await startPromise;
 		} catch (err) {
@@ -178,7 +207,7 @@ export class ChannelManager {
 		}
 	}
 
-	private handleInbound(msg: NormalizedInbound): void {
+	private handleInbound(channelId: string, msg: NormalizedInbound): void {
 		if (this.dedupSet.has(msg.idempotencyKey)) {
 			this.log?.('debug', `dropping duplicate inbound ${msg.idempotencyKey}`);
 			return;
@@ -198,7 +227,7 @@ export class ChannelManager {
 			return;
 		}
 		try {
-			sink(msg);
+			sink(msg, {attachmentId: this.entries.get(channelId)?.attachmentId});
 		} catch (err) {
 			this.log?.(
 				'warn',

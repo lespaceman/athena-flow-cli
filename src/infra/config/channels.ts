@@ -37,6 +37,13 @@ export type ChannelSidecar = {
 	 * runner) set this to a unique value like `"console:<runnerId>"`.
 	 */
 	instanceId: string;
+	/**
+	 * Optional dashboard-side **Attachment** key (today: runnerId). Present
+	 * iff the sidecar carries a top-level `runner_id`. Surfaces here so the
+	 * gateway daemon can wire each adapter to its attachment slot in the
+	 * DispatchPipeline. See ADR 0001 phase 5.
+	 */
+	attachmentId?: string;
 	allowedUserIds: string[];
 	options: Record<string, unknown>;
 };
@@ -138,6 +145,14 @@ function loadOne(name: string, filePath: string): LoadOne {
 		return {ok: false, reason: 'instance_id must be a non-empty string'};
 	}
 	const instanceId = (instanceIdRaw as string | undefined) ?? kind;
+	const runnerIdRaw = obj['runner_id'];
+	let attachmentId: string | undefined;
+	if (runnerIdRaw !== undefined) {
+		if (typeof runnerIdRaw !== 'string' || runnerIdRaw.length === 0) {
+			return {ok: false, reason: 'runner_id must be a non-empty string'};
+		}
+		attachmentId = runnerIdRaw;
+	}
 	const options: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(obj)) {
 		if (key === 'allowed_user_ids' || key === 'kind' || key === 'instance_id') {
@@ -145,8 +160,14 @@ function loadOne(name: string, filePath: string): LoadOne {
 		}
 		options[key] = value;
 	}
-	return {
-		ok: true,
-		sidecar: {name, path: filePath, kind, instanceId, allowedUserIds, options},
+	const sidecar: ChannelSidecar = {
+		name,
+		path: filePath,
+		kind,
+		instanceId,
+		allowedUserIds,
+		options,
 	};
+	if (attachmentId !== undefined) sidecar.attachmentId = attachmentId;
+	return {ok: true, sidecar};
 }

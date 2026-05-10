@@ -28,5 +28,12 @@ export type HookProviderProps = {
 	runtimeFactory?: RuntimeFactory;
 	allowedTools?: string[];
 	athenaSessionId: string;
+	/**
+	 * Optional dashboard-side **Attachment** key (today: runnerId). Threaded
+	 * down to the SessionBridge so the registered runtime occupies the
+	 * matching attachment slot in the gateway's DispatchPipeline. Absent
+	 * outside the supervisor-spawned harness child.
+	 */
+	attachmentId?: string;
 	children: ReactNode;
 };
