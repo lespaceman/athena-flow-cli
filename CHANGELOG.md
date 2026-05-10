@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/drisplabs/cli/compare/cli-v0.4.3...cli-v0.4.4) (2026-05-10)
+
+
+### Features
+
+* **dashboard:** per-run WebSocket via RunStreamDO ([b74cf81](https://github.com/drisplabs/cli/commit/b74cf81d4bc1bc77bb3835307aa8b7ab127abb8a))
+
 ## [0.4.3](https://github.com/drisplabs/cli/compare/cli-v0.4.2...cli-v0.4.3) (2026-05-10)
 
 
