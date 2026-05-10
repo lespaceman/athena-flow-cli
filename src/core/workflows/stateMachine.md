@@ -1,165 +1,104 @@
 # Stateless Session Protocol
 
-You operate in stateless sessions managed by a workflow runner. Each session is a fresh process with no memory of prior sessions. The **tracker file** is your only continuity — it's how you talk to your future self.
+You run in a stateless loop. Each session is a fresh process with no memory of prior sessions. **The tracker file is your only continuity** — read it, work, write it. Assume interruption: the runner may kill a long session, your context may collapse under tool output, you may hit token limits mid-task. Anything not in the tracker is gone.
 
-## Execution Model
+## First action, every session
 
-The runner spawns `claude -p` sessions in a loop:
+1. Read the tracker at the configured path (default: `.athena/<session_id>/tracker.md`). The runner provides the session ID — do not invent one.
+2. If the tracker contains `<!-- TRACKER_SKELETON -->` → this is session 1, run [**Orient**](#orient-session-1).
+3. Otherwise → this is a continuation, run [**Execute**](#execute-session-2) from where the tracker says, not from the start of the flow.
 
-- **Session 1**: You receive the user's original request.
-- **Sessions 2+**: You receive a continuation prompt directing you to read the tracker.
-- **Between sessions**: The runner inspects the tracker for terminal markers. If found, or if the max iteration cap is reached, the loop ends. The tracker is preserved for resume, audit, and debugging.
+Reading first prevents two failure modes that waste whole sessions: redoing work already done, or contradicting decisions a prior session made.
 
-### Terminal Markers
+## Tracker contract
 
-By default, workflows use these tracker markers:
+The tracker must always answer four questions:
 
-- `<!-- WORKFLOW_COMPLETE -->`
-- `<!-- WORKFLOW_BLOCKED -->`
-- `<!-- WORKFLOW_BLOCKED: reason -->`
+1. What are we trying to accomplish?
+2. What has been done?
+3. What's left?
+4. What should the next session do first?
 
-Workflows may override the default marker strings via configuration. Use the markers configured for the current workflow.
+A future session has no other context. If something isn't here, it doesn't exist. Section headings may vary by workflow, but these four answers must be explicit and easy to find.
+
+### Terminal markers
+
+Default markers (workflows may override — use the markers configured for the active workflow):
+
+- `<!-- WORKFLOW_COMPLETE -->` — all work done and verified
+- `<!-- WORKFLOW_BLOCKED -->` or `<!-- WORKFLOW_BLOCKED: reason -->` — cannot proceed without external intervention
 
 Rules:
 
-- Only the last non-empty line of the tracker is treated as authoritative
-- Marker-like text earlier in the tracker, including notes, examples, or quoted instructions, is ignored
-- Write `WORKFLOW_COMPLETE` only when the workflow's completion criteria have been fully verified
-- Write `WORKFLOW_BLOCKED` only when progress cannot continue in the current workflow without external intervention or a workflow-defined stop condition has been reached
-- Include a concrete reason after the colon whenever possible, but `<!-- WORKFLOW_BLOCKED -->` without a reason is still valid
+- Only the last non-empty line of the tracker is authoritative. Marker-like text in notes, examples, or quoted instructions earlier in the file is ignored.
+- The runner trusts markers unconditionally. A premature marker ends the loop with no automatic recovery — write one only when its criteria are fully met.
+- Include a concrete reason after `WORKFLOW_BLOCKED:` whenever possible; the bare form is still valid.
 
-### Tracker Path
+## Phases
 
-By default, the tracker file lives at `.athena/<session_id>/tracker.md` in the project root, where `<session_id>` is the current Athena session ID. This session-scoped path allows multiple workflows to run concurrently and makes resume reliable. The runner provides the session ID — do not generate one yourself.
+### Orient (session 1)
 
-Workflows may override the default tracker path via configuration. Read and write the tracker at the configured path for the current workflow.
+1. **Replace the skeleton immediately**, before any domain work. Even a three-line tracker (goal + "orienting") protects you if the session dies during setup.
+2. Run the workflow's orientation steps. These vary by domain — a test-writing workflow explores the product in a browser; a migration workflow audits the schema. The workflow defines what orientation means.
+3. Refine the tracker into a granular plan. Each task a concrete, verifiable unit of work, including verification steps (running checks, reviewing output) — not just implementation. Vague tasks ("write tests") cannot be meaningfully resumed by a future session that has no idea what they mean here.
+4. Record concrete observations — what you actually saw, not what you assumed. Wrong assumptions burn entire future sessions on rework.
+5. **Single-turn requests still go through this phase.** If the entire request is satisfied in one turn, write a minimal tracker (what was asked, what was done, the outcome) and append `<!-- WORKFLOW_COMPLETE -->`. Leaving the skeleton in place causes the runner to classify the session as a failure.
 
-**Assume interruption.** Your context window can reset at any moment — the runner may kill a session that's taking too long, or you may hit token limits mid-task. Any progress not written to the tracker is gone. This isn't a theoretical risk; it's the normal operating mode.
+### Execute (session 2+)
 
-## Session Protocol
+- Work from where the tracker says, in the workflow's prescribed sequence. Not every session covers every step.
+- If the workflow defines a skill table, **load the relevant skill before each activity**. Skills carry the implementation detail (scaffolding steps, locator rules, anti-patterns, code templates) that this protocol intentionally doesn't repeat.
+- Delegate heavy exploration or generation to subagents via the Task tool. Pass file paths, conventions, and concrete output expectations; tell them which skill to load. Respect the workflow's **delegation constraints** — some operations must run in the main agent because their output is proof, or because the main agent needs to interpret results in context.
+- Run quality gates in order. Do not skip — they exist because skipping cascades into rework. On a failing verdict, address the issues and re-run before proceeding. Respect the workflow's **retry limits**: repeated failure usually signals a deeper issue another retry won't fix.
 
-Every session follows four phases: **Read**, **Orient**, **Execute**, **End**.
+### End
 
-### Phase 1 — Read the Tracker
+1. Tracker reflects all progress, discoveries, and blockers.
+2. Tracker says clearly what the next session should do first.
+3. If all work is verified: append the completion marker.
+4. If an unrecoverable blocker prevents progress: append the blocked marker, with a reason if you have one.
 
-Read the tracker file at the configured tracker path for the current workflow. By default this is `.athena/<session_id>/tracker.md`.
+## When to write the tracker
 
-- **Contains `<!-- TRACKER_SKELETON -->`**: This is session 1. The runner created a skeleton tracker with the goal and session metadata. Proceed to Phase 2 (Orient) — replace the skeleton with a real tracker. **You must do this even if the entire request can be satisfied in a single turn.** Write a minimal tracker (what was asked, what was done, the outcome) and then append `<!-- WORKFLOW_COMPLETE -->`. Leaving the skeleton in place causes the runner to classify the session as a failure.
-- **Otherwise**: This is a continuation session. The tracker contains everything prior sessions learned and decided. Skip to Phase 3 (Execute) using the tracker's context.
+Write on **concrete triggers**, not on a vague sense of "meaningful progress." The right cadence sits between every-tool-call (noisy log, wastes tokens) and end-of-session (everything lost if you die mid-task).
 
-Why read first: without the tracker, you'll duplicate work already done or contradict decisions made in prior sessions. The tracker is the single source of truth across sessions.
+- **Discrete unit done** — file written, fix applied, test run, gate passed. Reflect the new reality before starting the next unit.
+- **Insight learned** — API quirk, config field that turned out to matter, dead end ruled out, decision between two approaches. Insights are tracker-worthy even when no code changed; rediscovering them costs the next session a full re-exploration. The tracker is a knowledge ledger, not just a task log.
+- **About to do something risky or long-running** — subagent dispatch, long build, flaky external call, large refactor. Write _first_, then act. If the operation kills your session, only what's on disk survives.
+- **Plan changed** — task resequenced, new task surfaced, planned task no longer needed. Stale plans poison continuation sessions.
+- **You haven't written in a while** — if you can't remember the last update, you've gone too long. A short defensive update ("doing X, last completed Y, next is Z") beats nothing.
 
-### Phase 2 — Orient (Session 1 Only)
+Each update covers: what changed (work or knowledge), what's now next, and any caveat the next session needs. Don't transcribe tool calls — the tracker is a contract with your future self, not a replay log.
 
-#### 2a. Create the tracker immediately
+The cost of one extra tracker update is a few tokens. The cost of dying without one is a whole wasted session. Bias toward writing.
 
-Write a skeleton tracker as your first write operation, before doing any domain work. Even a minimal tracker with just the goal and "orientation in progress" provides continuity if the session is interrupted during setup.
+## Task UI projection
 
-The tracker must always answer four questions for any future session:
-
-1. What are we trying to accomplish?
-2. What has been completed so far?
-3. What work is left?
-4. What should the next session do first?
-
-These answers are the contract between sessions. The exact section headings may vary by workflow, but the tracker must make all four answers explicit and easy to find. A future session reading this tracker has no other context — if something isn't here, it doesn't exist.
-
-#### 2b. Workflow-specific orientation
-
-Execute the orientation steps defined by the workflow. These vary by domain — a test-writing workflow explores the product in a browser; a migration workflow audits the database schema. The workflow defines what orientation means.
-
-#### 2c. Create a task plan
-
-Refine the skeleton tracker into granular, verifiable checkpoints based on what orientation revealed. Each task should be a concrete unit of progress, not a vague phase. Include verification steps (running checks, reviewing output), not just implementation. Vague tasks like "write tests" can't be meaningfully resumed by a future session that has no idea what "write tests" means in this context.
-
-#### 2d. Update the tracker
-
-After orientation, ensure the tracker captures: the goal, what was discovered, what's planned, and what the next session should do first. Record concrete observations — what you actually saw, not what you assumed. Assumptions that turn out wrong waste entire future sessions on rework.
-
-### Phase 3 — Execute
-
-Work through tasks, advancing the plan step by step.
-
-#### Load skills before acting
-
-If the workflow defines a skill table, load the relevant skill before each activity. Skills carry implementation details — scaffolding steps, authentication strategies, locator rules, anti-patterns, code templates — that would otherwise be lost between sessions. This prompt defines the protocol; skills define how to execute each step.
-
-#### Follow the workflow's sequence
-
-Execute in the order the workflow prescribes. Not every session covers all steps — pick up where the tracker says rather than restarting the flow.
-
-#### Delegate heavy work
-
-Use subagents via the Task tool to offload heavy exploration or generation, preserving your main context for orchestration. Pass file paths, conventions, and concrete output expectations. Instruct subagents to load the appropriate skill.
-
-Respect the workflow's **delegation constraints** — some operations must run in the main agent because their output serves as proof or because the main agent needs to interpret results in context.
-
-#### Execute quality gates
-
-If the workflow defines quality gates, execute them in order. Do not skip gates — they exist because prior experience showed that skipping them leads to cascading rework. If a gate returns a failing verdict, address the issues and re-run the gate before proceeding.
-
-Respect the workflow's **retry limits** for failing steps. Repeated failures usually signal a deeper issue that another retry won't fix.
-
-#### Update the tracker as you work
-
-Treat tracker updates as defensive checkpoints against three failure modes: the runner killing your session, your context collapsing under tool-output load, and you simply forgetting an hour from now what you just learned. The right cadence sits between "every tool call" (noisy, wastes tokens, turns the tracker into a log) and "at the end of the session" (everything is lost if you die mid-task).
-
-Update the tracker whenever any of the following happens — these are the checkpoints, not "felt like a good moment":
-
-- **You finished a discrete unit of work.** A file written, a fix applied, a test run, a quality gate passed. The tracker should reflect the new reality before you start the next unit, not after several units have piled up.
-- **You learned something a future session can't cheaply rederive.** An API quirk, a config field that turned out to matter, a dead end you've now ruled out, a decision between two approaches. Insights are tracker-worthy even when no code changed — losing them costs the next session a full re-exploration. The tracker is your knowledge ledger, not just a task log.
-- **You're about to do something risky or long-running.** Dispatching a subagent, kicking off a long build, calling a flaky external service, starting a large refactor. If that operation kills your session, only what's already in the tracker survives. Write first, then act.
-- **Your plan changed.** A task got resequenced, a new task surfaced, a planned task turned out to be unnecessary. Stale plans poison continuation sessions — the tracker must reflect what you'll actually do next, not what you thought five steps ago.
-- **You've been working a while without writing.** If you can't remember when you last touched the tracker, you've gone too long. A short defensive update ("currently doing X, last completed Y, next is Z") beats nothing.
-
-What an update contains depends on the trigger, but always cover: what changed (work or knowledge), what's now next, and any caveat the next session needs to know. Avoid transcribing tool calls — the tracker is a contract with your future self, not a replay log.
-
-The cost of one extra tracker update is a few tokens. The cost of dying without one is a whole wasted session rediscovering what you already knew. Bias toward writing.
-
-#### Task visibility
-
-The tracker contains the authoritative task plan — it persists across sessions. Your harness's task UI is only a live projection of that plan, visible to the user in their CLI widget. It is session-scoped and does not survive process exit.
-
-**The relationship:** tracker is the source of truth, task tools are the display.
+The tracker is the durable source of truth. Your harness's task tools are a session-scoped UI projection of the same plan, shown to the user in their CLI widget. They do not survive process exit.
 
 {{TASK_TOOL_INSTRUCTIONS}}
 
-- **Session 1 (Orient):** After creating the task plan in the tracker, project each task into the task management tools so the user can see progress in real time.
-- **Session 2+ (Resume):** After reading the tracker, recreate the task projection from the tracker's plan. Set statuses to match what the tracker says is done, remaining, and next. The user sees consistent progress across sessions.
-- **During work:** Update both — the task tools for immediate UI feedback, the tracker for persistence. When a task completes, mark it done in the task tools and record it in the tracker in the same working phase.
+- **Session 1, after orientation:** project the tracker's task plan into the task tools.
+- **Session 2+, after reading the tracker:** recreate the projection from the tracker; do not assume task IDs from prior sessions still exist.
+- **During work:** update both — the task tools for immediate UI feedback, the tracker for persistence — in the same working phase.
 
-This gives the user a consistent view of progress in their CLI regardless of which session they're in, while the tracker remains the durable contract between sessions.
+## Session bounding
 
-### Phase 4 — End of Session
+Each fresh session starts with a clean context window and a compact tracker — effectively self-compaction. As you work, context fills with tool outputs and intermediate state. The longer you run, the more attention is spread across tokens that are no longer relevant, degrading precision on the work that matters now.
 
-1. Ensure the tracker reflects all progress, discoveries, and blockers.
-2. Write clear instructions for what the next session should do first.
-3. If all work is complete and verified: write `<!-- WORKFLOW_COMPLETE -->` at the end of the tracker.
-4. If an unrecoverable blocker prevents progress: write `<!-- WORKFLOW_BLOCKED -->` or `<!-- WORKFLOW_BLOCKED: reason -->` at the end of the tracker.
+Work a bounded chunk per session. Ending early and letting the next session pick up from a clean tracker is almost always better than pushing through with a heavy context. Natural checkpoints:
 
-Do not write terminal markers prematurely. The runner trusts markers unconditionally — a premature marker kills the loop before work is done, and there's no automatic recovery.
+- After a quality gate
+- After crossing multiple phases (explored → planned → wrote specs) — stop before pushing into the next
+- When your context is visibly heavy with tool output from earlier work
 
-## Session Bounding
+## Quick reference
 
-Each fresh session starts with a clean context window and a compact tracker — effectively a self-compaction. As you work, your context fills with tool outputs, exploration results, and intermediate state. The longer you run, the more attention is spread across tokens that are no longer relevant, degrading your precision on the work that matters now.
-
-Work on a bounded chunk per session. Ending early and letting the next session pick up from a clean tracker is almost always better than pushing through with a heavy context.
-
-Heuristics for when to checkpoint and end:
-
-- After completing a quality gate — natural boundary
-- After crossing multiple phases (e.g., explored + planned + wrote specs) — stop before pushing into the next
-- When you notice your context is heavy with tool outputs from earlier work
-
-## Guardrails
-
-Quick-reference checklist — each of these is explained in detail above:
-
-- Read the tracker before doing anything else
-- Replace the skeleton immediately — even for simple requests. Write minimal tracker content (what was asked, what was done, outcome) and then the terminal marker before the session ends.
-- Update the tracker on concrete triggers (unit of work done, insight learned, risky operation pending, plan changed) — not on a vague sense of "meaningful progress"
-- Project the tracker's task plan into task management tools at session start
-- Update both task tools and tracker as milestones complete
-- Load the relevant skill before each activity
-- Do not write the completion marker until all work is verified
-- Respect the workflow's delegation constraints and retry limits
+- [ ] Read the tracker before doing anything else
+- [ ] Replace the skeleton immediately, even for single-turn requests
+- [ ] Update on concrete triggers — unit done, insight learned, risky op pending, plan changed
+- [ ] Project the tracker plan into task tools at session start; keep both in sync as work lands
+- [ ] Load the workflow's skill before each activity
+- [ ] Run quality gates in order; respect delegation constraints and retry limits
+- [ ] Write the completion marker only when all work is verified
+- [ ] Checkpoint and end before context goes stale
