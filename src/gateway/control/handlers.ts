@@ -26,6 +26,7 @@ import type {
 	RelayQuestionResponsePayload,
 	SessionRegisterRequestPayload,
 	SessionRegisterResponsePayload,
+	SessionRunEventRequestPayload,
 	SessionTurnCompleteRequestPayload,
 	SessionUnregisterRequestPayload,
 	SessionUnregisterResponsePayload,
@@ -221,6 +222,16 @@ const SESSION_TURN_COMPLETE: ControlHandlerSpec = {
 	},
 };
 
+const SESSION_RUN_EVENT: ControlHandlerSpec = {
+	kind: 'session.run.event',
+	requires: ['pipeline'],
+	unsupportedMessage: 'pipeline not configured',
+	handle: async (envelope, {deps}) => {
+		const req = envelope.payload as SessionRunEventRequestPayload;
+		return await deps.pipeline!.handleRunEvent(req);
+	},
+};
+
 const CHANNEL_SEND: ControlHandlerSpec = {
 	kind: 'channel.send',
 	requires: ['channelManager'],
@@ -332,6 +343,7 @@ const HANDLERS: ReadonlyMap<string, ControlHandlerSpec> = new Map(
 		SESSION_REGISTER,
 		SESSION_UNREGISTER,
 		SESSION_TURN_COMPLETE,
+		SESSION_RUN_EVENT,
 		CHANNEL_SEND,
 		RELAY_PERMISSION_REQUEST,
 		RELAY_PERMISSION_CANCEL,

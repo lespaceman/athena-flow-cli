@@ -30,6 +30,8 @@ export type {
 	SessionUnregisterResponsePayload,
 	SessionTurnCompleteRequestPayload,
 	SessionTurnCompleteResponsePayload,
+	SessionRunEventRequestPayload,
+	SessionRunEventResponsePayload,
 	ChannelSendRequestPayload,
 	ChannelSendResponsePayload,
 	SessionDispatchTurnPushPayload,

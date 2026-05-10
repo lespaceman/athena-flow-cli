@@ -30,6 +30,7 @@ export type ControlRequestKind =
 	| 'session.register'
 	| 'session.unregister'
 	| 'session.turn.complete'
+	| 'session.run.event'
 	| 'channel.send'
 	| 'relay.permission.request'
 	| 'relay.permission.cancel'
@@ -144,6 +145,28 @@ export type SessionTurnCompleteRequestPayload = {
 export type SessionTurnCompleteResponsePayload = {
 	delivered: boolean;
 	providerMessageId?: string;
+};
+
+/**
+ * Streaming run-event from a runner harness child to the dashboard.
+ *
+ * Routed by the gateway to the registered slot's outbound adapter (in
+ * production: `RunnerAdapter`) which encodes it as a `run_event` wire frame.
+ * Independent of `session.turn.complete` — turn-complete is one-shot per
+ * dispatch, run events are many-per-assignment, and only the terminal one
+ * coincides with a turn-complete carrying the same envelope text.
+ */
+export type SessionRunEventRequestPayload = {
+	runtimeId: string;
+	location: ChannelLocation;
+	runId: string;
+	seq: number;
+	ts: number;
+	kind: string;
+	payload?: unknown;
+};
+export type SessionRunEventResponsePayload = {
+	delivered: boolean;
 };
 
 /**

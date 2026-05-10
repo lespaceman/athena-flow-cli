@@ -52,6 +52,8 @@ import type {
 	SessionDispatchTurnPushPayload,
 	SessionRegisterRequestPayload,
 	SessionRegisterResponsePayload,
+	SessionRunEventRequestPayload,
+	SessionRunEventResponsePayload,
 	SessionTurnCompleteRequestPayload,
 	SessionTurnCompleteResponsePayload,
 	SessionUnregisterRequestPayload,
@@ -121,6 +123,15 @@ export type SessionBridgeTurnComplete = {
 	location: ChannelLocation;
 	text: string;
 	idempotencyKey: string;
+};
+
+export type SessionBridgeRunEvent = {
+	location: ChannelLocation;
+	runId: string;
+	seq: number;
+	ts: number;
+	kind: string;
+	payload?: unknown;
 };
 
 export type SessionBridgeConnectionState =
@@ -292,6 +303,25 @@ export class SessionBridge {
 			`sessionBridge completeTurn response runtimeId=${this.opts.runtimeId} dispatchId=${input.dispatchId} delivered=${res.delivered} providerMessageId=${res.providerMessageId ?? ''}`,
 		);
 		return res;
+	}
+
+	async sendRunEvent(
+		event: SessionBridgeRunEvent,
+	): Promise<SessionRunEventResponsePayload> {
+		const client = await this.requireConnectedClient();
+		const req: SessionRunEventRequestPayload = {
+			runtimeId: this.opts.runtimeId,
+			location: event.location,
+			runId: event.runId,
+			seq: event.seq,
+			ts: event.ts,
+			kind: event.kind,
+			...(event.payload !== undefined ? {payload: event.payload} : {}),
+		};
+		return client.request<
+			SessionRunEventRequestPayload,
+			SessionRunEventResponsePayload
+		>('session.run.event', req);
 	}
 
 	async relayPermission(

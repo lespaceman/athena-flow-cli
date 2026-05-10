@@ -18,6 +18,8 @@ import type {
 	OutboundMessage,
 	SendResult,
 	SessionDispatchTurnPushPayload,
+	SessionRunEventRequestPayload,
+	SessionRunEventResponsePayload,
 	SessionTurnCompleteRequestPayload,
 	SessionTurnCompleteResponsePayload,
 } from '../shared/gateway-protocol';
@@ -292,6 +294,41 @@ export class DispatchPipeline {
 			this.pushes.delete(key);
 			this.connectionToKey.delete(connectionId);
 		}
+	}
+
+	/**
+	 * Streaming run-event from a runner harness child to its outbound
+	 * adapter. Independent of dispatch state — `runId`/`seq` are the runner
+	 * protocol's own correlation, not the gateway's `dispatchId`. The
+	 * outbound text is the wire envelope shape RunnerAdapter expects on
+	 * `OutboundMessage.text`.
+	 */
+	async handleRunEvent(
+		payload: SessionRunEventRequestPayload,
+	): Promise<SessionRunEventResponsePayload> {
+		const slot = this.findSlotByRuntimeId(payload.runtimeId);
+		if (!slot) {
+			throw new Error('runtime mismatch on session.run.event');
+		}
+		const envelopeText = JSON.stringify({
+			kind: 'run_event',
+			runId: payload.runId,
+			seq: payload.seq,
+			ts: payload.ts,
+			eventKind: payload.kind,
+			...(payload.payload !== undefined ? {payload: payload.payload} : {}),
+		});
+		const out: OutboundMessage = {
+			location: payload.location,
+			text: envelopeText,
+			idempotencyKey: `run_event:${payload.runId}:${payload.seq}`,
+		};
+		try {
+			await this.outboundDispatcher.dispatch(payload.location.channelId, out);
+		} catch {
+			return {delivered: false};
+		}
+		return {delivered: true};
 	}
 
 	async handleTurnComplete(

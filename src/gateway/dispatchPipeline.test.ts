@@ -610,4 +610,53 @@ describe('DispatchPipeline', () => {
 			expect(push2).toHaveBeenCalledOnce();
 		});
 	});
+
+	describe('run event streaming', () => {
+		it('routes session.run.event to the registered slot via send', async () => {
+			registerR1(s);
+			s.send.mockResolvedValue({providerMessageId: 'rx-1', deliveredAt: 5});
+
+			const result = await s.pipeline.handleRunEvent({
+				runtimeId: 'r1',
+				location: {channelId: 'runner:r1', accountId: 'runner:r1'},
+				runId: 'run-A',
+				seq: 4,
+				ts: 555,
+				kind: 'progress',
+				payload: {message: 'thinking'},
+			});
+
+			expect(result).toEqual({delivered: true});
+			expect(s.send).toHaveBeenCalledTimes(1);
+			const [channelId, msg] = s.send.mock.calls[0]!;
+			expect(channelId).toBe('runner:r1');
+			expect(msg.location).toEqual({
+				channelId: 'runner:r1',
+				accountId: 'runner:r1',
+			});
+			expect(msg.idempotencyKey).toBe('run_event:run-A:4');
+			expect(JSON.parse(msg.text)).toEqual({
+				kind: 'run_event',
+				runId: 'run-A',
+				seq: 4,
+				ts: 555,
+				eventKind: 'progress',
+				payload: {message: 'thinking'},
+			});
+		});
+
+		it('throws on runtimeId mismatch', async () => {
+			registerR1(s);
+			await expect(
+				s.pipeline.handleRunEvent({
+					runtimeId: 'rZ',
+					location: {channelId: 'runner:r1', accountId: 'runner:r1'},
+					runId: 'r',
+					seq: 1,
+					ts: 0,
+					kind: 'progress',
+				}),
+			).rejects.toThrow('runtime mismatch');
+		});
+	});
 });
