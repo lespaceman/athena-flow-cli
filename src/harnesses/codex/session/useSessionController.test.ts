@@ -45,7 +45,7 @@ describe('useCodexSessionController', () => {
 			developerInstructions: undefined,
 			agentRoots: undefined,
 			plugins: [],
-			config: {model_auto_compact_token_limit: 130000},
+			config: {model_auto_compact_token_limit: 175000},
 			ephemeral: undefined,
 			approvalPolicy: 'on-request',
 			sandbox: 'workspace-write',

@@ -85,7 +85,7 @@ export function buildCodexPromptOptions(input: {
 				: undefined,
 		plugins: resolveCodexWorkflowPlugins(input.workflowPlan),
 		config: {
-			model_auto_compact_token_limit: 130000,
+			model_auto_compact_token_limit: 175000,
 			...(resolveCodexMcpConfig(input.pluginMcpConfig, input.workflowPlan) ??
 				{}),
 		},
