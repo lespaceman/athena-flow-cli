@@ -1,13 +1,13 @@
 {
-	"name": "@athenaflow/cli",
+	"name": "@drisp/cli",
 	"description": "Workflow runtime for Claude Code with hooks, plugins, and interactive terminal observability",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/lespaceman/athena-flow-cli.git"
+		"url": "git+https://github.com/drisplabs/cli.git"
 	},
-	"homepage": "https://github.com/lespaceman/athena-flow-cli#readme",
+	"homepage": "https://github.com/drisplabs/cli#readme",
 	"bugs": {
-		"url": "https://github.com/lespaceman/athena-flow-cli/issues"
+		"url": "https://github.com/drisplabs/cli/issues"
 	},
 	"keywords": [
 		"cli",

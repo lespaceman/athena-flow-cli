@@ -6,7 +6,7 @@ You only need to know your platform's API. The gateway handles routing, persiste
 
 ## What you implement
 
-Two interfaces, both from `@athenaflow/cli`'s `shared/gateway-protocol`:
+Two interfaces, both from `@drisp/cli`'s `shared/gateway-protocol`:
 
 - **`ChannelAdapter`** — the runtime: lifecycle, send, probe, optional relay handlers
 - **`AdapterModule`** — the factory: parse a JSON sidecar config and construct the adapter

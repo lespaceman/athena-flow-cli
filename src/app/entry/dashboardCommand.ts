@@ -343,7 +343,7 @@ export async function runDashboardCommand(
 				`dashboard pair: cli version ${packageVersion} is older than the dashboard's required >=${parsed.requiredCliVersion}.`,
 			);
 			logError(
-				'dashboard pair: upgrade with `npm i -g @athenaflow/cli` then re-run pair.',
+				'dashboard pair: upgrade with `npm i -g @drisp/cli` then re-run pair.',
 			);
 			return 1;
 		}
