@@ -880,4 +880,65 @@ describe('runDashboardRuntimeDaemon', () => {
 
 		await daemon.stop('test');
 	});
+
+	it('stays alive and retries when the initial instance socket connect fails', async () => {
+		vi.useFakeTimers();
+		try {
+			const first = makeFakeSocket();
+			const second = makeFakeSocket();
+			first.client.connect = async () => {
+				first.calls.connect += 1;
+				throw new Error('Unexpected server response: 500');
+			};
+			const sockets = [first.client, second.client];
+			const logs: Array<{level: string; message: string}> = [];
+			const refreshAccessToken = vi
+				.fn()
+				.mockResolvedValueOnce({
+					instanceId: 'inst_1',
+					accessToken: 'access_1',
+					expiresInSec: 900,
+				})
+				.mockResolvedValueOnce({
+					instanceId: 'inst_1',
+					accessToken: 'access_2',
+					expiresInSec: 900,
+				});
+
+			const daemon = await runDashboardRuntimeDaemon({
+				readConfig: () => stored,
+				refreshAccessToken,
+				makeInstanceSocketClient: () => sockets.shift() ?? second.client,
+				executeRemoteAssignment: vi.fn(async () => {}),
+				reconnectDelaysMs: [100],
+				log: (level, message) => logs.push({level, message}),
+			});
+
+			expect(daemon.snapshot()).toMatchObject({
+				socketConnected: false,
+				activeRuns: 0,
+				completedRuns: 0,
+			});
+			expect(logs).toContainEqual({
+				level: 'warn',
+				message:
+					'dashboard runtime daemon initial connect failed: Unexpected server response: 500',
+			});
+
+			await vi.advanceTimersByTimeAsync(100);
+			await vi.waitFor(() =>
+				expect(refreshAccessToken).toHaveBeenCalledTimes(2),
+			);
+			expect(second.calls.connect).toBe(1);
+			expect(daemon.snapshot()).toMatchObject({
+				socketConnected: true,
+				instanceId: 'inst_1',
+				dashboardUrl: 'https://example.com',
+			});
+
+			await daemon.stop('test');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 });

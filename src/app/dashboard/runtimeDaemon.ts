@@ -121,6 +121,13 @@ export type RunDashboardRuntimeDaemonOptions = {
 	feedDrainIntervalMs?: number;
 	/** Durable local inbox for dashboard permission/question decisions. */
 	decisionInbox?: DashboardDecisionInbox;
+	/**
+	 * Keep the long-running daemon alive when the first dashboard socket
+	 * connection fails, so transient server/network failures recover through
+	 * the normal reconnect loop. Foreground debugging can set false to fail
+	 * fast and report the startup error directly.
+	 */
+	retryInitialConnect?: boolean;
 };
 
 const DEFAULT_RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
@@ -175,6 +182,7 @@ export async function runDashboardRuntimeDaemon(
 	const decisionInbox = options.decisionInbox ?? createDashboardDecisionInbox();
 	const feedDrainIntervalMs =
 		options.feedDrainIntervalMs ?? DEFAULT_FEED_DRAIN_INTERVAL_MS;
+	const retryInitialConnect = options.retryInitialConnect ?? true;
 
 	const startedAt = now();
 	let stopped = false;
@@ -429,7 +437,20 @@ export async function runDashboardRuntimeDaemon(
 		}
 	}
 
-	await connectOnce();
+	try {
+		await connectOnce();
+	} catch (err) {
+		if (!retryInitialConnect) {
+			throw err;
+		}
+		log(
+			'warn',
+			`dashboard runtime daemon initial connect failed: ${
+				err instanceof Error ? err.message : String(err)
+			}`,
+		);
+		void reconnectLoop();
+	}
 
 	return {
 		snapshot(): RuntimeDaemonSnapshot {

@@ -773,6 +773,7 @@ export async function runDashboardCommand(
 					refreshAccessToken: async () => performRefreshImpl('connect'),
 					makeInstanceSocketClient: deps.makeInstanceSocketClient,
 					executeRemoteAssignment: deps.executeRemoteAssignment,
+					retryInitialConnect: false,
 					log: (level, message) => {
 						if (level === 'error' || level === 'warn') {
 							logError(`dashboard daemon: ${message}`);
