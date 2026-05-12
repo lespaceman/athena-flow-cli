@@ -78,6 +78,11 @@ describe('executeRemoteAssignment', () => {
 				modelName: null,
 				warnings: [],
 			}),
+			resolveWorkflowFn: vi.fn(() => ({
+				name: 'exploratory-testing',
+				plugins: [],
+				promptTemplate: '{input}',
+			})),
 			now: () => 999,
 		});
 
