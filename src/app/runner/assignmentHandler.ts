@@ -17,8 +17,10 @@
  * existing parity expectations carry over.
  */
 import {bootstrapRuntimeConfig} from '../bootstrap/bootstrapConfig';
+import {normalizeHarnessOverride} from '../bootstrap/harnessOverride';
 import {runExec} from '../exec';
 import type {ExecRunOptions, ExecRunResult} from '../exec/types';
+import type {AthenaHarness} from '../../infra/plugins/config';
 import type {ChannelLocation} from '../../shared/gateway-protocol';
 import type {RunnerEnvelope} from './envelope';
 
@@ -58,6 +60,7 @@ type RemoteRunSpec = {
 	sessionId?: string;
 	projectDir?: string;
 	workflow?: {ref?: string};
+	harness?: AthenaHarness;
 	env?: Record<string, string>;
 	timeoutSec?: number;
 };
@@ -91,6 +94,7 @@ function parseRunSpec(value: unknown): RemoteRunSpec | null {
 			typeof (workflow as Record<string, unknown>)['ref'] === 'string'
 				? {ref: (workflow as Record<string, string>)['ref']}
 				: undefined,
+		harness: normalizeHarnessOverride(obj['harness']),
 		env:
 			typeof env === 'object' && env !== null
 				? Object.fromEntries(
@@ -244,6 +248,7 @@ export async function executeAssignment(
 			projectDir,
 			showSetup: false,
 			isolationPreset: 'minimal',
+			harnessOverride: spec.harness,
 			workflowOverride: workflowNameFromRef(spec.workflow?.ref),
 		});
 	} catch (err) {

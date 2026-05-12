@@ -147,6 +147,59 @@ describe('executeAssignment', () => {
 		});
 	});
 
+	it('passes codex runSpec harness through as the OpenAI Codex bootstrap override', async () => {
+		const captured: Captured = {runEvents: [], completes: []};
+		const bridge = makeBridge(captured);
+		const bootstrapRuntimeConfigFn = vi.fn(baseRuntimeConfig);
+		const runExecFn = vi.fn(async () => ({
+			success: true,
+			exitCode: 0,
+			athenaSessionId: 'athena-run_42',
+			adapterSessionId: null,
+			finalMessage: 'done',
+			tokens: {
+				input: null,
+				output: null,
+				cacheRead: null,
+				cacheWrite: null,
+				total: null,
+				contextSize: null,
+				contextWindowSize: null,
+			},
+			durationMs: 1,
+		}));
+
+		await executeAssignment({
+			envelope: {
+				kind: 'job_assignment',
+				runId: 'run_42',
+				runSpec: {
+					prompt: 'say hello',
+					sessionId: 'athena-run_42',
+					harness: 'codex',
+				},
+			},
+			bridge,
+			dispatchId: 'dispatch-1',
+			location: baseLocation,
+			projectDir: '/tmp/project',
+			runExecFn,
+			bootstrapRuntimeConfigFn,
+			now: () => 999,
+		});
+
+		expect(bootstrapRuntimeConfigFn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				harnessOverride: 'openai-codex',
+			}),
+		);
+		expect(runExecFn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				harness: 'openai-codex',
+			}),
+		);
+	});
+
 	it('terminates with an error envelope when the run spec is missing a prompt', async () => {
 		const captured: Captured = {runEvents: [], completes: []};
 		const bridge = makeBridge(captured);

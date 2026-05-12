@@ -1,6 +1,8 @@
 import {bootstrapRuntimeConfig} from '../bootstrap/bootstrapConfig';
+import {normalizeHarnessOverride} from '../bootstrap/harnessOverride';
 import {runExec} from '../exec';
 import type {ExecRunOptions, ExecRunResult} from '../exec/types';
+import type {AthenaHarness} from '../../infra/plugins/config';
 import {
 	installWorkflowFromSource,
 	resolveWorkflow,
@@ -37,6 +39,7 @@ type RemoteRunSpec = {
 	sessionId?: string;
 	projectDir?: string;
 	workflow?: {source?: string; ref?: string; version?: string};
+	harness?: AthenaHarness;
 	env?: Record<string, string>;
 	timeoutSec?: number;
 	/**
@@ -127,6 +130,7 @@ function parseRunSpec(value: unknown): RemoteRunSpec | null {
 							: {}),
 					}
 				: undefined,
+		harness: normalizeHarnessOverride(obj['harness']),
 		env:
 			typeof env === 'object' && env !== null
 				? Object.fromEntries(
@@ -387,6 +391,7 @@ export async function executeRemoteAssignment({
 				projectDir,
 				showSetup: false,
 				isolationPreset: 'minimal',
+				harnessOverride: spec.harness,
 				workflowOverride,
 			});
 		} catch (err) {

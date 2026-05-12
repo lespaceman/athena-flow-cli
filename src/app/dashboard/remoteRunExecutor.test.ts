@@ -112,6 +112,78 @@ describe('executeRemoteAssignment', () => {
 		);
 	});
 
+	it('passes codex runSpec harness through as the OpenAI Codex bootstrap override', async () => {
+		const sent: unknown[] = [];
+		const runExecFn = vi.fn(async () => ({
+			success: true,
+			exitCode: 0,
+			athenaSessionId: 'athena-run_42',
+			adapterSessionId: null,
+			finalMessage: 'done',
+			tokens: {
+				input: null,
+				output: null,
+				cacheRead: null,
+				cacheWrite: null,
+				total: null,
+				contextSize: null,
+				contextWindowSize: null,
+			},
+			durationMs: 1,
+		}));
+		const bootstrapRuntimeConfigFn = vi.fn(() => ({
+			globalConfig: {
+				plugins: [],
+				additionalDirectories: [],
+				workflowMarketplaceSources: [],
+				workflowSelections: {},
+			},
+			projectConfig: {
+				plugins: [],
+				additionalDirectories: [],
+				workflowMarketplaceSources: [],
+				workflowSelections: {},
+			},
+			harness: 'openai-codex' as const,
+			isolationConfig: {preset: 'minimal' as const, additionalDirectories: []},
+			workflowRef: undefined,
+			workflow: undefined,
+			workflowPlan: undefined,
+			modelName: null,
+			warnings: [],
+		}));
+
+		await executeRemoteAssignment({
+			frame: {
+				type: 'job_assignment',
+				runId: 'run_42',
+				runSpec: {
+					prompt: 'say hello',
+					sessionId: 'athena-run_42',
+					harness: 'codex',
+				},
+			},
+			client: {
+				sendRunEvent: frame => sent.push(frame),
+			},
+			projectDir: '/tmp/project',
+			runExecFn,
+			bootstrapRuntimeConfigFn,
+			now: () => 999,
+		});
+
+		expect(bootstrapRuntimeConfigFn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				harnessOverride: 'openai-codex',
+			}),
+		);
+		expect(runExecFn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				harness: 'openai-codex',
+			}),
+		);
+	});
+
 	it('passes dashboard continue assignments with separate Athena and adapter resume ids', async () => {
 		const runExecFn = vi.fn(async (options: ExecRunOptions) => ({
 			success: true,
