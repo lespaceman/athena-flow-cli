@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/drisplabs/cli/compare/cli-v0.5.0...cli-v0.5.1) (2026-05-12)
+
+
+### Bug Fixes
+
+* clarify Codex header token counts ([b273d67](https://github.com/drisplabs/cli/commit/b273d678e8ed5d453137149dee398834259ca785))
+* retry dashboard daemon initial socket failures ([e075e49](https://github.com/drisplabs/cli/commit/e075e49876765bc77ea63f59c965a4d5edbba78f))
+
 ## [0.5.0](https://github.com/drisplabs/cli/compare/cli-v0.4.7...cli-v0.5.0) (2026-05-12)
 
 
