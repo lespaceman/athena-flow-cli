@@ -211,6 +211,72 @@ describe('useFeed permission auto-dequeue', () => {
 		);
 	});
 
+	it('publishes mapped feed events to the dashboard feed publisher', () => {
+		const runtime = createMockRuntime();
+		const dashboardFeedPublisher = {publish: vi.fn()};
+		renderHook(() =>
+			useFeed(runtime, [], undefined, undefined, {dashboardFeedPublisher}),
+		);
+
+		act(() => {
+			runtime.emitEvent(makePermissionEvent('req-publish'));
+		});
+
+		expect(dashboardFeedPublisher.publish).toHaveBeenCalledWith(
+			expect.objectContaining({
+				origin: 'local',
+				athenaSessionId: 'test-session',
+				feedEvents: expect.arrayContaining([
+					expect.objectContaining({
+						kind: 'permission.request',
+						cause: expect.objectContaining({
+							hook_request_id: 'req-publish',
+						}),
+					}),
+				]),
+			}),
+		);
+	});
+
+	it('applies pending dashboard decisions from the local inbox', async () => {
+		const runtime = createMockRuntime();
+		const dashboardDecisionInbox = {
+			pendingForSession: vi.fn(() => [
+				{
+					id: 1,
+					athenaSessionId: 'athena-1',
+					requestId: 'req-dashboard',
+					decision: {
+						type: 'json' as const,
+						source: 'user' as const,
+						intent: {kind: 'permission_allow' as const},
+					},
+					receivedAt: 123,
+				},
+			]),
+			markConsumed: vi.fn(),
+			enqueue: vi.fn(),
+			close: vi.fn(),
+		};
+
+		renderHook(() =>
+			useFeed(runtime, [], undefined, undefined, {
+				athenaSessionId: 'athena-1',
+				dashboardDecisionInbox,
+				dashboardDecisionPollIntervalMs: 5,
+			}),
+		);
+
+		await waitFor(() =>
+			expect(runtime.sendDecision).toHaveBeenCalledWith('req-dashboard', {
+				type: 'json',
+				source: 'user',
+				intent: {kind: 'permission_allow'},
+			}),
+		);
+		expect(dashboardDecisionInbox.markConsumed).toHaveBeenCalledWith({id: 1});
+	});
+
 	it('dequeues question when question_answer decision arrives via onDecision', async () => {
 		const runtime = createMockRuntime();
 		const {result} = renderHook(() => useFeed(runtime));

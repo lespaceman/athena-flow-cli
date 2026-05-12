@@ -25,6 +25,14 @@ import {
 	type ReconcileResult,
 } from './consoleSidecarReconciler';
 import {channelSidecarDir} from '../../infra/config/channels';
+import {
+	createDashboardFeedOutbox,
+	type DashboardFeedOutbox,
+} from './dashboardFeedPublisher';
+import {
+	createDashboardDecisionInbox,
+	type DashboardDecisionInbox,
+} from './dashboardDecisionInbox';
 
 type RuntimeDaemonAssignmentExecutor = (
 	input: ExecuteRemoteAssignmentInput,
@@ -126,6 +134,15 @@ export type RunDashboardRuntimeDaemonOptions = {
 	reloadGatewayChannels?: () => Promise<{ok: boolean; message: string}>;
 	/** Override channel sidecar directory; defaults to `channelSidecarDir()`. */
 	channelDir?: () => string;
+	/**
+	 * Durable queue of local feed events waiting for dashboard ACK. Production
+	 * uses the dashboard state dir; tests inject a temp database.
+	 */
+	feedOutbox?: DashboardFeedOutbox;
+	/** Poll interval for queued feed events. Default 1000ms. */
+	feedDrainIntervalMs?: number;
+	/** Durable local inbox for dashboard permission/question decisions. */
+	decisionInbox?: DashboardDecisionInbox;
 };
 
 const DEFAULT_RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
@@ -135,6 +152,7 @@ const DEFAULT_REFRESH_FAILURE_LIMIT = 5;
 const DEFAULT_REFRESH_FAILURE_WINDOW_MS = 5 * 60_000;
 const DEFAULT_REFRESH_COOLDOWN_MS = 5 * 60_000;
 const DEFAULT_RUN_HISTORY_LIMIT = 100;
+const DEFAULT_FEED_DRAIN_INTERVAL_MS = 1_000;
 
 function delay(ms: number): Promise<void> {
 	return new Promise(resolve => {
@@ -179,6 +197,10 @@ export async function runDashboardRuntimeDaemon(
 		options.reconcileChannels ?? reconcileConsoleSidecars;
 	const reloadGatewayChannels = options.reloadGatewayChannels;
 	const getChannelDir = options.channelDir ?? channelSidecarDir;
+	const feedOutbox = options.feedOutbox ?? createDashboardFeedOutbox();
+	const decisionInbox = options.decisionInbox ?? createDashboardDecisionInbox();
+	const feedDrainIntervalMs =
+		options.feedDrainIntervalMs ?? DEFAULT_FEED_DRAIN_INTERVAL_MS;
 
 	const startedAt = now();
 	let stopped = false;
@@ -189,6 +211,7 @@ export async function runDashboardRuntimeDaemon(
 	let lastFrameAt: number | undefined;
 	let completedRuns = 0;
 	let refreshTimer: NodeJS.Timeout | null = null;
+	let feedDrainTimer: NodeJS.Timeout | null = null;
 	const refreshFailures: number[] = [];
 	let cooldownUntil = 0;
 
@@ -228,6 +251,38 @@ export async function runDashboardRuntimeDaemon(
 			clearTimeout(refreshTimer);
 			refreshTimer = null;
 		}
+	}
+
+	function clearFeedDrainTimer(): void {
+		if (feedDrainTimer) {
+			clearInterval(feedDrainTimer);
+			feedDrainTimer = null;
+		}
+	}
+
+	function drainFeedOutbox(): void {
+		const current = client;
+		if (!current) return;
+		const rows = feedOutbox.pendingBatch({limit: 100, now: now()});
+		for (const row of rows) {
+			current.sendFeedEvent({
+				deliverySeq: row.deliverySeq,
+				envelope: row.envelope,
+			});
+			const retryDelayMs = Math.min(30_000, (row.attempt + 1) * 1_000);
+			feedOutbox.markAttempted({
+				deliverySeq: row.deliverySeq,
+				nextAttemptAt: now() + retryDelayMs,
+			});
+		}
+	}
+
+	function startFeedDrainTimer(): void {
+		clearFeedDrainTimer();
+		const timer = setInterval(drainFeedOutbox, feedDrainIntervalMs);
+		timer.unref();
+		feedDrainTimer = timer;
+		drainFeedOutbox();
 	}
 
 	function scheduleRefresh(expiresInSec: number): void {
@@ -409,6 +464,26 @@ export async function runDashboardRuntimeDaemon(
 				}
 				return;
 			}
+			if (frame.type === 'feed_ack') {
+				feedOutbox.markAcked({
+					...(typeof frame.deliverySeq === 'number'
+						? {deliverySeq: frame.deliverySeq}
+						: {}),
+					...(typeof frame.eventId === 'string'
+						? {eventId: frame.eventId}
+						: {}),
+				});
+				return;
+			}
+			if (frame.type === 'dashboard_decision') {
+				decisionInbox.enqueue({
+					athenaSessionId: frame.athenaSessionId,
+					requestId: frame.requestId,
+					decision: frame.decision,
+					receivedAt: now(),
+				});
+				return;
+			}
 			if (frame.type === 'cancel') {
 				const entry = active.get(frame.runId);
 				if (entry) {
@@ -478,6 +553,7 @@ export async function runDashboardRuntimeDaemon(
 			client = null;
 			currentInstanceId = undefined;
 			clearRefreshTimer();
+			clearFeedDrainTimer();
 			void reconnectLoop();
 		});
 		await next.connect();
@@ -486,6 +562,7 @@ export async function runDashboardRuntimeDaemon(
 		currentDashboardUrl = config.dashboardUrl;
 		reconnectAttempt = 0;
 		scheduleRefresh(token.expiresInSec);
+		startFeedDrainTimer();
 		log('info', `dashboard runtime daemon connected as ${token.instanceId}`);
 	}
 
@@ -550,6 +627,7 @@ export async function runDashboardRuntimeDaemon(
 		async stop(reason = 'stopped') {
 			stopped = true;
 			clearRefreshTimer();
+			clearFeedDrainTimer();
 			for (const run of active.values()) {
 				run.controller.abort();
 			}

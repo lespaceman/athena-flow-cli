@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {describe, expect, it, vi} from 'vitest';
+import {afterEach, describe, expect, it, vi} from 'vitest';
 import {runDashboardCommand} from './dashboardCommand';
 import type {executeRemoteAssignment} from '../dashboard/remoteRunExecutor';
 import type {DashboardClientConfig} from '../../infra/config/dashboardClient';
@@ -27,6 +27,19 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 const STATIC_FINGERPRINT = 'fp-static';
+const tmpDirs: string[] = [];
+const originalXdgStateHome = process.env['XDG_STATE_HOME'];
+
+afterEach(() => {
+	if (originalXdgStateHome === undefined) {
+		delete process.env['XDG_STATE_HOME'];
+	} else {
+		process.env['XDG_STATE_HOME'] = originalXdgStateHome;
+	}
+	for (const dir of tmpDirs.splice(0)) {
+		fs.rmSync(dir, {recursive: true, force: true});
+	}
+});
 
 function makeDeps(overrides: {
 	fetchMock?: ReturnType<typeof vi.fn>;
@@ -43,6 +56,9 @@ function makeDeps(overrides: {
 	// user's ~/.config/athena/channels. Mocked reloadGatewayChannels keeps
 	// pair tests off the real UDS socket.
 	const channelDirPath = fs.mkdtempSync(path.join(os.tmpdir(), 'dash-test-'));
+	const stateDirPath = fs.mkdtempSync(path.join(os.tmpdir(), 'dash-state-'));
+	tmpDirs.push(channelDirPath, stateDirPath);
+	process.env['XDG_STATE_HOME'] = stateDirPath;
 	return {
 		cap,
 		writes,
@@ -68,6 +84,7 @@ function makeDeps(overrides: {
 				stored.value = null;
 				removed.count += 1;
 			},
+			removeMirror: vi.fn(),
 			startRuntimeDaemon: vi.fn(async () => ({
 				ok: true,
 				connected: true,
@@ -782,6 +799,7 @@ function makeFakeSocket(connectFn?: () => Promise<void>) {
 				closeHandlers.push(h);
 			},
 			sendRunEvent: (event: FakeRunEvent) => runEvents.push(event),
+			sendFeedEvent: () => {},
 		};
 	};
 	return {
@@ -884,6 +902,7 @@ describe('runDashboardCommand: connect (deprecation alias)', () => {
 					onFrame: () => {},
 					onClose: () => {},
 					sendRunEvent: () => {},
+					sendFeedEvent: () => {},
 				}),
 				waitForShutdown: async () => 'SIGINT',
 			},

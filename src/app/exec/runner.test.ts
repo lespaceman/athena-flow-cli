@@ -174,6 +174,54 @@ describe('runExec', () => {
 		expect(stderr.read()).not.toContain('error');
 	});
 
+	it('publishes mapped feed events to the dashboard feed publisher', async () => {
+		const runtime = new MockRuntime();
+		const dashboardFeedPublisher = {
+			publish: vi.fn(),
+		};
+
+		const spawnProcess = (opts: SpawnArgs): ChildProcess => {
+			const child = makeChildProcess();
+			setImmediate(() => {
+				runtime.emit(
+					makeRuntimeEvent({
+						id: 'notice-1',
+						kind: 'notification',
+						hookName: 'Notification',
+						data: {message: 'synced'},
+					}),
+				);
+				opts.onExit?.(0);
+			});
+			return child;
+		};
+
+		await runExec({
+			prompt: 'hello',
+			projectDir: '/tmp',
+			harness: 'claude-code',
+			athenaSessionId: 'athena-1',
+			isolationConfig: {},
+			ephemeral: true,
+			runtimeFactory: () => runtime,
+			spawnProcess,
+			dashboardFeedPublisher,
+		});
+
+		expect(dashboardFeedPublisher.publish).toHaveBeenCalledWith(
+			expect.objectContaining({
+				origin: 'local',
+				athenaSessionId: 'athena-1',
+				feedEvents: expect.arrayContaining([
+					expect.objectContaining({
+						kind: 'notification',
+						data: {message: 'synced'},
+					}),
+				]),
+			}),
+		);
+	});
+
 	it('cancels via abort signal while a permission request is pending and returns runtime exit code', async () => {
 		const runtime = new MockRuntime();
 		const stdout = createWriteCapture();

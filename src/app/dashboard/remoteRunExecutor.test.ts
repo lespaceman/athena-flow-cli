@@ -107,6 +107,267 @@ describe('executeRemoteAssignment', () => {
 		);
 	});
 
+	it('passes dashboard continue assignments with separate Athena and adapter resume ids', async () => {
+		const runExecFn = vi.fn(async (options: ExecRunOptions) => ({
+			success: true,
+			exitCode: 0,
+			athenaSessionId: options.athenaSessionId ?? null,
+			adapterSessionId: options.adapterResumeSessionId ?? null,
+			finalMessage: 'done',
+			tokens: {
+				input: null,
+				output: null,
+				cacheRead: null,
+				cacheWrite: null,
+				total: null,
+				contextSize: null,
+				contextWindowSize: null,
+			},
+			durationMs: 1,
+		}));
+
+		await executeRemoteAssignment({
+			frame: {
+				type: 'job_assignment',
+				runId: 'run_continue',
+				runSpec: {
+					prompt: 'continue',
+					athenaSessionId: 'athena-existing',
+					adapterResumeSessionId: 'codex-thread-123',
+				},
+			},
+			client: {
+				sendRunEvent: vi.fn(),
+			},
+			runExecFn,
+			bootstrapRuntimeConfigFn: () => ({
+				globalConfig: {
+					plugins: [],
+					additionalDirectories: [],
+					workflowMarketplaceSources: [],
+					workflowSelections: {},
+				},
+				projectConfig: {
+					plugins: [],
+					additionalDirectories: [],
+					workflowMarketplaceSources: [],
+					workflowSelections: {},
+				},
+				harness: 'openai-codex',
+				isolationConfig: {preset: 'minimal', additionalDirectories: []},
+				workflowRef: undefined,
+				workflow: undefined,
+				workflowPlan: undefined,
+				modelName: null,
+				warnings: [],
+			}),
+		});
+
+		expect(runExecFn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				athenaSessionId: 'athena-existing',
+				adapterResumeSessionId: 'codex-thread-123',
+				dashboardOrigin: 'dashboard',
+			}),
+		);
+	});
+
+	it('installs a missing marketplace workflow from the remote run spec before bootstrapping', async () => {
+		const sent: unknown[] = [];
+		const runExecFn = vi.fn(async () => ({
+			success: true,
+			exitCode: 0,
+			athenaSessionId: 'athena-run_42',
+			adapterSessionId: null,
+			finalMessage: 'done',
+			tokens: {
+				input: null,
+				output: null,
+				cacheRead: null,
+				cacheWrite: null,
+				total: null,
+				contextSize: null,
+				contextWindowSize: null,
+			},
+			durationMs: 1,
+		}));
+		const resolveWorkflowFn = vi.fn(() => {
+			throw new Error(
+				'Workflow "smoke-testing" not found. Install with: athena workflow install <source> --name smoke-testing',
+			);
+		});
+		const resolvedSource = {
+			kind: 'marketplace-remote' as const,
+			slug: 'lespaceman/athena-workflow-marketplace',
+			owner: 'lespaceman',
+			repo: 'athena-workflow-marketplace',
+			workflowName: 'smoke-testing',
+			version: '0.0.16',
+			ref: 'smoke-testing@lespaceman/athena-workflow-marketplace',
+			manifestPath: '/tmp/marketplace/.athena-workflow/marketplace.json',
+			workflowPath: '/tmp/marketplace/workflows/smoke-testing/workflow.json',
+		};
+		const resolveWorkflowInstallFn = vi.fn(() => resolvedSource);
+		const installWorkflowFromSourceFn = vi.fn(() => 'smoke-testing');
+		const bootstrapRuntimeConfigFn = vi.fn(() => ({
+			globalConfig: {
+				plugins: [],
+				additionalDirectories: [],
+				workflowMarketplaceSources: [],
+				workflowSelections: {},
+			},
+			projectConfig: {
+				plugins: [],
+				additionalDirectories: [],
+				workflowMarketplaceSources: [],
+				workflowSelections: {},
+			},
+			harness: 'openai-codex' as const,
+			isolationConfig: {preset: 'minimal' as const, additionalDirectories: []},
+			workflowRef: 'smoke-testing',
+			workflow: undefined,
+			workflowPlan: undefined,
+			modelName: null,
+			warnings: [],
+		}));
+
+		await executeRemoteAssignment({
+			frame: {
+				type: 'job_assignment',
+				runId: 'run_42',
+				runSpec: {
+					prompt: 'define smoke',
+					workflow: {
+						source: 'marketplace',
+						ref: 'smoke-testing@0.0.16',
+						version: '0.0.16',
+					},
+				},
+			},
+			client: {
+				sendRunEvent: frame => sent.push(frame),
+			},
+			runExecFn,
+			bootstrapRuntimeConfigFn,
+			resolveWorkflowFn,
+			resolveWorkflowInstallFn,
+			installWorkflowFromSourceFn,
+			readGlobalConfigFn: () => ({
+				plugins: [],
+				additionalDirectories: [],
+			}),
+		});
+
+		expect(resolveWorkflowFn).toHaveBeenCalledWith('smoke-testing');
+		expect(resolveWorkflowInstallFn).toHaveBeenCalledWith(
+			'smoke-testing@0.0.16',
+			['lespaceman/athena-workflow-marketplace'],
+		);
+		expect(installWorkflowFromSourceFn).toHaveBeenCalledWith(resolvedSource);
+		expect(bootstrapRuntimeConfigFn).toHaveBeenCalledWith(
+			expect.objectContaining({workflowOverride: 'smoke-testing'}),
+		);
+		expect(runExecFn).toHaveBeenCalled();
+		expect(sent).toContainEqual(
+			expect.objectContaining({
+				runId: 'run_42',
+				kind: 'progress',
+				payload: {message: 'assignment received'},
+			}),
+		);
+	});
+
+	it('uses remote workflow source and version when installing a missing workflow', async () => {
+		const runExecFn = vi.fn(async () => ({
+			success: true,
+			exitCode: 0,
+			athenaSessionId: 'athena-run_42',
+			adapterSessionId: null,
+			finalMessage: 'done',
+			tokens: {
+				input: null,
+				output: null,
+				cacheRead: null,
+				cacheWrite: null,
+				total: null,
+				contextSize: null,
+				contextWindowSize: null,
+			},
+			durationMs: 1,
+		}));
+		const resolveWorkflowFn = vi.fn(() => {
+			throw new Error(
+				'Workflow "custom-flow" not found. Install with: athena workflow install <source> --name custom-flow',
+			);
+		});
+		const resolveWorkflowInstallFn = vi.fn(() => ({
+			kind: 'marketplace-remote' as const,
+			slug: 'custom/workflows',
+			owner: 'custom',
+			repo: 'workflows',
+			workflowName: 'custom-flow',
+			version: '2.0.0',
+			ref: 'custom-flow@custom/workflows',
+			manifestPath: '/tmp/custom/.athena-workflow/marketplace.json',
+			workflowPath: '/tmp/custom/workflows/custom-flow/workflow.json',
+		}));
+		const installWorkflowFromSourceFn = vi.fn(() => 'custom-flow');
+
+		await executeRemoteAssignment({
+			frame: {
+				type: 'job_assignment',
+				runId: 'run_custom',
+				runSpec: {
+					prompt: 'run custom',
+					workflow: {
+						source: 'custom/workflows',
+						ref: 'custom-flow',
+						version: '2.0.0',
+					},
+				},
+			},
+			client: {
+				sendRunEvent: vi.fn(),
+			},
+			runExecFn,
+			bootstrapRuntimeConfigFn: () => ({
+				globalConfig: {
+					plugins: [],
+					additionalDirectories: [],
+					workflowMarketplaceSources: [],
+					workflowSelections: {},
+				},
+				projectConfig: {
+					plugins: [],
+					additionalDirectories: [],
+					workflowMarketplaceSources: [],
+					workflowSelections: {},
+				},
+				harness: 'openai-codex',
+				isolationConfig: {preset: 'minimal', additionalDirectories: []},
+				workflowRef: 'custom-flow',
+				workflow: undefined,
+				workflowPlan: undefined,
+				modelName: null,
+				warnings: [],
+			}),
+			resolveWorkflowFn,
+			resolveWorkflowInstallFn,
+			installWorkflowFromSourceFn,
+			readGlobalConfigFn: () => ({
+				plugins: [],
+				additionalDirectories: [],
+				workflowMarketplaceSources: ['wrong/source'],
+			}),
+		});
+
+		expect(resolveWorkflowInstallFn).toHaveBeenCalledWith('custom-flow@2.0.0', [
+			'custom/workflows',
+		]);
+		expect(installWorkflowFromSourceFn).toHaveBeenCalled();
+		expect(runExecFn).toHaveBeenCalled();
+	});
+
 	it('sends a terminal error when the assignment has no prompt', async () => {
 		const sent: unknown[] = [];
 

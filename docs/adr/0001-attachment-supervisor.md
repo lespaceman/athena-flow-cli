@@ -1,7 +1,21 @@
 # ADR 0001 — Attachment supervisor and multi-runtime gateway
 
-Status: Proposed (deferred sprint — depends on dashboard protocol changes)
+Status: Superseded by paired-instance dashboard feed sync
 Date: 2026-05-10
+
+## Superseding Decision — 2026-05-12
+
+Dashboard pairing now means one local CLI instance broadcasts canonical
+`FeedEvent` envelopes for every local, resumed, and dashboard-requested Session
+to the paired dashboard through a durable local outbox. Runner scheduling remains
+dashboard-side metadata and is not a CLI routing key for feed publishing or
+execution.
+
+The dashboard runtime daemon remains the local remote-sync process: it owns the
+paired instance socket, drains the feed outbox, persists inbound dashboard
+decisions to a local inbox, and launches dashboard assignments through the same
+`runExec` path used by local exec. The multi-runtime gateway/runner-adapter model
+described below is retained only as historical context for the previous proposal.
 
 ## Context
 

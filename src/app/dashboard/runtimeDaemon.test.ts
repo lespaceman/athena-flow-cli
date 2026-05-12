@@ -1,15 +1,52 @@
-import {describe, expect, it, vi} from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {runDashboardRuntimeDaemon} from './runtimeDaemon';
 import type {
 	InstanceSocketClient,
 	InstanceSocketFrame,
 } from './instanceSocketClient';
 import type {DashboardClientConfig} from '../../infra/config/dashboardClient';
+import {
+	createDashboardFeedOutbox,
+	createDashboardFeedPublisher,
+} from './dashboardFeedPublisher';
+
+const tmpDirs: string[] = [];
+const originalXdgStateHome = process.env['XDG_STATE_HOME'];
+
+function tempDbPath(): string {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'athena-daemon-outbox-'));
+	tmpDirs.push(dir);
+	return path.join(dir, 'outbox.db');
+}
+
+afterEach(() => {
+	if (originalXdgStateHome === undefined) {
+		delete process.env['XDG_STATE_HOME'];
+	} else {
+		process.env['XDG_STATE_HOME'] = originalXdgStateHome;
+	}
+	for (const dir of tmpDirs.splice(0)) {
+		fs.rmSync(dir, {recursive: true, force: true});
+	}
+});
+
+beforeEach(() => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'athena-daemon-state-'));
+	tmpDirs.push(dir);
+	process.env['XDG_STATE_HOME'] = dir;
+});
 
 function makeFakeSocket() {
 	const frameHandlers: Array<(frame: InstanceSocketFrame) => void> = [];
 	const closeHandlers: Array<(reason: string) => void> = [];
-	const calls = {connect: 0, close: [] as string[]};
+	const calls = {
+		connect: 0,
+		close: [] as string[],
+		feedEvents: [] as unknown[],
+	};
 	const client: InstanceSocketClient = {
 		connect: async () => {
 			calls.connect += 1;
@@ -22,6 +59,9 @@ function makeFakeSocket() {
 			closeHandlers.push(handler);
 		},
 		sendRunEvent: () => {},
+		sendFeedEvent: frame => {
+			calls.feedEvents.push(frame);
+		},
 	};
 	return {
 		client,
@@ -44,6 +84,119 @@ const stored: DashboardClientConfig = {
 };
 
 describe('runDashboardRuntimeDaemon', () => {
+	it('drains queued dashboard feed events over the instance socket and removes ACKed rows', async () => {
+		vi.useFakeTimers();
+		try {
+			const fake = makeFakeSocket();
+			const dbPath = tempDbPath();
+			const outbox = createDashboardFeedOutbox({dbPath});
+			const publisher = createDashboardFeedPublisher({
+				readConfig: () => stored,
+				outbox,
+				now: () => 1234,
+			});
+			publisher.publish({
+				origin: 'local',
+				athenaSessionId: 'athena-1',
+				feedEvents: [
+					{
+						event_id: 'feed-1',
+						seq: 9,
+						ts: 1234,
+						session_id: 'adapter-1',
+						run_id: 'run-1',
+						kind: 'notification',
+						level: 'info',
+						actor_id: 'agent:root',
+						title: 'Notice',
+						data: {message: 'queued'},
+					},
+				],
+			});
+
+			const daemon = await runDashboardRuntimeDaemon({
+				readConfig: () => stored,
+				refreshAccessToken: async () => ({
+					instanceId: 'inst_1',
+					accessToken: 'a',
+					expiresInSec: 900,
+				}),
+				makeInstanceSocketClient: () => fake.client,
+				executeRemoteAssignment: vi.fn(async () => {}),
+				reconnectDelaysMs: [],
+				feedOutbox: outbox,
+				feedDrainIntervalMs: 100,
+			});
+
+			await vi.advanceTimersByTimeAsync(100);
+			expect(fake.calls.feedEvents).toEqual([
+				expect.objectContaining({
+					deliverySeq: 1,
+					envelope: expect.objectContaining({
+						eventId: 'athena-1:feed-1',
+						feedSeq: 1,
+					}),
+				}),
+			]);
+
+			fake.emitFrame({type: 'feed_ack', deliverySeq: 1});
+			expect(outbox.pendingBatch({limit: 10, now: 1234})).toEqual([]);
+
+			await daemon.stop('test');
+			outbox.close();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('persists inbound dashboard decisions for local sessions', async () => {
+		const fake = makeFakeSocket();
+		const decisionInbox = {
+			enqueue: vi.fn(),
+			pendingForSession: vi.fn(() => []),
+			markConsumed: vi.fn(),
+			close: vi.fn(),
+		};
+
+		const daemon = await runDashboardRuntimeDaemon({
+			readConfig: () => stored,
+			refreshAccessToken: async () => ({
+				instanceId: 'inst_1',
+				accessToken: 'a',
+				expiresInSec: 900,
+			}),
+			makeInstanceSocketClient: () => fake.client,
+			executeRemoteAssignment: vi.fn(async () => {}),
+			reconnectDelaysMs: [],
+			decisionInbox,
+			now: () => 555,
+		});
+
+		fake.emitFrame({
+			type: 'dashboard_decision',
+			athenaSessionId: 'athena-1',
+			requestId: 'req-1',
+			decision: {
+				type: 'json',
+				source: 'user',
+				intent: {kind: 'permission_allow'},
+			},
+		});
+
+		expect(decisionInbox.enqueue).toHaveBeenCalledWith({
+			athenaSessionId: 'athena-1',
+			requestId: 'req-1',
+			decision: {
+				type: 'json',
+				source: 'user',
+				intent: {kind: 'permission_allow'},
+			},
+			receivedAt: 555,
+		});
+
+		await daemon.stop('test');
+	});
+
 	it('connects with a refreshed token and executes each assignment once', async () => {
 		const fake = makeFakeSocket();
 		const executor = vi.fn(async () => {});

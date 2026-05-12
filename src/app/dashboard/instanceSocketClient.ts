@@ -1,4 +1,6 @@
 import {WebSocket} from 'ws';
+import type {RuntimeDecision} from '../../core/runtime/types';
+import type {DashboardFeedEnvelope} from './dashboardFeedPublisher';
 
 export type RunEventFrame = {
 	type: 'run_event';
@@ -7,6 +9,12 @@ export type RunEventFrame = {
 	ts: number;
 	kind: string;
 	payload?: unknown;
+};
+
+export type FeedEventFrame = {
+	type: 'feed_event';
+	deliverySeq: number;
+	envelope: DashboardFeedEnvelope;
 };
 
 export type InstanceSocketFrame =
@@ -26,6 +34,13 @@ export type InstanceSocketFrame =
 			runnerId?: string;
 	  }
 	| {type: 'assignment_accepted'; runId: string}
+	| {type: 'feed_ack'; deliverySeq?: number; eventId?: string}
+	| {
+			type: 'dashboard_decision';
+			athenaSessionId: string;
+			requestId: string;
+			decision: RuntimeDecision;
+	  }
 	| {type: 'cancel'; runId: string; runnerId?: string}
 	| {
 			/**
@@ -44,7 +59,8 @@ export type InstanceSocketFrame =
 			}>;
 	  }
 	| {type: 'error'; code: string; message?: string}
-	| RunEventFrame;
+	| RunEventFrame
+	| FeedEventFrame;
 
 export type InstanceSocketLogger = (
 	level: 'debug' | 'info' | 'warn' | 'error',
@@ -76,6 +92,7 @@ export type InstanceSocketClient = {
 	onFrame(handler: (frame: InstanceSocketFrame) => void): void;
 	onClose(handler: (reason: string) => void): void;
 	sendRunEvent(event: Omit<RunEventFrame, 'type'>): void;
+	sendFeedEvent(event: Omit<FeedEventFrame, 'type'>): void;
 };
 
 const DEFAULT_HEARTBEAT_MS = 30_000;
@@ -287,5 +304,9 @@ export function createInstanceSocketClient(
 		send({type: 'run_event', ...event});
 	}
 
-	return {connect, close, onFrame, onClose, sendRunEvent};
+	function sendFeedEvent(event: Omit<FeedEventFrame, 'type'>): void {
+		send({type: 'feed_event', ...event});
+	}
+
+	return {connect, close, onFrame, onClose, sendRunEvent, sendFeedEvent};
 }

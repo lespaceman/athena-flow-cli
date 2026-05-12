@@ -44,6 +44,16 @@ import {
 } from '../../shared/utils/perf';
 import {FeedStore} from '../../core/feed/feedStore';
 import {generateId} from '../../shared/utils/id';
+import {
+	createDashboardFeedPublisher,
+	type DashboardFeedOrigin,
+	type DashboardFeedPublisher,
+} from '../dashboard/dashboardFeedPublisher';
+import {
+	createDashboardDecisionInbox,
+	type DashboardDecisionInbox,
+} from '../dashboard/dashboardDecisionInbox';
+import {readDashboardClientConfig} from '../../infra/config/dashboardClient';
 
 export type UseFeedResult = {
 	items: FeedItem[];
@@ -131,6 +141,11 @@ export function useFeed(
 	options?: {
 		relayPermission?: (event: RuntimeEvent) => void;
 		relayQuestion?: (event: RuntimeEvent) => void;
+		dashboardFeedPublisher?: DashboardFeedPublisher;
+		dashboardOrigin?: DashboardFeedOrigin;
+		athenaSessionId?: string;
+		dashboardDecisionInbox?: DashboardDecisionInbox;
+		dashboardDecisionPollIntervalMs?: number;
 	},
 ): UseFeedResult {
 	// Restore stored session data on mount (if resuming)
@@ -176,16 +191,70 @@ export function useFeed(
 	const abortRef = useRef<AbortController>(new AbortController());
 	const feedEventsRef = useRef<FeedEvent[]>([]);
 	const notifiedRuntimeErrorRef = useRef<string | null>(null);
+	const dashboardFeedPublisher = useMemo(
+		() => options?.dashboardFeedPublisher ?? createDashboardFeedPublisher(),
+		[options?.dashboardFeedPublisher],
+	);
+	const dashboardDecisionInboxRef = useRef<DashboardDecisionInbox | null>(
+		options?.dashboardDecisionInbox ?? null,
+	);
 
 	rulesRef.current = rules;
 	feedEventsRef.current = feedEvents;
 	sessionStoreRef.current = sessionStore;
+	if (options?.dashboardDecisionInbox) {
+		dashboardDecisionInboxRef.current = options.dashboardDecisionInbox;
+	}
+
+	const resolveAthenaSessionId = useCallback(
+		(fallback?: string): string | undefined => {
+			if (options?.athenaSessionId) return options.athenaSessionId;
+			try {
+				const sessionId = sessionStoreRef.current?.getAthenaSession().id;
+				if (sessionId) return sessionId;
+			} catch {
+				// Session-store degradation should not affect local runtime flow.
+			}
+			return fallback;
+		},
+		[options?.athenaSessionId],
+	);
 
 	useEffect(() => {
 		return () => {
 			sessionStoreRef.current = undefined;
 		};
 	}, []);
+
+	useEffect(() => {
+		const athenaSessionId = resolveAthenaSessionId();
+		if (!athenaSessionId) return;
+		if (!dashboardDecisionInboxRef.current) {
+			if (!readDashboardClientConfig()) return;
+			dashboardDecisionInboxRef.current = createDashboardDecisionInbox();
+		}
+		const inbox = dashboardDecisionInboxRef.current;
+		const applyPending = (): void => {
+			const rows = inbox.pendingForSession({athenaSessionId, limit: 25});
+			for (const row of rows) {
+				runtime.sendDecision(row.requestId, row.decision);
+				inbox.markConsumed({id: row.id});
+			}
+		};
+		applyPending();
+		const interval = setInterval(
+			applyPending,
+			options?.dashboardDecisionPollIntervalMs ?? 1_000,
+		);
+		return () => {
+			clearInterval(interval);
+		};
+	}, [
+		runtime,
+		options?.dashboardDecisionInbox,
+		options?.dashboardDecisionPollIntervalMs,
+		resolveAthenaSessionId,
+	]);
 
 	const resetSession = useCallback(() => {
 		// Reset mapper state — create fresh mapper
@@ -327,18 +396,41 @@ export function useFeed(
 		[runtime, dequeueQuestion],
 	);
 
-	const emitNotification = useCallback((message: string, title?: string) => {
-		const mapper = mapperRef.current;
-		const syntheticRuntime = buildSyntheticNotificationEvent(
-			mapper,
-			message,
-			title,
-		);
-		const newEvents = mapper.mapEvent(syntheticRuntime);
-		if (!abortRef.current.signal.aborted) {
-			feedStoreRef.current!.pushEvents(newEvents);
-		}
-	}, []);
+	const publishDashboardFeedEvents = useCallback(
+		(
+			feedEventsToPublish: readonly FeedEvent[],
+			runtimeEvent?: RuntimeEvent,
+		) => {
+			if (feedEventsToPublish.length === 0) return;
+			const athenaSessionId = resolveAthenaSessionId(
+				feedEventsToPublish[0]?.session_id ?? runtimeEvent?.sessionId,
+			);
+			if (!athenaSessionId) return;
+			dashboardFeedPublisher.publish({
+				origin: options?.dashboardOrigin ?? 'local',
+				athenaSessionId,
+				feedEvents: feedEventsToPublish,
+			});
+		},
+		[dashboardFeedPublisher, options?.dashboardOrigin, resolveAthenaSessionId],
+	);
+
+	const emitNotification = useCallback(
+		(message: string, title?: string) => {
+			const mapper = mapperRef.current;
+			const syntheticRuntime = buildSyntheticNotificationEvent(
+				mapper,
+				message,
+				title,
+			);
+			const newEvents = mapper.mapEvent(syntheticRuntime);
+			if (!abortRef.current.signal.aborted) {
+				feedStoreRef.current!.pushEvents(newEvents);
+				publishDashboardFeedEvents(newEvents, syntheticRuntime);
+			}
+		},
+		[publishDashboardFeedEvents],
+	);
 
 	const refreshRuntimeStatus = useCallback(
 		(notify = false) => {
@@ -447,6 +539,7 @@ export function useFeed(
 					}
 
 					feedStoreRef.current!.pushEvents(newFeedEvents);
+					publishDashboardFeedEvents(newFeedEvents, runtimeEvent);
 				}
 			} finally {
 				doneCause();
@@ -486,6 +579,7 @@ export function useFeed(
 					});
 					if (feedEvent) {
 						feedStoreRef.current!.pushEvents([feedEvent]);
+						publishDashboardFeedEvents([feedEvent]);
 
 						// Auto-dequeue permissions/questions when decision arrives
 						if (
@@ -517,6 +611,7 @@ export function useFeed(
 		refreshRuntimeStatus,
 		options?.relayPermission,
 		options?.relayQuestion,
+		publishDashboardFeedEvents,
 	]);
 
 	// Derive items (content ordering)

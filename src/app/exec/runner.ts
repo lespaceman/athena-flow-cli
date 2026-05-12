@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import path from 'node:path';
 import type {ControllerCallbacks} from '../../core/controller/runtimeController';
+import type {FeedEvent} from '../../core/feed/types';
 import {createFeedMapper} from '../../core/feed/mapper';
 import {
 	ingestRuntimeDecision,
@@ -25,6 +26,7 @@ import {
 	createRelayQuestionCallback,
 } from '../channels/relayAdapter';
 import {startSessionBridge} from '../channels/sessionBridgeLifecycle';
+import {createDashboardFeedPublisher} from '../dashboard/dashboardFeedPublisher';
 import {findLastMappedAgentMessage, resolveFinalMessage} from './finalMessage';
 import {createFailureLatch, exitCodeFromFailure} from './failureLatch';
 import {createExecOutputWriter} from './output';
@@ -104,6 +106,9 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 	const runtimeFactory = options.runtimeFactory ?? createRuntime;
 	const sessionStoreFactory = options.sessionStoreFactory ?? createSessionStore;
 	const athenaSessionId = options.athenaSessionId ?? crypto.randomUUID();
+	const dashboardFeedPublisher =
+		options.dashboardFeedPublisher ?? createDashboardFeedPublisher();
+	const dashboardOrigin = options.dashboardOrigin ?? 'local';
 
 	const output = createExecOutputWriter({
 		json,
@@ -239,6 +244,15 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 
 	const linkedAdapterSessions = new Set<string>();
 
+	function publishFeedEvents(feedEvents: readonly FeedEvent[]): void {
+		if (feedEvents.length === 0) return;
+		dashboardFeedPublisher.publish({
+			origin: dashboardOrigin,
+			athenaSessionId,
+			feedEvents,
+		});
+	}
+
 	const unsubscribeEvent = runtime.onEvent((runtimeEvent: RuntimeEvent) => {
 		adapterSessionId = runtimeEvent.sessionId;
 
@@ -282,6 +296,7 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 				mappedFinalMessage = event.data.message;
 			}
 		}
+		publishFeedEvents(feedEvents);
 	});
 
 	const unsubscribeDecision = runtime.onDecision(
@@ -290,11 +305,14 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 				eventId,
 				decision,
 			});
-			ingestRuntimeDecision(eventId, decision, {
+			const feedEvent = ingestRuntimeDecision(eventId, decision, {
 				mapper,
 				store,
 				onPersistFailure: message => output.warn(message),
 			});
+			if (feedEvent) {
+				publishFeedEvents([feedEvent]);
+			}
 		},
 	);
 

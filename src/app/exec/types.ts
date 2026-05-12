@@ -9,6 +9,10 @@ import type {RuntimeFactory} from '../runtime/createRuntime';
 import type {SpawnClaudeOptions} from '../../harnesses/claude/process/types';
 import type {SessionBridge} from '../channels/sessionBridge';
 import type {StartSessionBridgeOptions} from '../channels/sessionBridgeLifecycle';
+import type {
+	DashboardFeedOrigin,
+	DashboardFeedPublisher,
+} from '../dashboard/dashboardFeedPublisher';
 
 export const EXEC_EXIT_CODE = {
 	SUCCESS: 0,
@@ -60,6 +64,8 @@ export type ExecRunOptions = {
 		dbPath: string;
 		label?: string;
 	}) => SessionStore;
+	dashboardFeedPublisher?: DashboardFeedPublisher;
+	dashboardOrigin?: DashboardFeedOrigin;
 	/** Test seam: override the gateway connect step. */
 	bridgeFactory?: (
 		opts: StartSessionBridgeOptions,

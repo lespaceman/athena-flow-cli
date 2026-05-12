@@ -1,6 +1,12 @@
 import {bootstrapRuntimeConfig} from '../bootstrap/bootstrapConfig';
 import {runExec} from '../exec';
 import type {ExecRunOptions, ExecRunResult} from '../exec/types';
+import {installWorkflowFromSource, resolveWorkflow} from '../../core/workflows';
+import {readGlobalConfig} from '../../infra/plugins/config';
+import {
+	resolveWorkflowInstall,
+	type ResolvedWorkflowSource,
+} from '../../infra/plugins/marketplace';
 import type {
 	InstanceSocketClient,
 	InstanceSocketFrame,
@@ -12,6 +18,8 @@ import {
 	type RunStreamClientOptions,
 } from './runStreamClient';
 
+const DEFAULT_MARKETPLACE_SLUG = 'lespaceman/athena-workflow-marketplace';
+
 type JobAssignmentFrame = Extract<
 	InstanceSocketFrame,
 	{type: 'job_assignment'}
@@ -19,9 +27,11 @@ type JobAssignmentFrame = Extract<
 
 type RemoteRunSpec = {
 	prompt: string;
+	athenaSessionId?: string;
+	adapterResumeSessionId?: string;
 	sessionId?: string;
 	projectDir?: string;
-	workflow?: {ref?: string};
+	workflow?: {source?: string; ref?: string; version?: string};
 	env?: Record<string, string>;
 	timeoutSec?: number;
 	/**
@@ -47,6 +57,10 @@ export type ExecuteRemoteAssignmentInput = {
 	abortSignal?: AbortSignal;
 	/** Test seam — override the per-run stream client factory. */
 	createRunStreamClientFn?: (opts: RunStreamClientOptions) => RunStreamClient;
+	resolveWorkflowFn?: typeof resolveWorkflow;
+	resolveWorkflowInstallFn?: typeof resolveWorkflowInstall;
+	installWorkflowFromSourceFn?: typeof installWorkflowFromSource;
+	readGlobalConfigFn?: typeof readGlobalConfig;
 	/**
 	 * Bound on how long to wait for the per-run WebSocket to come up before
 	 * falling back to the instance-socket relay. Default 5s — short enough
@@ -71,8 +85,22 @@ function parseRunSpec(value: unknown): RemoteRunSpec | null {
 	const workflow = obj['workflow'];
 	const callbackWsUrl = obj['callbackWsUrl'];
 	const callbackToken = obj['callbackToken'];
+	const workflowObj =
+		typeof workflow === 'object' && workflow !== null
+			? (workflow as Record<string, unknown>)
+			: null;
 	return {
 		prompt,
+		athenaSessionId:
+			typeof obj['athenaSessionId'] === 'string' &&
+			obj['athenaSessionId'].length > 0
+				? obj['athenaSessionId']
+				: undefined,
+		adapterResumeSessionId:
+			typeof obj['adapterResumeSessionId'] === 'string' &&
+			obj['adapterResumeSessionId'].length > 0
+				? obj['adapterResumeSessionId']
+				: undefined,
 		sessionId:
 			typeof obj['sessionId'] === 'string' && obj['sessionId'].length > 0
 				? obj['sessionId']
@@ -82,10 +110,16 @@ function parseRunSpec(value: unknown): RemoteRunSpec | null {
 				? obj['projectDir']
 				: undefined,
 		workflow:
-			typeof workflow === 'object' &&
-			workflow !== null &&
-			typeof (workflow as Record<string, unknown>)['ref'] === 'string'
-				? {ref: (workflow as Record<string, string>)['ref']}
+			workflowObj && typeof workflowObj['ref'] === 'string'
+				? {
+						ref: workflowObj['ref'],
+						...(typeof workflowObj['source'] === 'string'
+							? {source: workflowObj['source']}
+							: {}),
+						...(typeof workflowObj['version'] === 'string'
+							? {version: workflowObj['version']}
+							: {}),
+					}
 				: undefined,
 		env:
 			typeof env === 'object' && env !== null
@@ -116,6 +150,68 @@ function workflowNameFromRef(ref: string | undefined): string | undefined {
 	if (!ref) return undefined;
 	const [name] = ref.split('@', 1);
 	return name && name.length > 0 ? name : undefined;
+}
+
+function isMissingWorkflowError(err: unknown, workflowName: string): boolean {
+	return (
+		err instanceof Error &&
+		err.message.includes(`Workflow "${workflowName}" not found`)
+	);
+}
+
+function configuredWorkflowSources(
+	readGlobalConfigFn: typeof readGlobalConfig,
+): string[] {
+	const sources = readGlobalConfigFn().workflowMarketplaceSources;
+	return sources && sources.length > 0 ? sources : [DEFAULT_MARKETPLACE_SLUG];
+}
+
+function workflowInstallRef(spec: RemoteRunSpec): string | undefined {
+	const ref = spec.workflow?.ref;
+	if (!ref) return undefined;
+	const version = spec.workflow?.version;
+	if (version && !ref.includes('@')) {
+		return `${ref}@${version}`;
+	}
+	return ref;
+}
+
+function workflowInstallSources(
+	spec: RemoteRunSpec,
+	readGlobalConfigFn: typeof readGlobalConfig,
+): string[] {
+	const source = spec.workflow?.source?.trim();
+	if (source && source !== 'marketplace') {
+		return [source];
+	}
+	return configuredWorkflowSources(readGlobalConfigFn);
+}
+
+function ensureRemoteWorkflowInstalled(input: {
+	spec: RemoteRunSpec;
+	resolveWorkflowFn: typeof resolveWorkflow;
+	resolveWorkflowInstallFn: typeof resolveWorkflowInstall;
+	installWorkflowFromSourceFn: typeof installWorkflowFromSource;
+	readGlobalConfigFn: typeof readGlobalConfig;
+}): string | undefined {
+	const ref = workflowInstallRef(input.spec);
+	const workflowName = workflowNameFromRef(ref);
+	if (!workflowName) return undefined;
+
+	try {
+		input.resolveWorkflowFn(workflowName);
+		return workflowName;
+	} catch (err) {
+		if (!isMissingWorkflowError(err, workflowName)) {
+			throw err;
+		}
+	}
+
+	const resolved: ResolvedWorkflowSource = input.resolveWorkflowInstallFn(
+		ref!,
+		workflowInstallSources(input.spec, input.readGlobalConfigFn),
+	);
+	return input.installWorkflowFromSourceFn(resolved);
 }
 
 function eventKind(event: JsonExecEvent): string {
@@ -179,6 +275,10 @@ export async function executeRemoteAssignment({
 	now = Date.now,
 	abortSignal,
 	createRunStreamClientFn = createRunStreamClient,
+	resolveWorkflowFn = resolveWorkflow,
+	resolveWorkflowInstallFn = resolveWorkflowInstall,
+	installWorkflowFromSourceFn = installWorkflowFromSource,
+	readGlobalConfigFn = readGlobalConfig,
 	runStreamConnectTimeoutMs = 5_000,
 }: ExecuteRemoteAssignmentInput): Promise<void> {
 	let lastTerminalFailureMessage: string | null = null;
@@ -269,11 +369,18 @@ export async function executeRemoteAssignment({
 		const projectDir = spec.projectDir ?? fallbackProjectDir;
 		let runtimeConfig: ReturnType<typeof bootstrapRuntimeConfig>;
 		try {
+			const workflowOverride = ensureRemoteWorkflowInstalled({
+				spec,
+				resolveWorkflowFn,
+				resolveWorkflowInstallFn,
+				installWorkflowFromSourceFn,
+				readGlobalConfigFn,
+			});
 			runtimeConfig = bootstrapRuntimeConfigFn({
 				projectDir,
 				showSetup: false,
 				isolationPreset: 'minimal',
-				workflowOverride: workflowNameFromRef(spec.workflow?.ref),
+				workflowOverride,
 			});
 		} catch (err) {
 			send('error', {
@@ -331,11 +438,14 @@ export async function executeRemoteAssignment({
 					prompt: spec.prompt,
 					projectDir,
 					harness: runtimeConfig.harness,
-					athenaSessionId: spec.sessionId ?? `athena-${frame.runId}`,
+					athenaSessionId:
+						spec.athenaSessionId ?? spec.sessionId ?? `athena-${frame.runId}`,
+					adapterResumeSessionId: spec.adapterResumeSessionId,
 					isolationConfig: runtimeConfig.isolationConfig,
 					pluginMcpConfig: runtimeConfig.pluginMcpConfig,
 					workflow: runtimeConfig.workflow,
 					workflowPlan: runtimeConfig.workflowPlan,
+					dashboardOrigin: 'dashboard',
 					json: true,
 					verbose: false,
 					ephemeral: false,
