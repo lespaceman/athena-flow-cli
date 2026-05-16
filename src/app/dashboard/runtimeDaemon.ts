@@ -196,7 +196,10 @@ export async function runDashboardRuntimeDaemon(
 	let feedDrainTimer: NodeJS.Timeout | null = null;
 	const refreshFailures: number[] = [];
 	let cooldownUntil = 0;
-	const executionClient: Pick<InstanceSocketClient, 'sendRunEvent'> = {
+	const executionClient: Pick<
+		InstanceSocketClient,
+		'sendRunEvent' | 'sendDecisionAck'
+	> = {
 		sendRunEvent(event) {
 			const current = client ?? lastSocketClient;
 			if (!current) {
@@ -207,6 +210,11 @@ export async function runDashboardRuntimeDaemon(
 				return;
 			}
 			current.sendRunEvent(event);
+		},
+		sendDecisionAck(input) {
+			const current = client;
+			if (!current) return;
+			current.sendDecisionAck(input);
 		},
 	};
 	const pairedExecution = createDashboardPairedExecution({

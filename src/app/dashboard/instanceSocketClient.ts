@@ -34,6 +34,11 @@ export type InstanceSocketFrame =
 			runnerId?: string;
 	  }
 	| {type: 'assignment_accepted'; runId: string}
+	| {
+			type: 'decision_ack';
+			athenaSessionId: string;
+			requestId: string;
+	  }
 	| {type: 'feed_ack'; deliverySeq?: number; eventId?: string}
 	| {
 			type: 'dashboard_decision';
@@ -93,6 +98,7 @@ export type InstanceSocketClient = {
 	onClose(handler: (reason: string) => void): void;
 	sendRunEvent(event: Omit<RunEventFrame, 'type'>): void;
 	sendFeedEvent(event: Omit<FeedEventFrame, 'type'>): void;
+	sendDecisionAck(input: {athenaSessionId: string; requestId: string}): void;
 };
 
 const DEFAULT_HEARTBEAT_MS = 30_000;
@@ -308,5 +314,20 @@ export function createInstanceSocketClient(
 		send({type: 'feed_event', ...event});
 	}
 
-	return {connect, close, onFrame, onClose, sendRunEvent, sendFeedEvent};
+	function sendDecisionAck(input: {
+		athenaSessionId: string;
+		requestId: string;
+	}): void {
+		send({type: 'decision_ack', ...input});
+	}
+
+	return {
+		connect,
+		close,
+		onFrame,
+		onClose,
+		sendRunEvent,
+		sendFeedEvent,
+		sendDecisionAck,
+	};
 }

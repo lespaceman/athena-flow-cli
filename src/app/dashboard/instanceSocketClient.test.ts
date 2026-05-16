@@ -270,6 +270,54 @@ describe('createInstanceSocketClient', () => {
 		client.close('done');
 	});
 
+	it('sendDecisionAck writes a decision_ack frame to the wire', async () => {
+		const received: unknown[] = [];
+		server.once('connection', ws => {
+			ws.on('message', data => {
+				received.push(JSON.parse(String(data)));
+			});
+		});
+		const client = createInstanceSocketClient({
+			dashboardUrl: `http://127.0.0.1:${port}`,
+			instanceId: 'inst_1',
+			accessToken: 'access-1',
+			heartbeatIntervalMs: 60_000,
+		});
+		await client.connect();
+
+		client.sendDecisionAck({
+			athenaSessionId: 'athena-1',
+			requestId: 'req-1',
+		});
+
+		await vi.waitFor(
+			() => {
+				expect(
+					received.some(
+						r =>
+							typeof r === 'object' &&
+							r !== null &&
+							(r as {type?: string}).type === 'decision_ack',
+					),
+				).toBe(true);
+			},
+			{timeout: 1_000},
+		);
+		expect(
+			received.find(
+				r =>
+					typeof r === 'object' &&
+					r !== null &&
+					(r as {type?: string}).type === 'decision_ack',
+			),
+		).toEqual({
+			type: 'decision_ack',
+			athenaSessionId: 'athena-1',
+			requestId: 'req-1',
+		});
+		client.close('done');
+	});
+
 	it('rejects connect when ws emits error before open', async () => {
 		const client = createInstanceSocketClient({
 			dashboardUrl: 'http://127.0.0.1:1', // unused port

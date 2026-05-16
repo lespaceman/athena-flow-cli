@@ -10,10 +10,12 @@ import type {
 
 function makeClient() {
 	const runEvents: unknown[] = [];
+	const decisionAcks: unknown[] = [];
 	const client = {
 		sendRunEvent: frame => runEvents.push(frame),
-	} as Pick<InstanceSocketClient, 'sendRunEvent'>;
-	return {client, runEvents};
+		sendDecisionAck: frame => decisionAcks.push(frame),
+	} as Pick<InstanceSocketClient, 'sendRunEvent' | 'sendDecisionAck'>;
+	return {client, runEvents, decisionAcks};
 }
 
 function makeDecisionInbox() {
@@ -180,7 +182,7 @@ describe('DashboardPairedExecution', () => {
 	});
 
 	it('forwards dashboard decisions to the inbox', () => {
-		const {client} = makeClient();
+		const {client, decisionAcks} = makeClient();
 		const decisionInbox = makeDecisionInbox();
 		const execution = createDashboardPairedExecution({
 			client,
@@ -213,5 +215,8 @@ describe('DashboardPairedExecution', () => {
 			},
 			receivedAt: 555,
 		});
+		expect(decisionAcks).toEqual([
+			{athenaSessionId: 'athena-1', requestId: 'req-1'},
+		]);
 	});
 });

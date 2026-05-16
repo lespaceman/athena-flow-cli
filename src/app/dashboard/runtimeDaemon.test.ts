@@ -54,6 +54,7 @@ function makeFakeSocket() {
 		connect: 0,
 		close: [] as string[],
 		feedEvents: [] as unknown[],
+		decisionAcks: [] as unknown[],
 	};
 	const client: InstanceSocketClient = {
 		connect: async () => {
@@ -69,6 +70,9 @@ function makeFakeSocket() {
 		sendRunEvent: () => {},
 		sendFeedEvent: frame => {
 			calls.feedEvents.push(frame);
+		},
+		sendDecisionAck: frame => {
+			calls.decisionAcks.push(frame);
 		},
 	};
 	return {
@@ -201,6 +205,9 @@ describe('runDashboardRuntimeDaemon', () => {
 			},
 			receivedAt: 555,
 		});
+		expect(fake.calls.decisionAcks).toEqual([
+			{athenaSessionId: 'athena-1', requestId: 'req-1'},
+		]);
 
 		await daemon.stop('test');
 	});

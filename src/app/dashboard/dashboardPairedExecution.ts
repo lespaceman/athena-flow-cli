@@ -24,7 +24,7 @@ export type DashboardPairedExecutionRunRecord = {
 };
 
 export type DashboardPairedExecutionOptions = {
-	client: Pick<InstanceSocketClient, 'sendRunEvent'>;
+	client: Pick<InstanceSocketClient, 'sendRunEvent' | 'sendDecisionAck'>;
 	executor: DashboardPairedExecutionExecutor;
 	projectDir: string;
 	decisionInbox: DashboardDecisionInbox;
@@ -115,6 +115,10 @@ export function createDashboardPairedExecution(
 			requestId: frame.requestId,
 			decision: frame.decision,
 			receivedAt: now(),
+		});
+		client.sendDecisionAck({
+			athenaSessionId: frame.athenaSessionId,
+			requestId: frame.requestId,
 		});
 	}
 
