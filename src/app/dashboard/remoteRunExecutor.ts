@@ -20,10 +20,13 @@ import type {
 } from './instanceSocketClient';
 import {
 	createRunStreamClient,
-	type RunStreamClient,
 	type RunStreamClientOptions,
 } from './runStreamClient';
 import type {DashboardDecisionInbox} from './dashboardDecisionInbox';
+import {
+	createRemoteRunEventPublisher,
+	type RemoteRunEventPublisher,
+} from './remoteRunEventPublisher';
 
 const DEFAULT_MARKETPLACE_SLUG = 'lespaceman/athena-workflow-marketplace';
 
@@ -303,53 +306,18 @@ export async function executeRemoteAssignment({
 	// first frame. parseRunSpec is cheap and side-effect-free.
 	const spec = parseRemoteRunSpec(frame.runSpec);
 
-	// Open the per-run RunStreamDO channel when the dashboard supplied
-	// callback credentials. This is the durable path: it queues frames during
-	// disconnects and uses the server's resume protocol to replay them. Falls
-	// back to the legacy instance-socket relay when the credentials aren't
-	// present (older dashboard) or connect fails within the timeout.
-	let runStream: RunStreamClient | null = null;
-	if (spec?.callbackWsUrl && spec.callbackToken) {
-		const connect = createRunStreamClientFn({
-			wsUrl: spec.callbackWsUrl,
-			token: spec.callbackToken,
-			log: (level, message) =>
-				log(level, `run-stream[${frame.runId}]: ${message}`),
+	const runEventPublisher: RemoteRunEventPublisher =
+		await createRemoteRunEventPublisher({
+			runId: frame.runId,
+			callbackWsUrl: spec?.callbackWsUrl,
+			callbackToken: spec?.callbackToken,
+			client,
+			log,
 			now,
+			createRunStreamClient: createRunStreamClientFn,
+			runStreamConnectTimeoutMs,
 		});
-		const timeoutPromise = new Promise<'timeout'>(resolve => {
-			const t = setTimeout(() => resolve('timeout'), runStreamConnectTimeoutMs);
-			t.unref();
-		});
-		try {
-			const result = await Promise.race([
-				connect.connect().then(() => 'connected' as const),
-				timeoutPromise,
-			]);
-			if (result === 'connected') {
-				runStream = connect;
-			} else {
-				log(
-					'warn',
-					`run-stream[${frame.runId}]: connect timed out after ${runStreamConnectTimeoutMs}ms; falling back to instance-socket relay`,
-				);
-				void connect.close('connect_timeout');
-			}
-		} catch (err) {
-			log(
-				'warn',
-				`run-stream[${frame.runId}]: connect failed (${
-					err instanceof Error ? err.message : String(err)
-				}); falling back to instance-socket relay`,
-			);
-		}
-	}
 
-	// Single send seam: routes through the per-run client when up, otherwise
-	// falls back to the instance-socket relay (with its known reliability
-	// limitations). Legacy seq is owned by the closure; the per-run client
-	// owns its own seq counter internally.
-	let legacySeq = 0;
 	const send = (kind: string, payload: unknown, ts = now()): void => {
 		if (
 			kind === 'error' &&
@@ -361,18 +329,7 @@ export async function executeRemoteAssignment({
 				payload as {message: string}
 			).message;
 		}
-		if (runStream) {
-			runStream.sendEvent({ts, kind, payload});
-			return;
-		}
-		legacySeq += 1;
-		client.sendRunEvent({
-			runId: frame.runId,
-			seq: legacySeq,
-			ts,
-			kind,
-			payload,
-		});
+		runEventPublisher.publish(kind, payload, ts);
 	};
 
 	send('progress', {message: 'assignment received'});
@@ -527,13 +484,6 @@ export async function executeRemoteAssignment({
 		// Wait briefly for the server to ack the terminal frame (so `finalize`
 		// fires on the dashboard) but cap at 10s — if the server is
 		// unreachable we still need to release the daemon's reference.
-		if (runStream) {
-			const drainTimeout = new Promise<void>(resolve => {
-				const t = setTimeout(() => resolve(), 10_000);
-				t.unref();
-			});
-			await Promise.race([runStream.whenTerminated(), drainTimeout]);
-			await runStream.close('done');
-		}
+		await runEventPublisher.close();
 	}
 }

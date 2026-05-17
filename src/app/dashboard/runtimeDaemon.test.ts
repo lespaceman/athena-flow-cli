@@ -8,10 +8,8 @@ import type {
 	InstanceSocketFrame,
 } from './instanceSocketClient';
 import type {DashboardClientConfig} from '../../infra/config/dashboardClient';
-import {
-	createDashboardFeedOutbox,
-	createDashboardFeedPublisher,
-} from './dashboardFeedPublisher';
+import {createDashboardFeedOutbox} from './dashboardFeedPublisher';
+import {createPairedFeedPublisher} from './pairedFeedPublisher';
 
 const tmpDirs: string[] = [];
 const originalXdgStateHome = process.env['XDG_STATE_HOME'];
@@ -111,7 +109,7 @@ describe('runDashboardRuntimeDaemon', () => {
 			const fake = makeFakeSocket();
 			const dbPath = tempDbPath();
 			const outbox = createDashboardFeedOutbox({dbPath});
-			const publisher = createDashboardFeedPublisher({
+			const publisher = createPairedFeedPublisher({
 				readConfig: () => stored,
 				outbox,
 				now: () => 1234,
@@ -145,8 +143,7 @@ describe('runDashboardRuntimeDaemon', () => {
 				makeInstanceSocketClient: () => fake.client,
 				executeRemoteAssignment: vi.fn(async () => {}),
 				reconnectDelaysMs: [],
-				feedOutbox: outbox,
-				feedDrainIntervalMs: 100,
+				pairedFeedPublisher: publisher,
 			});
 
 			await vi.advanceTimersByTimeAsync(100);

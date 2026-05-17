@@ -26,7 +26,7 @@ import {
 	createRelayQuestionCallback,
 } from '../channels/relayAdapter';
 import {startSessionBridge} from '../channels/sessionBridgeLifecycle';
-import {createDashboardFeedPublisher} from '../dashboard/dashboardFeedPublisher';
+import {createPairedFeedPublisher} from '../dashboard/pairedFeedPublisher';
 import {findLastMappedAgentMessage, resolveFinalMessage} from './finalMessage';
 import {createFailureLatch, exitCodeFromFailure} from './failureLatch';
 import {createExecOutputWriter} from './output';
@@ -107,7 +107,7 @@ export async function runExec(options: ExecRunOptions): Promise<ExecRunResult> {
 	const sessionStoreFactory = options.sessionStoreFactory ?? createSessionStore;
 	const athenaSessionId = options.athenaSessionId ?? crypto.randomUUID();
 	const dashboardFeedPublisher =
-		options.dashboardFeedPublisher ?? createDashboardFeedPublisher();
+		options.dashboardFeedPublisher ?? createPairedFeedPublisher();
 	const dashboardOrigin = options.dashboardOrigin ?? 'local';
 
 	const output = createExecOutputWriter({

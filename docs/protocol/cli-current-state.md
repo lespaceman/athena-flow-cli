@@ -17,7 +17,8 @@ This document records what `drisplabs/cli` implements today for dashboard-paired
 | Runtime daemon           | `src/app/dashboard/runtimeDaemon.ts`                                    |
 | Instance socket          | `src/app/dashboard/instanceSocketClient.ts`                             |
 | Assignment execution     | `src/app/dashboard/dashboardPairedExecution.ts`, `remoteRunExecutor.ts` |
-| Feed durability          | `src/app/dashboard/dashboardFeedPublisher.ts`                           |
+| Feed publication         | `src/app/dashboard/pairedFeedPublisher.ts`                              |
+| Feed outbox storage      | `src/app/dashboard/dashboardFeedPublisher.ts`                           |
 | Dashboard decision inbox | `src/app/dashboard/dashboardDecisionInbox.ts`                           |
 | Local gateway substrate  | `src/gateway/*`, `src/shared/gateway-protocol/*`                        |
 
@@ -186,7 +187,11 @@ Behavior:
 
 ### Feed publishing
 
-- Feed outbox is persisted in SQLite.
+- `FeedEvent` is the canonical publication model for paired sessions.
+- `PairedFeedPublisher` accepts canonical `FeedEvent`s plus session identity, persists them durably, frames `feed_event`, owns retry timing, and consumes `feed_ack`.
+- `feed_event` is the paired-session transport.
+- `run_event` and the per-run stream are compatibility transports for remote-run flows, isolated behind `remoteRunEventPublisher.ts`.
+- Feed outbox storage is persisted in SQLite.
 - Each row has:
   - monotonic local `deliverySeq`
   - event identity `athenaSessionId:event_id`

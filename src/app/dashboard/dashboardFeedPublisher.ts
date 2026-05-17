@@ -1,9 +1,5 @@
 import Database from 'better-sqlite3';
 import type {FeedEvent} from '../../core/feed/types';
-import {
-	readDashboardClientConfig,
-	type DashboardClientConfig,
-} from '../../infra/config/dashboardClient';
 import {ensureDaemonStateDir} from '../../infra/daemon/stateDir';
 
 export type DashboardFeedOrigin = 'local' | 'dashboard';
@@ -45,23 +41,8 @@ export type DashboardFeedOutbox = {
 	close(): void;
 };
 
-export type DashboardFeedPublisher = {
-	publish(input: {
-		origin: DashboardFeedOrigin;
-		athenaSessionId: string;
-		feedEvents: readonly FeedEvent[];
-	}): void;
-};
-
 export type CreateDashboardFeedOutboxOptions = {
 	dbPath?: string;
-};
-
-export type CreateDashboardFeedPublisherOptions = {
-	readConfig?: () => DashboardClientConfig | null;
-	outbox?: DashboardFeedOutbox;
-	now?: () => number;
-	onError?: (message: string) => void;
 };
 
 function dashboardFeedOutboxPath(): string {
@@ -249,44 +230,6 @@ export function createDashboardFeedOutbox(
 		},
 		close() {
 			db.close();
-		},
-	};
-}
-
-export function createDashboardFeedPublisher(
-	options: CreateDashboardFeedPublisherOptions = {},
-): DashboardFeedPublisher {
-	const readConfig = options.readConfig ?? (() => readDashboardClientConfig());
-	const now = options.now ?? (() => Date.now());
-	const onError = options.onError ?? (() => {});
-	let ownedOutbox: DashboardFeedOutbox | null = null;
-
-	function getOutbox(): DashboardFeedOutbox {
-		if (options.outbox) return options.outbox;
-		ownedOutbox ??= createDashboardFeedOutbox();
-		return ownedOutbox;
-	}
-
-	return {
-		publish(input) {
-			if (input.feedEvents.length === 0) return;
-			try {
-				const config = readConfig();
-				if (!config) return;
-				getOutbox().enqueue({
-					instanceId: config.instanceId,
-					athenaSessionId: input.athenaSessionId,
-					origin: input.origin,
-					feedEvents: input.feedEvents,
-					emittedAt: now(),
-				});
-			} catch (err) {
-				onError(
-					`dashboard feed publish failed: ${
-						err instanceof Error ? err.message : String(err)
-					}`,
-				);
-			}
 		},
 	};
 }

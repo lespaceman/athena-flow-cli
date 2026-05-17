@@ -205,7 +205,11 @@ Current remote dispatch does not yet apply secrets; that is a known implementati
 
 ### Canonical channel
 
-`feed_event` is the canonical paired-session event stream.
+`FeedEvent` is the canonical paired-session publication model.
+
+`feed_event` is the paired-session transport for that model. The CLI-side
+`PairedFeedPublisher` owns durable persistence, transport framing, ACK
+consumption, and retry timing behind a `FeedEvent`-level interface.
 
 Required properties:
 
@@ -226,7 +230,8 @@ Required properties:
 
 ### Compatibility channel
 
-`run_event` and the per-run stream may continue temporarily for backward compatibility, but:
+`run_event` and the per-run stream may continue temporarily as compatibility
+adapters, but:
 
 - they are not the canonical session feed;
 - their retention and replay rules must be documented separately;
@@ -259,7 +264,7 @@ On reconnect, the protocol should converge through:
 3. attachment mirror refresh;
 4. replay of pending assignments;
 5. replay of pending decisions;
-6. feed outbox drain;
+6. paired feed reconnect drain;
 7. active-run reconciliation.
 
 Flows that intentionally remain best effort must be called out explicitly. `attachments.changed` may remain best-effort only because step 3 exists.

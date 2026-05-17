@@ -44,11 +44,11 @@ import {
 } from '../../shared/utils/perf';
 import {FeedStore} from '../../core/feed/feedStore';
 import {generateId} from '../../shared/utils/id';
+import {type DashboardFeedOrigin} from '../dashboard/dashboardFeedPublisher';
 import {
-	createDashboardFeedPublisher,
-	type DashboardFeedOrigin,
-	type DashboardFeedPublisher,
-} from '../dashboard/dashboardFeedPublisher';
+	createPairedFeedPublisher,
+	type PairedFeedPublisher,
+} from '../dashboard/pairedFeedPublisher';
 import {
 	createDashboardDecisionInbox,
 	type DashboardDecisionInbox,
@@ -141,7 +141,7 @@ export function useFeed(
 	options?: {
 		relayPermission?: (event: RuntimeEvent) => void;
 		relayQuestion?: (event: RuntimeEvent) => void;
-		dashboardFeedPublisher?: DashboardFeedPublisher;
+		dashboardFeedPublisher?: PairedFeedPublisher;
 		dashboardOrigin?: DashboardFeedOrigin;
 		athenaSessionId?: string;
 		dashboardDecisionInbox?: DashboardDecisionInbox;
@@ -192,7 +192,7 @@ export function useFeed(
 	const feedEventsRef = useRef<FeedEvent[]>([]);
 	const notifiedRuntimeErrorRef = useRef<string | null>(null);
 	const dashboardFeedPublisher = useMemo(
-		() => options?.dashboardFeedPublisher ?? createDashboardFeedPublisher(),
+		() => options?.dashboardFeedPublisher ?? createPairedFeedPublisher(),
 		[options?.dashboardFeedPublisher],
 	);
 	const dashboardDecisionInboxRef = useRef<DashboardDecisionInbox | null>(

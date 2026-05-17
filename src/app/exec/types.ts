@@ -9,10 +9,8 @@ import type {RuntimeFactory} from '../runtime/createRuntime';
 import type {SpawnClaudeOptions} from '../../harnesses/claude/process/types';
 import type {SessionBridge} from '../channels/sessionBridge';
 import type {StartSessionBridgeOptions} from '../channels/sessionBridgeLifecycle';
-import type {
-	DashboardFeedOrigin,
-	DashboardFeedPublisher,
-} from '../dashboard/dashboardFeedPublisher';
+import type {DashboardFeedOrigin} from '../dashboard/dashboardFeedPublisher';
+import type {PairedFeedPublisher} from '../dashboard/pairedFeedPublisher';
 import type {DashboardDecisionInbox} from '../dashboard/dashboardDecisionInbox';
 
 export const EXEC_EXIT_CODE = {
@@ -65,7 +63,7 @@ export type ExecRunOptions = {
 		dbPath: string;
 		label?: string;
 	}) => SessionStore;
-	dashboardFeedPublisher?: DashboardFeedPublisher;
+	dashboardFeedPublisher?: PairedFeedPublisher;
 	dashboardOrigin?: DashboardFeedOrigin;
 	dashboardDecisionInbox?: DashboardDecisionInbox;
 	dashboardDecisionPollIntervalMs?: number;

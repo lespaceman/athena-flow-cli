@@ -3,10 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import {afterEach, describe, expect, it} from 'vitest';
 import type {FeedEvent} from '../../core/feed/types';
-import {
-	createDashboardFeedOutbox,
-	createDashboardFeedPublisher,
-} from './dashboardFeedPublisher';
+import {createDashboardFeedOutbox} from './dashboardFeedPublisher';
+import {createPairedFeedPublisher} from './pairedFeedPublisher';
 
 const tmpDirs: string[] = [];
 
@@ -38,11 +36,11 @@ afterEach(() => {
 	}
 });
 
-describe('DashboardFeedPublisher', () => {
+describe('dashboard feed outbox', () => {
 	it('does not enqueue feed events when the instance is unpaired', () => {
 		const dbPath = tempDbPath();
 		const outbox = createDashboardFeedOutbox({dbPath});
-		const publisher = createDashboardFeedPublisher({
+		const publisher = createPairedFeedPublisher({
 			readConfig: () => null,
 			outbox,
 		});
@@ -60,7 +58,7 @@ describe('DashboardFeedPublisher', () => {
 	it('enqueues canonical feed envelopes with stable event ids and delivery sequence numbers', () => {
 		const dbPath = tempDbPath();
 		const outbox = createDashboardFeedOutbox({dbPath});
-		const publisher = createDashboardFeedPublisher({
+		const publisher = createPairedFeedPublisher({
 			readConfig: () => ({
 				dashboardUrl: 'https://dashboard.test',
 				instanceId: 'inst-1',
@@ -105,7 +103,7 @@ describe('DashboardFeedPublisher', () => {
 	it('replays unacked feed events after the outbox is reopened', () => {
 		const dbPath = tempDbPath();
 		const outbox = createDashboardFeedOutbox({dbPath});
-		const publisher = createDashboardFeedPublisher({
+		const publisher = createPairedFeedPublisher({
 			readConfig: () => ({
 				dashboardUrl: 'https://dashboard.test',
 				instanceId: 'inst-1',

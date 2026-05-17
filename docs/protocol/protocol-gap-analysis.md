@@ -10,32 +10,33 @@ The CLI and dashboard largely agree on the shipped path:
 - the dashboard owns pairing, runner attachments, queue admission, and persisted run/session read models;
 - the paired CLI owns local execution and durable feed publication;
 - the long-lived instance socket is the control channel;
-- `feed_event` is now the canonical paired-session event stream.
+- `FeedEvent` is now the canonical paired-session publication model.
+- `feed_event` is the paired-session transport for that model.
 
 The largest remaining gaps are not missing endpoints. They are mixed generations of the protocol, duplicate notions of concurrency, and several lifecycle acknowledgements whose meaning is weaker than their names imply.
 
 ## Matching Assumptions
 
-| Topic                     | Matching current assumption                                             |
-| ------------------------- | ----------------------------------------------------------------------- |
-| Pairing                   | One-time token creates one remote instance and one refresh-token chain. |
-| Fingerprint               | Refresh is bound to a stable local fingerprint.                         |
-| Attachment ownership      | Dashboard is source of truth; CLI mirrors attachments.                  |
-| Dispatch owner            | Dashboard creates runs and sends assignments; CLI executes them.        |
-| Canonical event stream    | `feed_event` is the paired-session source of truth.                     |
-| Decision retry            | Dashboard retries until CLI delivery ACK; CLI persists after receipt.   |
-| Offline instance behavior | Dashboard may queue assignments/decisions until reconnect.              |
-| Workflow refs             | Dashboard sends workflow identity; CLI resolves/installs locally.       |
+| Topic                     | Matching current assumption                                                 |
+| ------------------------- | --------------------------------------------------------------------------- |
+| Pairing                   | One-time token creates one remote instance and one refresh-token chain.     |
+| Fingerprint               | Refresh is bound to a stable local fingerprint.                             |
+| Attachment ownership      | Dashboard is source of truth; CLI mirrors attachments.                      |
+| Dispatch owner            | Dashboard creates runs and sends assignments; CLI executes them.            |
+| Canonical event stream    | `FeedEvent` is the paired-session source of truth; `feed_event` carries it. |
+| Decision retry            | Dashboard retries until CLI delivery ACK; CLI persists after receipt.       |
+| Offline instance behavior | Dashboard may queue assignments/decisions until reconnect.                  |
+| Workflow refs             | Dashboard sends workflow identity; CLI resolves/installs locally.           |
 
 ## Mismatched Assumptions
 
-| Area               | CLI view                                                | Dashboard view                                                                                                 | Risk                                                                                   |
-| ------------------ | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Concurrency        | Local daemon defaults to one active run per runner key. | Dashboard enforces runner/org leases, then expects remote dispatch to proceed.                                 | Dashboard can deliver work the CLI rejects after queue admission.                      |
-| Assignment ACK     | CLI emits `assignment_accepted` immediately on receipt. | Dashboard currently treats it as informational only.                                                           | Name suggests acceptance/capacity confirmation but does not mean that.                 |
-| Run streaming      | CLI may prefer per-run stream for remote execution.     | Dashboard now treats `feed_event` as canonical paired-session stream while still minting callback credentials. | Two valid event channels create ambiguity about source of truth and replay guarantees. |
-| Attachment refresh | CLI relies on push plus local mirror.                   | Dashboard drops `attachments.changed` while offline and expects refetch on reconnect.                          | Reconnect refetch is an implied requirement, not a fully explicit handshake.           |
-| Re-pairing         | CLI persists one local pairing config.                  | Dashboard always creates a new instance row on successful pair.                                                | No documented replacement/recovery semantics for the same physical machine.            |
+| Area               | CLI view                                                                | Dashboard view                                                                                                    | Risk                                                                                          |
+| ------------------ | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Concurrency        | Local daemon defaults to one active run per runner key.                 | Dashboard enforces runner/org leases, then expects remote dispatch to proceed.                                    | Dashboard can deliver work the CLI rejects after queue admission.                             |
+| Assignment ACK     | CLI emits `assignment_accepted` immediately on receipt.                 | Dashboard currently treats it as informational only.                                                              | Name suggests acceptance/capacity confirmation but does not mean that.                        |
+| Run streaming      | CLI keeps per-run stream and `run_event` behind compatibility adapters. | Dashboard now treats `feed_event` as canonical paired-session transport while still minting callback credentials. | Compatibility transports remain, but transport selection is no longer spread through callers. |
+| Attachment refresh | CLI relies on push plus local mirror.                                   | Dashboard drops `attachments.changed` while offline and expects refetch on reconnect.                             | Reconnect refetch is an implied requirement, not a fully explicit handshake.                  |
+| Re-pairing         | CLI persists one local pairing config.                                  | Dashboard always creates a new instance row on successful pair.                                                   | No documented replacement/recovery semantics for the same physical machine.                   |
 
 ## Implicit Contracts
 
@@ -125,7 +126,7 @@ The largest remaining gaps are not missing endpoints. They are mixed generations
 
 1. Define assignment admission semantics and split `received` from `accepted_for_execution`.
 2. Decide the single source of truth for runtime capacity and expose it in protocol negotiation.
-3. Define canonical vs compatibility event channels and a retirement plan for legacy `run_event`.
+3. Publish a retirement plan for compatibility event transports (`run_event` and the per-run stream).
 4. Add explicit reconnect synchronization requirements for attachments, active runs, and pending decisions.
 5. Specify re-pair/replacement behavior for the same physical machine.
 6. Publish an identifier glossary covering dashboard run id, Athena session id, adapter resume id, feed event id, and delivery sequence.
